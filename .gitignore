@@ -1,0 +1,30 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+.factorypath
+
+# Minecraft
+run/
+logs/
+crash-reports/
+
+# Mod data (per-user)
+cue-my-music-dev/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Fabric
+remappedSrc/

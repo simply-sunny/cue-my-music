@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "package": "com.cuemymusic.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "refmap": "cue_my_music.refmap.json",
+  "mixins": [],
+  "client": [
+    "MusicManagerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
