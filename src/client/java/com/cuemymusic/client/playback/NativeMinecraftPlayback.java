@@ -37,9 +37,8 @@ public final class NativeMinecraftPlayback {
     private static final NativeMinecraftPlayback INSTANCE = new NativeMinecraftPlayback();
 
     private final Object lock = new Object();
+    private final PlaybackLifecycle lifecycle = new PlaybackLifecycle();
     private SoundInstance currentSound;
-    private MusicTrack currentTrack;
-    private PlaybackState state = PlaybackState.STOPPED;
     private long playStartMs = 0;
     private long pausedElapsedMs = 0;
 
@@ -47,47 +46,72 @@ public final class NativeMinecraftPlayback {
 
     public static NativeMinecraftPlayback getInstance() { return INSTANCE; }
 
+    public boolean hasOwnership() {
+        synchronized (lock) { return lifecycle.occupied(); }
+    }
+
     public PlaybackState getState() {
-        synchronized (lock) { return state; }
+        synchronized (lock) { return lifecycle.state(); }
     }
 
     public Optional<MusicTrack> getCurrentTrack() {
-        synchronized (lock) { return Optional.ofNullable(currentTrack); }
+        synchronized (lock) { return lifecycle.track(); }
     }
 
     public Optional<String> getCurrentTrackId() {
-        synchronized (lock) { return Optional.ofNullable(currentTrack).map(MusicTrack::getId); }
+        synchronized (lock) { return lifecycle.track().map(MusicTrack::getId); }
     }
 
     public SoundInstance getHandle() {
         synchronized (lock) { return currentSound; }
     }
 
+    public boolean isPlaying() {
+        synchronized (lock) { return lifecycle.state() == PlaybackState.PLAYING; }
+    }
+
     public boolean isPlaying(Minecraft mc) {
-        synchronized (lock) {
-            if (state != PlaybackState.PLAYING || currentSound == null) return false;
-            try { return mc.getSoundManager().isActive(currentSound); } catch (Exception e) { return false; }
-        }
+        return isPlaying();
     }
 
     public boolean isPaused() {
-        synchronized (lock) { return state == PlaybackState.PAUSED; }
+        synchronized (lock) { return lifecycle.state() == PlaybackState.PAUSED; }
     }
 
     public long getElapsedMs(Minecraft mc) {
         synchronized (lock) {
-            if (currentTrack == null) return 0;
-            if (state == PlaybackState.PAUSED) return pausedElapsedMs;
-            if (state == PlaybackState.STOPPED || playStartMs == 0) return 0;
-            // Try real OpenAL position first
-            float pos = getPositionSecondsReal(mc);
-            if (pos >= 0) return (long)(pos * 1000);
-            long elapsed = System.currentTimeMillis() - playStartMs;
-            if (!isPlayingLocked(mc)) {
-                Integer dur = currentTrack.getDurationSeconds();
-                if (dur != null) return Math.min(elapsed, dur * 1000L);
-            }
-            return elapsed;
+            return getElapsedMsLocked(mc);
+        }
+    }
+
+    private long getElapsedMsLocked(Minecraft mc) {
+        var track = lifecycle.track().orElse(null);
+        if (track == null) return 0;
+        if (lifecycle.state() == PlaybackState.PAUSED) return pausedElapsedMs;
+        if (lifecycle.state() == PlaybackState.STOPPED || playStartMs == 0) return 0;
+        // Try real OpenAL position first
+        float pos = getPositionSecondsReal(mc);
+        if (pos >= 0) return (long)(pos * 1000);
+        long elapsed = System.currentTimeMillis() - playStartMs;
+        if (lifecycle.state() != PlaybackState.PLAYING) {
+            Integer dur = track.getDurationSeconds();
+            if (dur != null) return Math.min(elapsed, dur * 1000L);
+        }
+        return elapsed;
+    }
+
+    private ChannelAccess.ChannelHandle channelHandle(Minecraft mc, SoundInstance sound) {
+        if (mc == null || sound == null) return null;
+        try {
+            SoundManager sm = mc.getSoundManager();
+            if (sm == null) return null;
+            SoundEngine se = ((SoundManagerAccessor) sm).cueMyMusic$getSoundEngine();
+            if (se == null) return null;
+            Map<SoundInstance, ChannelAccess.ChannelHandle> map = ((SoundEngineAccessor) se).cueMyMusic$getInstanceToChannel();
+            if (map == null) return null;
+            return map.get(sound);
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -95,10 +119,7 @@ public final class NativeMinecraftPlayback {
     public float getPositionSecondsReal(Minecraft mc) {
         try {
             if (mc == null || currentSound == null) return -1;
-            SoundManager sm = mc.getSoundManager();
-            SoundEngine se = ((SoundManagerAccessor) sm).cueMyMusic$getSoundEngine();
-            Map<SoundInstance, ChannelAccess.ChannelHandle> map = ((SoundEngineAccessor) se).cueMyMusic$getInstanceToChannel();
-            ChannelAccess.ChannelHandle handle = map.get(currentSound);
+            ChannelAccess.ChannelHandle handle = channelHandle(mc, currentSound);
             if (handle == null || handle.isStopped()) return -1;
             Channel ch = ((ChannelHandleAccessor) handle).cueMyMusic$getChannel();
             if (ch == null) return -1;
@@ -112,33 +133,33 @@ public final class NativeMinecraftPlayback {
 
     public int getDurationSeconds() {
         synchronized (lock) {
-            if (currentTrack == null || currentTrack.getDurationSeconds() == null) return 0;
-            return currentTrack.getDurationSeconds();
+            var track = lifecycle.track().orElse(null);
+            if (track == null || track.getDurationSeconds() == null) return 0;
+            return track.getDurationSeconds();
         }
     }
 
     /** Seek to seconds, clamped 0..duration, no duplicate instances. */
     public boolean seek(Minecraft mc, float seconds) {
         synchronized (lock) {
-            if (currentSound == null || currentTrack == null) return false;
+            if (currentSound == null || lifecycle.track().isEmpty()) return false;
             int dur = getDurationSeconds();
             if (dur > 0) seconds = Math.max(0, Math.min(seconds, dur));
             else seconds = Math.max(0, seconds);
-            boolean wasPlaying = state == PlaybackState.PLAYING;
-            boolean wasPaused = state == PlaybackState.PAUSED;
+            boolean wasPlaying = lifecycle.state() == PlaybackState.PLAYING;
+            boolean wasPaused = lifecycle.state() == PlaybackState.PAUSED;
             try {
-                SoundManager sm = mc.getSoundManager();
-                SoundEngine se = ((SoundManagerAccessor) sm).cueMyMusic$getSoundEngine();
-                Map<SoundInstance, ChannelAccess.ChannelHandle> map = ((SoundEngineAccessor) se).cueMyMusic$getInstanceToChannel();
-                ChannelAccess.ChannelHandle handle = map.get(currentSound);
+                ChannelAccess.ChannelHandle handle = channelHandle(mc, currentSound);
                 if (handle != null && !handle.isStopped()) {
                     Channel ch = ((ChannelHandleAccessor) handle).cueMyMusic$getChannel();
-                    int source = ((ChannelAccessor) ch).cueMyMusic$getSource();
-                    AL10.alSourcef(source, 4132, seconds);
-                    // keep wall-clock in sync
-                    if (wasPlaying) playStartMs = System.currentTimeMillis() - (long)(seconds * 1000);
-                    else if (wasPaused) pausedElapsedMs = (long)(seconds * 1000);
-                    return true;
+                    if (ch != null) {
+                        int source = ((ChannelAccessor) ch).cueMyMusic$getSource();
+                        AL10.alSourcef(source, 4132, seconds);
+                        // keep wall-clock in sync
+                        if (wasPlaying) playStartMs = System.currentTimeMillis() - (long)(seconds * 1000);
+                        else if (wasPaused) pausedElapsedMs = (long)(seconds * 1000);
+                        return true;
+                    }
                 }
             } catch (Exception ignored) {}
             // Fallback wall-clock seek (no real OpenAL seek, but keep state consistent)
@@ -148,9 +169,20 @@ public final class NativeMinecraftPlayback {
         }
     }
 
-    private boolean isPlayingLocked(Minecraft mc) {
-        if (state != PlaybackState.PLAYING || currentSound == null) return false;
-        try { return mc.getSoundManager().isActive(currentSound); } catch (Exception e) { return false; }
+    public void tick(Minecraft mc, long now) {
+        synchronized (lock) {
+            if (lifecycle.state() == PlaybackState.STARTING) {
+                var handle = channelHandle(mc, currentSound);
+                if (handle != null && !handle.isStopped()) lifecycle.attached();
+                else if (lifecycle.startTimedOut(now)) stopLocked(mc);
+            } else if (lifecycle.state() == PlaybackState.PLAYING
+                    && currentSound != null
+                    && mc != null
+                    && mc.getSoundManager() != null
+                    && !mc.getSoundManager().isActive(currentSound)) {
+                stopLocked(mc); // natural completion
+            }
+        }
     }
 
     /**
@@ -163,19 +195,20 @@ public final class NativeMinecraftPlayback {
         SoundInstance sound = createSound(track);
         if (sound == null) return false;
         synchronized (lock) {
+            long now = System.currentTimeMillis();
             // single preview: stop previous before playing new (prevents duplicates, rapid play)
             stopLocked(mc);
+            lifecycle.start(track, now);
+            currentSound = sound;
+            playStartMs = now;
+            pausedElapsedMs = 0;
             try {
                 mc.getSoundManager().play(sound);
+                return true;
             } catch (Exception e) {
+                stopLocked(mc);
                 return false;
             }
-            currentTrack = track;
-            currentSound = sound;
-            state = PlaybackState.PLAYING;
-            playStartMs = System.currentTimeMillis();
-            pausedElapsedMs = 0;
-            return true;
         }
     }
 
@@ -185,70 +218,61 @@ public final class NativeMinecraftPlayback {
 
     private void stopLocked(Minecraft mc) {
         if (currentSound != null) {
-            try { if (mc != null) mc.getSoundManager().stop(currentSound); } catch (Exception ignored) {}
+            try { if (mc != null && mc.getSoundManager() != null) mc.getSoundManager().stop(currentSound); } catch (Exception ignored) {}
         }
         currentSound = null;
-        currentTrack = null;
-        state = PlaybackState.STOPPED;
+        lifecycle.stop();
         playStartMs = 0;
         pausedElapsedMs = 0;
     }
 
     public boolean pause(Minecraft mc) {
         synchronized (lock) {
-            if (state != PlaybackState.PLAYING || currentSound == null) return false;
-            pausedElapsedMs = getElapsedMsLocked(mc);
-            try { mc.getSoundManager().stop(currentSound); } catch (Exception ignored) {}
-            state = PlaybackState.PAUSED;
-            return true;
+            return pauseLocked(mc);
         }
+    }
+
+    private boolean pauseLocked(Minecraft mc) {
+        if (lifecycle.state() != PlaybackState.PLAYING || currentSound == null) return false;
+        pausedElapsedMs = getElapsedMsLocked(mc);
+        try { if (mc != null && mc.getSoundManager() != null) mc.getSoundManager().stop(currentSound); } catch (Exception ignored) {}
+        currentSound = null;
+        lifecycle.pause();
+        return true;
     }
 
     public boolean resume(Minecraft mc) {
         synchronized (lock) {
-            if (state != PlaybackState.PAUSED || currentTrack == null) return false;
-            SoundInstance sound = createSound(currentTrack);
-            if (sound == null) return false;
-            try { mc.getSoundManager().play(sound); } catch (Exception e) { return false; }
-            currentSound = sound;
-            playStartMs = System.currentTimeMillis() - pausedElapsedMs;
-            state = PlaybackState.PLAYING;
+            return resumeLocked(mc);
+        }
+    }
+
+    private boolean resumeLocked(Minecraft mc) {
+        var track = lifecycle.track().orElse(null);
+        if (lifecycle.state() != PlaybackState.PAUSED || track == null) return false;
+        SoundInstance sound = createSound(track);
+        if (sound == null) return false;
+        long now = System.currentTimeMillis();
+        lifecycle.resume(now);
+        currentSound = sound;
+        playStartMs = now - pausedElapsedMs;
+        try {
+            if (mc != null && mc.getSoundManager() != null) {
+                mc.getSoundManager().play(sound);
+            }
             return true;
+        } catch (Exception e) {
+            stopLocked(mc);
+            return false;
         }
     }
 
     public boolean togglePause(Minecraft mc) {
         synchronized (lock) {
-            if (state == PlaybackState.PLAYING) return pauseLocked(mc);
-            if (state == PlaybackState.PAUSED) return resumeLocked(mc);
+            if (lifecycle.state() == PlaybackState.PLAYING) return pauseLocked(mc);
+            if (lifecycle.state() == PlaybackState.PAUSED) return resumeLocked(mc);
             return false;
         }
-    }
-
-    private boolean pauseLocked(Minecraft mc) {
-        if (state != PlaybackState.PLAYING || currentSound == null) return false;
-        pausedElapsedMs = getElapsedMsLocked(mc);
-        try { mc.getSoundManager().stop(currentSound); } catch (Exception ignored) {}
-        state = PlaybackState.PAUSED;
-        return true;
-    }
-
-    private boolean resumeLocked(Minecraft mc) {
-        if (state != PlaybackState.PAUSED || currentTrack == null) return false;
-        SoundInstance sound = createSound(currentTrack);
-        if (sound == null) return false;
-        try { mc.getSoundManager().play(sound); } catch (Exception e) { return false; }
-        currentSound = sound;
-        playStartMs = System.currentTimeMillis() - pausedElapsedMs;
-        state = PlaybackState.PLAYING;
-        return true;
-    }
-
-    private long getElapsedMsLocked(Minecraft mc) {
-        if (currentTrack == null) return 0;
-        if (state == PlaybackState.PAUSED) return pausedElapsedMs;
-        if (state == PlaybackState.STOPPED || playStartMs == 0) return 0;
-        return System.currentTimeMillis() - playStartMs;
     }
 
     private SoundInstance createSound(MusicTrack track) {

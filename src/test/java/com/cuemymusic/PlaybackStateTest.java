@@ -17,8 +17,9 @@ public class PlaybackStateTest {
     @AfterEach void tearDown() { playback.stop(null); }
 
     @Test void statesExist() {
-        assertEquals(3, PlaybackState.values().length);
+        assertEquals(4, PlaybackState.values().length);
         assertNotNull(PlaybackState.valueOf("STOPPED"));
+        assertNotNull(PlaybackState.valueOf("STARTING"));
     }
 
     @Test void initialIsStopped() {

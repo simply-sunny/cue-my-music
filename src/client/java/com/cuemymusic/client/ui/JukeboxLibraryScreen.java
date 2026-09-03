@@ -12,7 +12,6 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import net.minecraft.sounds.SoundSource;
 import java.util.*;
 
 // ponytail: centered list — search, sort, top scrub next to search/sort, checkbox queue, preview > / ||
@@ -248,15 +247,7 @@ public class JukeboxLibraryScreen extends Screen {
         try{
             var mc=Minecraft.getInstance();
             var director=com.cuemymusic.client.playback.MusicDirector.getInstance();
-            var cur=director.getCurrentTrack().orElse(null);
-            if(cur!=null && cur.getId().equals(track.getId())){
-                if(director.isPlaying(mc)){ director.togglePause(mc); return; }
-                if(director.isPaused()){ director.togglePause(mc); return; }
-            }
-            try{ if(mc.getMusicManager()!=null) mc.getMusicManager().stopPlaying(); }catch(Exception ignored){}
-            try{ mc.getSoundManager().stop(null, SoundSource.MUSIC); }catch(Exception ignored){}
-            director.stopCurrent(mc);
-            director.playTrack(mc, track);
+            director.previewTrack(mc, track);
         }catch(Exception ignored){}
     }
     @Override public boolean keyPressed(KeyEvent e){
@@ -264,12 +255,8 @@ public class JukeboxLibraryScreen extends Screen {
         return super.keyPressed(e);
     }
     @Override public void onClose(){
-        try{ var mc=Minecraft.getInstance(); com.cuemymusic.client.playback.MusicDirector.getInstance().stopCurrent(mc); }catch(Exception ignored){}
         try{ CueMyMusic.getInstance().saveAll(); }catch(Exception ignored){}
         Minecraft.getInstance().setScreenAndShow(parent);
-    }
-    @Override public void removed(){
-        try{ var mc=Minecraft.getInstance(); com.cuemymusic.client.playback.MusicDirector.getInstance().stopCurrent(mc); }catch(Exception ignored){}
     }
     private String truncate(String s,int maxW){ if(font.width(s)<=maxW) return s; String ell="..."; int ew=font.width(ell); String out=s; while(out.length()>0&&font.width(out)+ew>maxW) out=out.substring(0,out.length()-1); return out+ell; }
 }
