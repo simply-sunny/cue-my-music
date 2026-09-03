@@ -3,6 +3,9 @@
 build/
 out/
 
+# Worktrees
+.worktrees/
+
 # IDE
 .idea/
 *.iml
