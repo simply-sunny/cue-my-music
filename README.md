@@ -1,6 +1,6 @@
 # Cue My Music
 
-A personal-use Fabric mod for Minecraft **26.2** — manage vanilla music, music discs, and locally cached tracks from Spotify/YouTube sources through a native-feeling **Jukebox Library** UI.
+A personal-use Fabric mod for Minecraft **26.2** — manage vanilla music and music discs through a native-feeling **Jukebox Library** UI. No Cloth Config — vanilla `Screen` only (`EditBox`/`Button`/`GuiGraphicsExtractor`), per-row scrub inside table same row.
 
 Mod ID: `cue_my_music` · Display name: **Cue My Music** · Package: `com.cuemymusic`
 
@@ -16,7 +16,7 @@ Mod ID: `cue_my_music` · Display name: **Cue My Music** · Package: `com.cuemym
 - **External tools isolated** — `spotDL` / `yt-dlp` / `ffmpeg` detected via `ExternalToolService`; mod runs without them.
 - **Playback director** — selects from active preset's ambient-eligible tracks, skips missing files, plays local OGGs via `LocalOggSoundInstance` on the MUSIC sound channel (respects Music volume), vanilla tracks via registry sound events.
 - **Mod Menu** integration — Configure opens the Jukebox Library.
-- **Jukebox Library UI** — left sidebar (Collections / Presets, roomy), main scrollable list, detail strip, bottom actions (Add Music, Edit Preset, Done). Feels vanilla.
+- **Jukebox Library UI** — vanilla `Screen` only, no Cloth Config. Centered panel: search, sort, header (✓ TYPE TITLE ARTIST), rows with checkbox (ambient queue), type, title, artist, preview `>`/`||`, and per-row scrub bar inside the same row for the currently playing track (times on hover/drag, drag to seek). Feels vanilla.
 - **Debug commands**: `/cuemymusic` / `/cmm` (`open`, `next`, `preset list|set`, `rescan`, `import <path>`, `status`, `toggle`).
 
 ## Versions pinned
@@ -27,8 +27,8 @@ Mod ID: `cue_my_music` · Display name: **Cue My Music** · Package: `com.cuemym
 | Fabric Loader | 0.19.3 |
 | Fabric Loom | 1.17-SNAPSHOT (1.17.20) |
 | Fabric API | 0.158.0+26.2 |
-| Cloth Config | 26.2.155 (artifact `me.shedaniel.cloth:cloth-config`) |
 | Mod Menu | 20.0.1 (`com.terraformersmc:modmenu`) |
+| Cloth Config | not used — vanilla `Screen` only |
 | Java | 25 (release 25) |
 | Gradle | 8.13 |
 
@@ -46,12 +46,10 @@ cue-my-music/
 ├── src/client/java/com/cuemymusic/
 │   ├── client/CueMyMusicClient.java
 │   ├── client/music/VanillaTrackRegistry.java
-│   ├── client/playback/{MusicDirector, LocalOggSoundInstance, PlaybackState}
-│   ├── client/sources/{LocalImportService, ExternalToolService}
-│   ├── client/ui/{JukeboxLibraryScreen, EditPresetScreen, TrackDetailWidget}
-│   ├── client/integration/ModMenuIntegration.java
-│   ├── client/debug/CueMyMusicCommands.java
-│   └── mixin/MusicManagerMixin.java
+│   ├── client/playback/{NativeMinecraftPlayback, MusicDirector, PlaybackState}
+│   ├── client/ui/JukeboxLibraryScreen.java  // vanilla Screen only, per-row scrub inside table same row
+│   ├── client/integration/ModMenuIntegration.java  // → JukeboxLibraryScreen (no Cloth Config)
+│   └── mixin/{MusicManagerMixin, SoundManagerAccessor, SoundEngineAccessor, ChannelAccessor, ChannelHandleAccessor}
 ├── src/main/resources/{fabric.mod.json, cue_my_music.mixins.json}
 ├── src/test/java/com/cuemymusic/{MusicLibraryTest, PlaybackDirectorTest, PersistenceTest}
 ├── gradle.properties / settings.gradle / build.gradle

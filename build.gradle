@@ -12,10 +12,6 @@ repositories {
         name = 'Modrinth'
         url = 'https://api.modrinth.com/maven'
     }
-    maven {
-        name = 'Shedaniel'
-        url = 'https://maven.shedaniel.me/'
-    }
 }
 
 loom {
@@ -36,10 +32,7 @@ dependencies {
     // Fabric API
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-    // Cloth Config
-    implementation "me.shedaniel.cloth:cloth-config:${project.cloth_config_version}"
-
-    // Mod Menu
+    // Mod Menu (vanilla Screen, no Cloth Config needed)
     implementation "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 

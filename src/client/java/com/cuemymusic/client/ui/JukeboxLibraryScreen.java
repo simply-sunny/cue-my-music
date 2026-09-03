@@ -1,10 +1,9 @@
 package com.cuemymusic.client.ui;
 
 import com.cuemymusic.CueMyMusic;
-import com.cuemymusic.data.MusicCollection;
 import com.cuemymusic.data.MusicLibrary;
-import com.cuemymusic.data.MusicPreset;
 import com.cuemymusic.data.MusicTrack;
+import com.cuemymusic.data.SourceType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -13,350 +12,264 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundSource;
+import java.util.*;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-
-/**
- * Jukebox Library — main UI. Vanilla-feeling, left sidebar + scrollable vertical list.
- */
+// ponytail: centered list — search, sort, top scrub next to search/sort, checkbox queue, preview > / ||
 public class JukeboxLibraryScreen extends Screen {
-
-    private static final Component TITLE = Component.literal("Cue My Music \u2014 Jukebox Library");
-    private static final int SIDEBAR_WIDTH = 96;
-    private static final int SIDEBAR_GAP = 8;
-    private static final int ROW_HEIGHT = 18;
-    private static final int TOP_CONTROLS_H = 22;
-
+    private static final Component TITLE = Component.literal("Cue My Music");
+    private static final Component SUB = Component.literal("Vanilla Music & Discs");
+    private static final int ROW_H=18, HEADER_H=14;
     private final Screen parent;
     private MusicLibrary library;
-
-    private MusicCollection selectedCollection = MusicCollection.ALL;
-    private String activePresetId = null;
-    private String searchText = "";
-    private boolean enabledOnly = false;
-    private boolean ambientOnly = false;
-
+    private String search="";
     private enum SortMode { TITLE, ARTIST, SOURCE }
-    private SortMode sortMode = SortMode.TITLE;
-
-    private int scrollOffset = 0;
-    private final List<MusicTrack> displayedTracks = new ArrayList<>();
-    private MusicTrack selectedTrack = null;
-
+    private SortMode sortMode = SortMode.ARTIST;
+    private final List<MusicTrack> displayed=new ArrayList<>();
+    private int scroll=0;
     private EditBox searchField;
-    private Button enabledToggle;
-    private Button ambientToggle;
     private Button sortButton;
+    private int panelL, panelR, panelW, headerY, tableTop, tableBottom, doneX, doneY, doneW, colCheckX, colTypeX, colTitleX, colArtistX, colPreviewX;
+    private int topScrubX, topScrubY, topScrubW, topScrubH, topBarX, topBarY, topBarW, topBarH;
+    private boolean scrubDragging=false;
 
-    private int contentLeft, contentRight, contentTop, contentBottom, sidebarLeft, sidebarRight;
-    private TrackDetailWidget detailWidget;
+    public JukeboxLibraryScreen(Screen parent){ super(TITLE); this.parent=parent; var inst=CueMyMusic.getInstance(); this.library=inst!=null?inst.getLibrary():null; if(this.library==null) this.library=new MusicLibrary(); }
+    public JukeboxLibraryScreen(){this(null);}
 
-    public JukeboxLibraryScreen(Screen parent) {
-        super(TITLE);
-        this.parent = parent;
-        try {
-            var inst = CueMyMusic.getInstance();
-            if (inst != null) {
-                this.library = inst.getLibrary();
-                this.activePresetId = inst.getLibrary().getActivePresetId();
-            }
-        } catch (Exception ignored) {}
-        if (this.library == null) this.library = new MusicLibrary();
+    private void computeLayout(){
+        panelL=10; panelR=width-10; panelW=panelR-panelL;
+        int topRowY=30;
+        headerY=topRowY+22;
+        tableTop=headerY+HEADER_H+2;
+        doneW=80; doneX=width/2-doneW/2; doneY=height-24;
+        tableBottom=doneY-8;
+        if(tableBottom-tableTop<40) tableBottom=tableTop+40;
+        colCheckX=panelL+4; colTypeX=panelL+22; colTitleX=panelL+90; colArtistX=panelL+ (int)(panelW*0.55);
+        colPreviewX=panelR-18;
+        // top scrub next to search/sort — computed in render when visible, but layout gives fallback
+        topScrubH=14; topScrubY=topRowY;
     }
+    private Component sortLabel(){ return Component.literal(switch(sortMode){ case TITLE->"Sort: Title \u25BE"; case ARTIST->"Sort: Artist \u25BE"; case SOURCE->"Sort: Source \u25BE"; }); }
 
-    public JukeboxLibraryScreen() { this(null); }
-
-    @Override
-    protected void init() {
-        int panelLeft = 10;
-        int panelRight = width - 10;
-        sidebarLeft = panelLeft;
-        sidebarRight = sidebarLeft + SIDEBAR_WIDTH;
-        contentLeft = sidebarRight + SIDEBAR_GAP;
-        contentRight = panelRight;
-        int controlsTop = 18;
-        contentTop = controlsTop + TOP_CONTROLS_H + 4;
-        contentBottom = height - 30 - 24;
-        if (contentBottom - contentTop < 40) contentBottom = contentTop + 40;
-
-        detailWidget = new TrackDetailWidget(Minecraft.getInstance());
-
-        int searchW = Math.min(160, width / 3);
-        int searchX = contentLeft;
-        int searchY = controlsTop + 1;
-        this.searchField = new EditBox(this.font, searchX, searchY, searchW, 18, Component.literal("Search"));
+    @Override protected void init(){
+        computeLayout();
+        int searchW=200, searchX=width/2-searchW/2-70;
+        int sortW=110, sortX=width/2+searchW/2-70+8+40;
+        if(sortX+sortW > panelR) { sortX = panelR - sortW; searchX = sortX - searchW - 8 - 60; }
+        if(searchX < panelL) searchX = panelL;
+        searchField=new EditBox(font, searchX, 30, searchW, 18, Component.literal("Search"));
+        searchField.setHint(Component.literal("Search tracks..."));
         searchField.setMaxLength(64);
-        searchField.setValue(searchText);
-        searchField.setResponder(v -> {
-            searchText = v;
-            rebuildDisplayedTracks();
-            scrollOffset = 0;
-        });
+        searchField.setValue(search);
+        searchField.setResponder(v->{ search=v; rebuild(); scroll=0; clamp(); });
         addRenderableWidget(searchField);
-
-        int toggleX = searchX + searchW + 6;
-        int toggleW = 72;
-        this.enabledToggle = Button.builder(labelForEnabled(), b -> {
-            enabledOnly = !enabledOnly;
-            b.setMessage(labelForEnabled());
-            rebuildDisplayedTracks();
-            scrollOffset = 0;
-        }).bounds(toggleX, searchY, toggleW, 18).build();
-        addRenderableWidget(enabledToggle);
-
-        this.ambientToggle = Button.builder(labelForAmbient(), b -> {
-            ambientOnly = !ambientOnly;
-            b.setMessage(labelForAmbient());
-            rebuildDisplayedTracks();
-            scrollOffset = 0;
-        }).bounds(toggleX + toggleW + 4, searchY, toggleW, 18).build();
-        addRenderableWidget(ambientToggle);
-
-        int sortX = toggleX + toggleW * 2 + 8;
-        int sortW = Math.min(110, contentRight - sortX);
-        if (sortW < 60) { sortX = contentLeft; sortW = 100; }
-        this.sortButton = Button.builder(labelForSort(), b -> {
-            sortMode = SortMode.values()[(sortMode.ordinal() + 1) % SortMode.values().length];
-            b.setMessage(labelForSort());
-            rebuildDisplayedTracks();
-        }).bounds(sortX, searchY, sortW, 18).build();
+        sortButton=Button.builder(sortLabel(), b->{ sortMode=SortMode.values()[(sortMode.ordinal()+1)%SortMode.values().length]; b.setMessage(sortLabel()); rebuild(); clamp(); }).bounds(sortX,30,sortW,20).build();
         addRenderableWidget(sortButton);
-
-        int sbY = contentTop + 2 + 12;
-        int sbBtnH = 18;
-        int gap = 4;
-        for (MusicCollection col : MusicCollection.values()) {
-            Button btn = Button.builder(Component.literal(col.getDisplayName()), b -> {
-                selectedCollection = col;
-                rebuildDisplayedTracks();
-                scrollOffset = 0;
-            }).bounds(sidebarLeft + 2, sbY, SIDEBAR_WIDTH - 4, sbBtnH).build();
-            addRenderableWidget(btn);
-            sbY += sbBtnH + gap;
-        }
-        sbY += 8 + 12;
-        for (MusicPreset preset : library.getAllPresets()) {
-            if (sbY + sbBtnH > height - 36) break;
-            String label = preset.getName() != null ? preset.getName() : preset.getId();
-            String shortLabel = label;
-            while (font.width(shortLabel) > SIDEBAR_WIDTH - 12 && shortLabel.length() > 1) shortLabel = shortLabel.substring(0, shortLabel.length() - 1);
-            if (!shortLabel.equals(label) && shortLabel.length() > 3) shortLabel = shortLabel.substring(0, shortLabel.length() - 2) + "..";
-            MusicPreset captured = preset;
-            Button btn = Button.builder(Component.literal(shortLabel), b -> {
-                activePresetId = captured.getId();
-                try { library.setActivePresetId(captured.getId()); } catch (Exception ignored) {}
-                rebuildDisplayedTracks();
-                scrollOffset = 0;
-            }).bounds(sidebarLeft + 2, sbY, SIDEBAR_WIDTH - 4, sbBtnH).build();
-            addRenderableWidget(btn);
-            sbY += sbBtnH + gap;
-        }
-
-        int bottomY = height - 24;
-        int btnW = 90;
-        addRenderableWidget(Button.builder(Component.literal("Add Music"), b -> onAddMusic()).bounds(panelLeft, bottomY, btnW, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Edit Preset"), b -> onEditPreset()).bounds(panelLeft + btnW + 6, bottomY, btnW, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose()).bounds(panelRight - 72, bottomY, 70, 20).build());
-
-        rebuildDisplayedTracks();
-        clampScroll();
+        addRenderableWidget(Button.builder(Component.literal("Done"), b->onClose()).bounds(doneX,doneY,doneW,20).build());
+        rebuild(); clamp();
     }
-
-    private Component labelForEnabled() { return Component.literal((enabledOnly ? "\u2611 " : "\u2610 ") + "Enabled only"); }
-    private Component labelForAmbient() { return Component.literal((ambientOnly ? "\u2611 " : "\u2610 ") + "Ambient only"); }
-    private Component labelForSort() {
-        String s = switch (sortMode) { case TITLE -> "Title"; case ARTIST -> "Artist"; case SOURCE -> "Source"; };
-        return Component.literal("Sort: " + s);
-    }
-
-    private void onAddMusic() { onEditPreset(); }
-
-    private void onEditPreset() {
-        String pid = activePresetId != null ? activePresetId : library.getActivePresetId();
-        if (pid == null) pid = "my_mix";
-        final String finalPid = pid;
-        var opt = library.getPreset(finalPid);
-        MusicPreset preset = opt.orElseGet(() -> { var p = new MusicPreset(finalPid, finalPid, false); library.addOrReplacePreset(p); return p; });
-        Minecraft.getInstance().setScreenAndShow(new EditPresetScreen(this, preset));
-    }
-
-    @Override
-    public void onClose() {
-        Minecraft.getInstance().setScreenAndShow(parent);
-    }
-
-    void rebuildDisplayedTracks() {
-        displayedTracks.clear();
-        List<MusicTrack> base;
-        if (activePresetId != null) {
-            var presetOpt = library.getPreset(activePresetId);
-            if (presetOpt.isPresent()) {
-                base = new ArrayList<>(library.getTracksForPreset(activePresetId));
-                if (selectedCollection != MusicCollection.ALL) base.removeIf(t -> !selectedCollection.matches(t));
-            } else base = new ArrayList<>(library.getTracksForCollection(selectedCollection));
-        } else base = new ArrayList<>(library.getTracksForCollection(selectedCollection));
-
-        String q = searchText != null ? searchText.toLowerCase(Locale.ROOT).trim() : "";
-        for (MusicTrack t : base) {
-            if (enabledOnly && !t.isEnabled()) continue;
-            if (ambientOnly && !t.isAmbientEligible()) continue;
-            if (!q.isEmpty()) {
-                String title = t.getTitle() != null ? t.getTitle().toLowerCase(Locale.ROOT) : "";
-                String artist = t.getArtist() != null ? t.getArtist().toLowerCase(Locale.ROOT) : "";
-                String id = t.getId().toLowerCase(Locale.ROOT);
-                if (!title.contains(q) && !artist.contains(q) && !id.contains(q)) continue;
-            }
-            displayedTracks.add(t);
-        }
-        Comparator<MusicTrack> cmp = switch (sortMode) {
-            case TITLE -> Comparator.comparing(t -> t.getTitle() != null ? t.getTitle().toLowerCase(Locale.ROOT) : t.getId());
-            case ARTIST -> Comparator.comparing(t -> t.getArtist() != null ? t.getArtist().toLowerCase(Locale.ROOT) : "");
-            case SOURCE -> Comparator.comparing(t -> t.getSourceType() != null ? t.getSourceType().name() : "");
+    void rebuild(){
+        var all=library.getAllTracks();
+        Map<String,MusicTrack> dedup=new LinkedHashMap<>();
+        for(var t: all) dedup.putIfAbsent(t.getId(), t);
+        var filtered=new ArrayList<>(library.filter(new ArrayList<>(dedup.values()), search));
+        Comparator<MusicTrack> cmp=switch(sortMode){
+            case TITLE -> Comparator.comparing(t->t.getTitle()!=null?t.getTitle().toLowerCase(Locale.ROOT):t.getId().toLowerCase(Locale.ROOT));
+            case ARTIST -> Comparator.comparing(t->t.getArtist()!=null?t.getArtist().toLowerCase(Locale.ROOT):"");
+            case SOURCE -> Comparator.comparing((MusicTrack t)->t.getSourceType().name()).thenComparing(t->t.getTitle()!=null?t.getTitle():"");
         };
-        displayedTracks.sort(cmp);
-        if (selectedTrack != null && !displayedTracks.contains(selectedTrack)) selectedTrack = null;
+        filtered.sort(cmp);
+        displayed.clear(); displayed.addAll(filtered);
     }
+    private void clamp(){ int visible=tableBottom-tableTop; int total=displayed.size()*ROW_H; int max=Math.max(0,total-visible); if(scroll<0)scroll=0; if(scroll>max)scroll=max; }
 
-    private void clampScroll() {
-        int visibleH = contentBottom - contentTop;
-        int totalH = displayedTracks.size() * ROW_HEIGHT;
-        int max = Math.max(0, totalH - visibleH);
-        if (scrollOffset < 0) scrollOffset = 0;
-        if (scrollOffset > max) scrollOffset = max;
-    }
-
-    @Override
-    public void extractRenderState(GuiGraphicsExtractor gfx, int mouseX, int mouseY, float partialTick) {
-        // Title
-        gfx.centeredText(font, TITLE, width / 2, 6, 0xFFFFFFFF);
-        // Sidebar panel
-        gfx.fill(sidebarLeft - 1, contentTop - 1, sidebarRight + 1, contentBottom + 25, 0xFF000000);
-        gfx.fill(sidebarLeft, contentTop, sidebarRight, contentBottom + 24, 0xFF3A3A3A);
-
-        int labelX = sidebarLeft + 4;
-        int yCursor = contentTop + 4;
-        gfx.text(font, Component.literal("Collections"), labelX, yCursor, 0xFFFFD966);
-        yCursor += 12;
-        int collIdx = selectedCollection.ordinal();
-        int selY = contentTop + 2 + 12 + collIdx * (18 + 4);
-        gfx.fill(sidebarLeft + 1, selY - 1, sidebarRight - 1, selY + 19, 0x33FFD966);
-        yCursor += MusicCollection.values().length * (18 + 4) + 8;
-        gfx.text(font, Component.literal("Presets"), labelX, yCursor, 0xFF8ED9FF);
-
-        // Main content
-        gfx.fill(contentLeft - 1, contentTop - 1, contentRight + 1, contentBottom + 1, 0xFF000000);
-        gfx.fill(contentLeft, contentTop, contentRight, contentBottom, 0xFF2F2F2F);
-
-        int totalH = displayedTracks.size() * ROW_HEIGHT;
-        int visibleH = contentBottom - contentTop;
-        int firstVisible = visibleH == 0 ? 0 : scrollOffset / ROW_HEIGHT;
-        int yOffset = -(scrollOffset % ROW_HEIGHT);
-        int visibleRows = visibleH / ROW_HEIGHT + 2;
-
-        gfx.enableScissor(contentLeft, contentTop, contentRight, contentBottom);
-        for (int i = 0; i < visibleRows; i++) {
-            int idx = firstVisible + i;
-            if (idx >= displayedTracks.size()) break;
-            MusicTrack track = displayedTracks.get(idx);
-            int y = contentTop + yOffset + i * ROW_HEIGHT;
-            if (y + ROW_HEIGHT < contentTop || y >= contentBottom) continue;
-            boolean isSelected = track.equals(selectedTrack);
-            boolean hovered = mouseX >= contentLeft && mouseX < contentRight && mouseY >= y && mouseY < y + ROW_HEIGHT;
-            int bg = (idx & 1) == 0 ? 0xFF3A3A3A : 0xFF333333;
-            if (isSelected) bg = 0xFF4A5A3A; else if (hovered) bg = 0xFF444444;
-            gfx.fill(contentLeft + 1, y, contentRight - 1, y + ROW_HEIGHT, bg);
-            if (isSelected) gfx.fill(contentLeft + 1, y, contentLeft + 3, y + ROW_HEIGHT, 0xFF7ED321);
-            String flags = !track.isEnabled() ? " \u2718" : (track.isFavorite() ? " \u2665" : "");
-            String ambientMark = track.isAmbientEligible() ? "" : " \u25CB";
-            String title = track.getTitle() != null ? track.getTitle() : track.getId();
-            String artist = track.getArtist() != null ? track.getArtist() : "Unknown";
-            String source = track.getSourceType() != null ? shortSource(track.getSourceType().name()) : "?";
-            int leftPad = 8;
-            int rightReserve = 90;
-            int textMax = contentRight - contentLeft - leftPad - rightReserve;
-            if (textMax < 40) textMax = 40;
-            String titleDraw = truncate(title, textMax);
-            int titleW = font.width(titleDraw);
-            String artistDraw = " \u2014 " + artist;
-            int artistMax = contentRight - contentLeft - leftPad - titleW - rightReserve;
-            if (artistMax > 20) artistDraw = truncate(artistDraw, artistMax); else artistDraw = "";
-            gfx.text(font, Component.literal(titleDraw), contentLeft + leftPad, y + 3, 0xFFFFFFFF);
-            if (!artistDraw.isEmpty()) {
-                gfx.text(font, Component.literal(artistDraw), contentLeft + leftPad + titleW, y + 3, 0xFFAAAAAA);
-                titleW += font.width(artistDraw);
+    @Override public void extractRenderState(GuiGraphicsExtractor gfx, int mx,int my,float pt){
+        computeLayout();
+        gfx.centeredText(font,TITLE,width/2,8,0xFFFFFFFF);
+        gfx.centeredText(font,SUB,width/2,18,0xFFAAAAAA);
+        // top scrub bar next to search and sort — only when playing, otherwise hidden
+        var director=com.cuemymusic.client.playback.MusicDirector.getInstance();
+        Minecraft mc=Minecraft.getInstance();
+        var curTrack=director.getCurrentTrack().orElse(null);
+        boolean anyPlaying=false; try{ anyPlaying=curTrack!=null && director.isPlaying(mc); }catch(Exception ignored){}
+        float scrubPos=0,scrubDur=0; try{ scrubPos=director.getPositionSecondsReal(mc); scrubDur=director.getDurationSeconds(); }catch(Exception ignored){}
+        float effDur = scrubDur>0?scrubDur:180f;
+        if(anyPlaying){
+            // place scrub top next to search/sort: to the right of sort or between search and sort
+            // layout: search at width/2-140, sort at width/2+110, scrub between or to right
+            int searchW=200, sortW=110;
+            int searchX=width/2-searchW/2-70;
+            int sortX=width/2+searchW/2-70+8+40;
+            if(sortX+sortW > panelR) { sortX = panelR - sortW; searchX = sortX - searchW - 8 - 60; }
+            // scrub bar to the right of sort, if space else below search/sort but still top
+            int availRight = panelR - (sortX+sortW) - 8;
+            if(availRight >= 140){
+                topScrubX=sortX+sortW+8; topScrubW=availRight; topScrubY=30; topScrubH=20;
+            } else {
+                // fallback: scrub below search/sort but still top area (y=52)
+                topScrubX=panelL+6; topScrubW=panelW-12; topScrubY=52; topScrubH=14;
             }
-            if (!flags.isBlank()) gfx.text(font, Component.literal(flags), contentLeft + leftPad + titleW + 2, y + 3, track.isEnabled() ? 0xFFFF6B6B : 0xFF888888);
-            String srcDraw = source + ambientMark;
-            int sw = font.width(srcDraw);
-            gfx.text(font, Component.literal(srcDraw), contentRight - sw - 8, y + 5, 0xFF888888);
-            int dotX = contentRight - 6;
-            int dotY = y + 6;
-            int dotColor = track.isEnabled() ? 0xFF7ED321 : 0xFF555555;
-            gfx.fill(dotX, dotY, dotX + 4, dotY + 4, dotColor);
+            topBarH=3; topBarW=topScrubW-60; topBarX=topScrubX+30; topBarY=topScrubY+8;
+            // background
+            gfx.fill(topScrubX, topScrubY, topScrubX+topScrubW, topScrubY+topScrubH, 0xCC2A2A2A);
+            gfx.fill(topScrubX, topScrubY, topScrubX+topScrubW, topScrubY+1, 0x44FFFFFF);
+            // bar
+            int fill=(int)(topBarW*Math.min(1f, scrubPos/effDur));
+            gfx.fill(topBarX, topBarY, topBarX+topBarW, topBarY+topBarH, 0xFF1A1A1A);
+            gfx.fill(topBarX, topBarY, topBarX+fill, topBarY+topBarH, 0xFF7ED321);
+            int kx=topBarX+fill; gfx.fill(kx-1, topBarY-2, kx+1, topBarY+topBarH+2, 0xFFFFFFFF);
+            String left=String.format("%d:%02d",(int)scrubPos/60,(int)scrubPos%60); String right=scrubDur>0?String.format("%d:%02d",(int)scrubDur/60,(int)scrubDur%60):String.format("%d:%02d",(int)effDur/60,(int)effDur%60);
+            gfx.text(font, Component.literal(left), topBarX-28, topBarY-2,0xFFAAAAAA);
+            gfx.text(font, Component.literal(right), topBarX+topBarW+4, topBarY-2,0xFFAAAAAA);
+            if(scrubDragging) gfx.fill(topBarX, topBarY-2, topBarX+topBarW, topBarY+topBarH+2, 0x22FFFFFF);
+            // also show track title above scrub when playing
+            String titleLine = curTrack.getTitle() + " — " + (curTrack.getArtist()!=null?curTrack.getArtist():"Unknown");
+            String trunc = titleLine; if(font.width(trunc) > topScrubW-60) { while(trunc.length()>2 && font.width(trunc+"...") > topScrubW-60) trunc=trunc.substring(0,trunc.length()-1); trunc+="..."; }
+            gfx.text(font, Component.literal(trunc), topScrubX+ (topScrubW - font.width(trunc))/2, topScrubY-9, 0xFFAAAAAA);
+        }
+        gfx.fill(panelL,headerY,panelR,headerY+HEADER_H,0xFF2F2F2F);
+        gfx.text(font, Component.literal("✓"), colCheckX, headerY+4,0xFFAAAAAA);
+        gfx.text(font, Component.literal("TYPE"), colTypeX, headerY+4,0xFFAAAAAA);
+        gfx.text(font, Component.literal("TITLE"), colTitleX, headerY+4,0xFFAAAAAA);
+        gfx.text(font, Component.literal("ARTIST"), colArtistX, headerY+4,0xFFAAAAAA);
+        gfx.fill(panelL,headerY+HEADER_H-1,panelR,headerY+HEADER_H,0xFF1A1A1A);
+        gfx.fill(panelL-1,tableTop-1,panelR+1,tableBottom+1,0xFF000000);
+        gfx.fill(panelL,tableTop,panelR,tableBottom,0xFF2F2F2F);
+        int visibleH=tableBottom-tableTop;
+        int first=visibleH<=0?0:scroll/ROW_H;
+        int yOff=-(scroll%ROW_H);
+        int rows=visibleH/ROW_H+3;
+        gfx.enableScissor(panelL,tableTop,panelR,tableBottom);
+        for(int i=0;i<rows;i++){
+            int idx=first+i; if(idx>=displayed.size()) break;
+            var t=displayed.get(idx);
+            int y=tableTop+yOff+i*ROW_H; if(y+ROW_H<tableTop||y>=tableBottom) continue;
+            boolean hover=mx>=panelL&&mx<panelR&&my>=y&&my<y+ROW_H;
+            int bg=(idx&1)==0?0xFF3A3A3A:0xFF333333; if(hover) bg=0xFF444444;
+            gfx.fill(panelL+1,y,panelR-1,y+ROW_H,bg);
+            int cbX=colCheckX, cbY=y+4, cbS=10;
+            gfx.fill(cbX,cbY,cbX+cbS,cbY+cbS,t.isAmbientEligible()?0xFF7ED321:0xFF222222);
+            gfx.fill(cbX,cbY,cbX+cbS,cbY+1,0xFF555555); gfx.fill(cbX,cbY+cbS-1,cbX+cbS,cbY+cbS,0xFF555555);
+            if(t.isAmbientEligible()) gfx.text(font, Component.literal("✓"), cbX+1, cbY-1, 0xFF000000);
+            String type=t.getSourceType()==SourceType.MUSIC_DISC?"Disc":"Music";
+            gfx.text(font, Component.literal(type), colTypeX, y+5, t.getSourceType()==SourceType.MUSIC_DISC?0xFF5AA9FF:0xFF7ED321);
+            gfx.text(font, Component.literal(truncate(t.getTitle()!=null?t.getTitle():t.getId(), colArtistX-colTitleX-8)), colTitleX, y+5, 0xFFFFFFFF);
+            gfx.text(font, Component.literal(truncate(t.getArtist()!=null?t.getArtist():"Unknown", colPreviewX-colArtistX-10)), colArtistX, y+5, 0xFFE8E8E8);
+            boolean isCurrent=curTrack!=null && curTrack.getId().equals(t.getId());
+            boolean isPlaying=false; try{ isPlaying=isCurrent && director.isPlaying(mc); }catch(Exception ignored){}
+            String sym=isPlaying?"||":">";
+            int btnX=colPreviewX, btnY=y+3, btnW=14, btnH=12;
+            boolean btnHover=mx>=btnX&&mx<btnX+btnW&&my>=btnY&&my<btnY+btnH;
+            int btnBg=btnHover?0xFF4A4A4A:0xFF2A2A2A;
+            if(isCurrent && isPlaying) btnBg=btnHover?0xFF5A7A3A:0xFF4A5A3A;
+            gfx.fill(btnX,btnY,btnX+btnW,btnY+btnH,btnBg);
+            int tw=font.width(sym);
+            gfx.text(font, Component.literal(sym), btnX+(btnW-tw)/2, btnY+2, 0xFFFFFFFF);
         }
         gfx.disableScissor();
-        if (displayedTracks.isEmpty()) {
-            String msg = searchText.isBlank() ? "No tracks found" : "No matches for \"" + searchText + "\"";
-            int tw = font.width(msg);
-            gfx.text(font, Component.literal(msg), contentLeft + (contentRight - contentLeft - tw) / 2, contentTop + 24, 0xFFAAAAAA);
+        if(displayed.isEmpty()){
+            String msg=search.isBlank()?"No tracks":"No matches for \""+search+"\"";
+            gfx.text(font, Component.literal(msg), panelL+8, tableTop+12,0xFFAAAAAA);
         }
-        if (totalH > visibleH) {
-            int trackH = visibleH;
-            int thumbH = Math.max(16, trackH * trackH / totalH);
-            int maxScroll = totalH - trackH;
-            int thumbY = contentTop + (maxScroll == 0 ? 0 : (scrollOffset * (trackH - thumbH) / maxScroll));
-            gfx.fill(contentRight - 4, contentTop, contentRight, contentBottom, 0xFF1A1A1A);
-            gfx.fill(contentRight - 4, thumbY, contentRight, thumbY + thumbH, 0xFFAAAAAA);
+        int totalH=displayed.size()*ROW_H;
+        if(totalH>visibleH){
+            int thumbH=Math.max(18, visibleH*visibleH/Math.max(1,totalH));
+            int thumbY=tableTop+ (scroll*(visibleH-thumbH)/Math.max(1,totalH-visibleH));
+            gfx.fill(panelR-4,tableTop,panelR,tableBottom,0xFF1A1A1A);
+            gfx.fill(panelR-4,thumbY,panelR,thumbY+thumbH,0xFFAAAAAA);
         }
-        int detailTop = contentBottom + 1;
-        int detailH = 22;
-        if (detailWidget != null) detailWidget.render(gfx, contentLeft, detailTop, contentRight - contentLeft, detailH, selectedTrack);
-        String countText = displayedTracks.size() + " track" + (displayedTracks.size() == 1 ? "" : "s");
-        if (displayedTracks.size() != library.getAllTracks().size()) countText += " (filtered from " + library.getAllTracks().size() + ")";
-        gfx.text(font, Component.literal(countText), contentLeft + 2, detailTop + detailH + 4, 0xFFAAAAAA);
-        super.extractRenderState(gfx, mouseX, mouseY, partialTick);
+        long selected=library.getAllTracks().stream().filter(MusicTrack::isAmbientEligible).count();
+        String selText=selected+" selected";
+        gfx.text(font, Component.literal(selText), colCheckX, tableBottom+2,0xFF7ED321);
+        String count=displayed.size()+" tracks"+(displayed.size()!=library.getAllTracks().size()?" (filtered)":"");
+        int cw=font.width(count); gfx.text(font, Component.literal(count), panelR-cw, tableBottom+2,0xFFAAAAAA);
+        super.extractRenderState(gfx,mx,my,pt);
     }
-
-    @Override
-    public boolean keyPressed(KeyEvent event) {
-        if (selectedTrack != null && displayedTracks.contains(selectedTrack)) {
-            int idx = displayedTracks.indexOf(selectedTrack);
-            if (event.key() == 265) { // up
-                if (idx > 0) { selectedTrack = displayedTracks.get(idx - 1); ensureVisible(idx - 1); }
-                return true;
-            } else if (event.key() == 264) { // down
-                if (idx < displayedTracks.size() - 1) { selectedTrack = displayedTracks.get(idx + 1); ensureVisible(idx + 1); }
+    @Override public boolean mouseScrolled(double mx,double my,double sx,double sy){
+        if(mx>=panelL&&mx<panelR&&my>=tableTop&&my<tableBottom){ scroll-=(int)(sy*ROW_H*2); clamp(); return true; }
+        return super.mouseScrolled(mx,my,sx,sy);
+    }
+    @Override public boolean mouseClicked(MouseButtonEvent e,boolean d){
+        double mx=e.x(), my=e.y();
+        // top scrub bar next to search/sort — only when playing
+        if(e.button()==0){
+            var dir=com.cuemymusic.client.playback.MusicDirector.getInstance(); Minecraft mc=Minecraft.getInstance();
+            try{
+                var cur=dir.getCurrentTrack().orElse(null);
+                if(cur!=null && dir.isPlaying(mc)){
+                    if(mx>=topBarX&&mx<topBarX+topBarW&&my>=topBarY-4&&my<topBarY+topBarH+4){
+                        float dur=dir.getDurationSeconds(); float effDur=dur>0?dur:180f;
+                        float f=Math.max(0,Math.min(1,(float)(mx - topBarX)/topBarW)); dir.seek(mc, f*effDur);
+                        scrubDragging=true; return true;
+                    }
+                }
+            }catch(Exception ignored){}
+        }
+        if(e.button()==0 && mx>=panelL&&mx<panelR&&my>=tableTop&&my<tableBottom){
+            int idx=(int)((my-tableTop+scroll)/ROW_H);
+            if(idx>=0&&idx<displayed.size()){
+                var t=displayed.get(idx);
+                int first=scroll/ROW_H;
+                int yOff=-(scroll%ROW_H);
+                int rowY=tableTop + yOff + (idx - first)*ROW_H;
+                int cbX=colCheckX, cbY=rowY+4;
+                if(mx>=cbX&&mx<cbX+10&&my>=cbY&&my<cbY+10){
+                    t.setAmbientEligible(!t.isAmbientEligible());
+                    try{ CueMyMusic.getInstance().saveAll(); }catch(Exception ignored){}
+                    return true;
+                }
+                int btnX=colPreviewX, btnY=rowY+3;
+                if(mx>=btnX&&mx<btnX+14&&my>=btnY&&my<btnY+12){
+                    previewTrack(t);
+                    return true;
+                }
                 return true;
             }
         }
-        return super.keyPressed(event);
+        return super.mouseClicked(e,d);
     }
-
-    private void ensureVisible(int idx) {
-        int visibleH = contentBottom - contentTop;
-        int topIdx = scrollOffset / ROW_HEIGHT;
-        int visibleCount = visibleH / ROW_HEIGHT;
-        if (idx < topIdx) scrollOffset = idx * ROW_HEIGHT;
-        else if (idx >= topIdx + visibleCount) scrollOffset = (idx - visibleCount + 1) * ROW_HEIGHT;
-        clampScroll();
+    @Override public boolean mouseDragged(MouseButtonEvent e,double dx,double dy){
+        if(scrubDragging){
+            var dir=com.cuemymusic.client.playback.MusicDirector.getInstance(); Minecraft mc=Minecraft.getInstance();
+            try{
+                var cur=dir.getCurrentTrack().orElse(null);
+                if(cur!=null && dir.isPlaying(mc)){
+                    float dur=dir.getDurationSeconds(); float effDur=dur>0?dur:180f;
+                    float f=Math.max(0,Math.min(1,(float)(e.x()-topBarX)/topBarW)); dir.seek(mc, f*effDur);
+                    return true;
+                }
+            }catch(Exception ignored){}
+        }
+        return super.mouseDragged(e,dx,dy);
     }
-
-    private static String shortSource(String name) {
-        return switch (name) {
-            case "VANILLA" -> "Vanilla"; case "MUSIC_DISC" -> "Disc"; case "SPOTIFY" -> "Spotify";
-            case "YOUTUBE" -> "YouTube"; case "LOCAL_GENERIC" -> "Local"; default -> name;
-        };
+    @Override public boolean mouseReleased(MouseButtonEvent e){ if(scrubDragging){ scrubDragging=false; return true; } return super.mouseReleased(e); }
+    private void previewTrack(MusicTrack track){
+        if(track==null) return;
+        try{
+            var mc=Minecraft.getInstance();
+            var director=com.cuemymusic.client.playback.MusicDirector.getInstance();
+            var cur=director.getCurrentTrack().orElse(null);
+            if(cur!=null && cur.getId().equals(track.getId())){
+                if(director.isPlaying(mc)){ director.togglePause(mc); return; }
+                if(director.isPaused()){ director.togglePause(mc); return; }
+            }
+            try{ if(mc.getMusicManager()!=null) mc.getMusicManager().stopPlaying(); }catch(Exception ignored){}
+            try{ mc.getSoundManager().stop(null, SoundSource.MUSIC); }catch(Exception ignored){}
+            director.stopCurrent(mc);
+            director.playTrack(mc, track);
+        }catch(Exception ignored){}
     }
-
-    private String truncate(String s, int maxWidth) {
-        if (font.width(s) <= maxWidth) return s;
-        String ell = "...";
-        int ellW = font.width(ell);
-        String out = s;
-        while (out.length() > 0 && font.width(out) + ellW > maxWidth) out = out.substring(0, out.length() - 1);
-        return out + ell;
+    @Override public boolean keyPressed(KeyEvent e){
+        if(searchField!=null&&searchField.isFocused()) return super.keyPressed(e);
+        return super.keyPressed(e);
     }
+    @Override public void onClose(){
+        try{ var mc=Minecraft.getInstance(); com.cuemymusic.client.playback.MusicDirector.getInstance().stopCurrent(mc); }catch(Exception ignored){}
+        try{ CueMyMusic.getInstance().saveAll(); }catch(Exception ignored){}
+        Minecraft.getInstance().setScreenAndShow(parent);
+    }
+    @Override public void removed(){
+        try{ var mc=Minecraft.getInstance(); com.cuemymusic.client.playback.MusicDirector.getInstance().stopCurrent(mc); }catch(Exception ignored){}
+    }
+    private String truncate(String s,int maxW){ if(font.width(s)<=maxW) return s; String ell="..."; int ew=font.width(ell); String out=s; while(out.length()>0&&font.width(out)+ew>maxW) out=out.substring(0,out.length()-1); return out+ell; }
 }
