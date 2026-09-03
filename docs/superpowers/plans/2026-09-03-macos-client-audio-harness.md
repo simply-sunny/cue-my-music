@@ -390,13 +390,13 @@ Before starting the harness in `doFirst`, invoke its `--self-test`; fail immedia
 
 - [ ] **Step 3: Establish end-to-end RED with a temporary regression injection**
 
-Temporarily change only `BufferedFileSoundInstance` from `stream=false` to `stream=true`, then run:
+Temporarily change only the channel-thread seek callback so it reports success without calling `AL10.alSourcef`; leave buffered loading, real duration, and slider capability unchanged. Then run:
 
 ```bash
 ./gradlew testClientAudio --rerun-tasks
 ```
 
-Expected: the visible client launches and exits; the task fails specifically at `sweden.seek.offset`, with the matched offset near elapsed playback rather than 60 seconds. Infrastructure setup, Sweden identity, and event capture must pass. Restore `stream=false` immediately afterward and verify `git diff` contains no regression injection.
+Expected: the visible client launches and exits; the task fails specifically at `sweden.seek.offset`, with the matched offset near elapsed playback rather than 60 seconds. Infrastructure setup, Sweden identity, slider dispatch, and event capture must pass. Restore the real `AL10.alSourcef` call immediately afterward and verify `git diff` contains no regression injection.
 
 Record the failing `report.json` in the task report but do not commit generated artifacts.
 
