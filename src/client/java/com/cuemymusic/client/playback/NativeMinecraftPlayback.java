@@ -2,45 +2,50 @@ package com.cuemymusic.client.playback;
 
 import com.cuemymusic.data.MusicTrack;
 import com.cuemymusic.data.SourceType;
+import com.cuemymusic.mixin.ChannelAccessor;
+import com.cuemymusic.mixin.SoundEngineAccessor;
+import com.cuemymusic.mixin.SoundManagerAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.AbstractSoundInstance;
 import net.minecraft.client.resources.sounds.Sound;
 import net.minecraft.client.resources.sounds.SoundInstance;
-import net.minecraft.client.sounds.SoundManager;
-import net.minecraft.client.sounds.WeighedSoundEvents;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
-import net.minecraft.sounds.SoundEvent;
-import net.minecraft.sounds.SoundSource;
-import net.minecraft.util.valueproviders.ConstantFloat;
-
-import com.cuemymusic.mixin.ChannelAccessor;
-import com.cuemymusic.mixin.ChannelHandleAccessor;
-import com.cuemymusic.mixin.SoundEngineAccessor;
-import com.cuemymusic.mixin.SoundManagerAccessor;
-import com.mojang.blaze3d.audio.Channel;
 import net.minecraft.client.sounds.ChannelAccess;
 import net.minecraft.client.sounds.SoundEngine;
+import net.minecraft.client.sounds.SoundManager;
+import net.minecraft.client.sounds.WeighedSoundEvents;
+import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.valueproviders.ConstantFloat;
 import org.lwjgl.openal.AL10;
+import org.lwjgl.openal.AL11;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Vanilla built-in preview only. Uses real built-in Minecraft sound/music references
  * Goal2 registered, via MUSIC category, through SoundManager/SoundInstance.
- * No OGG extraction, no resource packs.
- * Separate from future LocalOggPlayback (file cache).
- * Single preview guarantee: playing B replaces A, rapid Play no duplicates, close stops.
+ * Active track is loaded as a non-streamed OpenAL buffer for truthful seeking.
+ * Runtime OpenAL calls must occur only inside ChannelHandle.execute callbacks.
  */
 public final class NativeMinecraftPlayback {
+    private static final Logger LOGGER = LoggerFactory.getLogger("cue_my_music/playback");
     private static final NativeMinecraftPlayback INSTANCE = new NativeMinecraftPlayback();
 
     private final Object lock = new Object();
     private final PlaybackLifecycle lifecycle = new PlaybackLifecycle();
     private SoundInstance currentSound;
-    private long playStartMs = 0;
-    private long pausedElapsedMs = 0;
+
+    private volatile float positionSeconds = -1;
+    private volatile float durationSeconds = -1;
+    private volatile boolean seekCapable;
+    private volatile boolean probePending;
+    private float pausedPositionSeconds = -1;
+    private float pendingResumeSeek = -1;
 
     private NativeMinecraftPlayback() {}
 
@@ -78,26 +83,47 @@ public final class NativeMinecraftPlayback {
         synchronized (lock) { return lifecycle.state() == PlaybackState.PAUSED; }
     }
 
-    public long getElapsedMs(Minecraft mc) {
-        synchronized (lock) {
-            return getElapsedMsLocked(mc);
-        }
+    public float positionSeconds() {
+        return positionSeconds;
     }
 
-    private long getElapsedMsLocked(Minecraft mc) {
-        var track = lifecycle.track().orElse(null);
-        if (track == null) return 0;
-        if (lifecycle.state() == PlaybackState.PAUSED) return pausedElapsedMs;
-        if (lifecycle.state() == PlaybackState.STOPPED || playStartMs == 0) return 0;
-        // Try real OpenAL position first
-        float pos = getPositionSecondsReal(mc);
-        if (pos >= 0) return (long)(pos * 1000);
-        long elapsed = System.currentTimeMillis() - playStartMs;
-        if (lifecycle.state() != PlaybackState.PLAYING) {
-            Integer dur = track.getDurationSeconds();
-            if (dur != null) return Math.min(elapsed, dur * 1000L);
-        }
-        return elapsed;
+    public float getPositionSeconds() {
+        return positionSeconds;
+    }
+
+    public float getPositionSecondsReal(Minecraft mc) {
+        return positionSeconds;
+    }
+
+    public float durationSeconds() {
+        return durationSeconds;
+    }
+
+    public float getDurationSeconds() {
+        return durationSeconds;
+    }
+
+    public boolean canSeek() {
+        return seekCapable;
+    }
+
+    public long getElapsedMs(Minecraft mc) {
+        float pos = positionSeconds;
+        if (pos >= 0) return (long) (pos * 1000f);
+        return 0L;
+    }
+
+    static float durationSeconds(int bytes, int channels, int bits, int frequency) {
+        if (bytes <= 0 || channels <= 0 || bits <= 0 || frequency <= 0) return -1;
+        return bytes / (channels * frequency * (bits / 8f));
+    }
+
+    static float clampSeek(float requested, float duration) {
+        return Math.max(0, Math.min(requested, duration));
+    }
+
+    private static void clearAlErrors() {
+        for (int i = 0; i < 10 && AL10.alGetError() != AL10.AL_NO_ERROR; i++) {}
     }
 
     private ChannelAccess.ChannelHandle channelHandle(Minecraft mc, SoundInstance sound) {
@@ -115,93 +141,111 @@ public final class NativeMinecraftPlayback {
         }
     }
 
-    /** Real playback position via OpenAL AL_SEC_OFFSET, or -1 if unavailable. */
-    public float getPositionSecondsReal(Minecraft mc) {
-        try {
-            if (mc == null || currentSound == null) return -1;
-            ChannelAccess.ChannelHandle handle = channelHandle(mc, currentSound);
-            if (handle == null || handle.isStopped()) return -1;
-            Channel ch = ((ChannelHandleAccessor) handle).cueMyMusic$getChannel();
-            if (ch == null) return -1;
-            int source = ((ChannelAccessor) ch).cueMyMusic$getSource();
-            // 4132 = AL_SEC_OFFSET
-            return AL10.alGetSourcef(source, 4132);
-        } catch (Exception e) {
-            return -1;
-        }
-    }
-
-    public int getDurationSeconds() {
-        synchronized (lock) {
-            var track = lifecycle.track().orElse(null);
-            if (track == null || track.getDurationSeconds() == null) return 0;
-            return track.getDurationSeconds();
-        }
-    }
-
-    /** Seek to seconds, clamped 0..duration, no duplicate instances. */
-    public boolean seek(Minecraft mc, float seconds) {
-        synchronized (lock) {
-            if (currentSound == null || lifecycle.track().isEmpty()) return false;
-            int dur = getDurationSeconds();
-            if (dur > 0) seconds = Math.max(0, Math.min(seconds, dur));
-            else seconds = Math.max(0, seconds);
-            boolean wasPlaying = lifecycle.state() == PlaybackState.PLAYING;
-            boolean wasPaused = lifecycle.state() == PlaybackState.PAUSED;
+    private void probe(ChannelAccess.ChannelHandle handle) {
+        if (probePending) return;
+        probePending = true;
+        handle.execute(channel -> {
             try {
-                ChannelAccess.ChannelHandle handle = channelHandle(mc, currentSound);
-                if (handle != null && !handle.isStopped()) {
-                    Channel ch = ((ChannelHandleAccessor) handle).cueMyMusic$getChannel();
-                    if (ch != null) {
-                        int source = ((ChannelAccessor) ch).cueMyMusic$getSource();
-                        AL10.alSourcef(source, 4132, seconds);
-                        // keep wall-clock in sync
-                        if (wasPlaying) playStartMs = System.currentTimeMillis() - (long)(seconds * 1000);
-                        else if (wasPaused) pausedElapsedMs = (long)(seconds * 1000);
-                        return true;
+                clearAlErrors();
+                int source = ((ChannelAccessor) channel).cueMyMusic$getSource();
+                int buffer = AL10.alGetSourcei(source, AL10.AL_BUFFER);
+                int size = AL10.alGetBufferi(buffer, AL10.AL_SIZE);
+                int channels = AL10.alGetBufferi(buffer, AL10.AL_CHANNELS);
+                int bits = AL10.alGetBufferi(buffer, AL10.AL_BITS);
+                int frequency = AL10.alGetBufferi(buffer, AL10.AL_FREQUENCY);
+                int error = AL10.alGetError();
+                if (error == AL10.AL_NO_ERROR) {
+                    durationSeconds = durationSeconds(size, channels, bits, frequency);
+                    float pos = AL10.alGetSourcef(source, AL11.AL_SEC_OFFSET);
+                    int posError = AL10.alGetError();
+                    if (posError == AL10.AL_NO_ERROR) {
+                        positionSeconds = pos;
+                        seekCapable = durationSeconds > 0;
+                    } else {
+                        seekCapable = false;
                     }
+                } else {
+                    seekCapable = false;
                 }
-            } catch (Exception ignored) {}
-            // Fallback wall-clock seek (no real OpenAL seek, but keep state consistent)
-            if (wasPlaying) playStartMs = System.currentTimeMillis() - (long)(seconds * 1000);
-            else if (wasPaused) pausedElapsedMs = (long)(seconds * 1000);
-            return false;
+            } finally {
+                probePending = false;
+            }
+        });
+    }
+
+    public CompletableFuture<Boolean> seek(Minecraft mc, float requested) {
+        ChannelAccess.ChannelHandle handle;
+        float duration;
+        synchronized (lock) {
+            handle = channelHandle(mc, currentSound);
+            duration = durationSeconds;
         }
+        if (handle == null || !seekCapable || duration <= 0)
+            return CompletableFuture.completedFuture(false);
+        float target = clampSeek(requested, duration);
+        var result = new CompletableFuture<Boolean>();
+        handle.execute(channel -> {
+            int source = ((ChannelAccessor) channel).cueMyMusic$getSource();
+            clearAlErrors();
+            AL10.alSourcef(source, AL11.AL_SEC_OFFSET, target);
+            boolean ok = AL10.alGetError() == AL10.AL_NO_ERROR;
+            if (ok) positionSeconds = target;
+            result.complete(ok);
+        });
+        return result.completeOnTimeout(false, 1, TimeUnit.SECONDS);
     }
 
     public void tick(Minecraft mc, long now) {
         synchronized (lock) {
             if (lifecycle.state() == PlaybackState.STARTING) {
                 var handle = channelHandle(mc, currentSound);
-                if (handle != null && !handle.isStopped()) lifecycle.attached();
-                else if (lifecycle.startTimedOut(now)) stopLocked(mc);
-            } else if (lifecycle.state() == PlaybackState.PLAYING
-                    && currentSound != null
-                    && mc != null
-                    && mc.getSoundManager() != null
-                    && !mc.getSoundManager().isActive(currentSound)) {
-                stopLocked(mc); // natural completion
+                if (handle != null && !handle.isStopped()) {
+                    lifecycle.attached();
+                    if (pendingResumeSeek > 0) {
+                        float target = pendingResumeSeek;
+                        pendingResumeSeek = -1;
+                        float duration = durationSeconds;
+                        float clamped = duration > 0 ? clampSeek(target, duration) : target;
+                        handle.execute(channel -> {
+                            int source = ((ChannelAccessor) channel).cueMyMusic$getSource();
+                            clearAlErrors();
+                            AL10.alSourcef(source, AL11.AL_SEC_OFFSET, clamped);
+                            boolean ok = AL10.alGetError() == AL10.AL_NO_ERROR;
+                            if (ok) positionSeconds = clamped;
+                        });
+                    } else {
+                        pendingResumeSeek = -1;
+                    }
+                    probe(handle);
+                } else if (lifecycle.startTimedOut(now)) {
+                    stopLocked(mc);
+                }
+            } else if (lifecycle.state() == PlaybackState.PLAYING) {
+                if (currentSound != null
+                        && mc != null
+                        && mc.getSoundManager() != null
+                        && !mc.getSoundManager().isActive(currentSound)) {
+                    stopLocked(mc); // natural completion
+                } else {
+                    var handle = channelHandle(mc, currentSound);
+                    if (handle != null && !handle.isStopped()) {
+                        probe(handle);
+                    }
+                }
             }
         }
     }
 
-    /**
-     * Play a vanilla/disc track via MUSIC category. Granular fileId like
-     * minecraft:music/game/sweden is streamed via FILE Sound (exact track).
-     * Returns true if audibly started.
-     */
     public boolean play(Minecraft mc, MusicTrack track) {
         if (mc == null || track == null) return false;
-        SoundInstance sound = createSound(track);
+        SoundInstance sound = createSound(mc, track);
         if (sound == null) return false;
         synchronized (lock) {
             long now = System.currentTimeMillis();
-            // single preview: stop previous before playing new (prevents duplicates, rapid play)
             stopLocked(mc);
             lifecycle.start(track, now);
             currentSound = sound;
-            playStartMs = now;
-            pausedElapsedMs = 0;
+            positionSeconds = 0;
             try {
                 mc.getSoundManager().play(sound);
                 return true;
@@ -222,8 +266,12 @@ public final class NativeMinecraftPlayback {
         }
         currentSound = null;
         lifecycle.stop();
-        playStartMs = 0;
-        pausedElapsedMs = 0;
+        positionSeconds = -1;
+        durationSeconds = -1;
+        seekCapable = false;
+        probePending = false;
+        pausedPositionSeconds = -1;
+        pendingResumeSeek = -1;
     }
 
     public boolean pause(Minecraft mc) {
@@ -234,9 +282,13 @@ public final class NativeMinecraftPlayback {
 
     private boolean pauseLocked(Minecraft mc) {
         if (lifecycle.state() != PlaybackState.PLAYING || currentSound == null) return false;
-        pausedElapsedMs = getElapsedMsLocked(mc);
-        try { if (mc != null && mc.getSoundManager() != null) mc.getSoundManager().stop(currentSound); } catch (Exception ignored) {}
+        pausedPositionSeconds = positionSeconds >= 0 ? positionSeconds : 0;
+        if (currentSound != null) {
+            try { if (mc != null && mc.getSoundManager() != null) mc.getSoundManager().stop(currentSound); } catch (Exception ignored) {}
+        }
         currentSound = null;
+        seekCapable = false;
+        probePending = false;
         lifecycle.pause();
         return true;
     }
@@ -250,12 +302,12 @@ public final class NativeMinecraftPlayback {
     private boolean resumeLocked(Minecraft mc) {
         var track = lifecycle.track().orElse(null);
         if (lifecycle.state() != PlaybackState.PAUSED || track == null) return false;
-        SoundInstance sound = createSound(track);
+        SoundInstance sound = createSound(mc, track);
         if (sound == null) return false;
         long now = System.currentTimeMillis();
+        pendingResumeSeek = pausedPositionSeconds;
         lifecycle.resume(now);
         currentSound = sound;
-        playStartMs = now - pausedElapsedMs;
         try {
             if (mc != null && mc.getSoundManager() != null) {
                 mc.getSoundManager().play(sound);
@@ -275,30 +327,42 @@ public final class NativeMinecraftPlayback {
         }
     }
 
-    private SoundInstance createSound(MusicTrack track) {
-        if (track.getSourceId() == null) return null;
+    private SoundInstance createSound(Minecraft mc, MusicTrack track) {
+        if (track == null || track.getSourceId() == null) return null;
         Identifier id = Identifier.tryParse(track.getSourceId());
-        if (id == null) return null;
-        // Granular vanilla fileId: minecraft:music/game/sweden -> FILE streamed via MUSIC category, exact track
-        if (track.getSourceType() == SourceType.VANILLA && id.getPath().contains("/")) {
-            // Use VanillaFileSoundInstance (FILE type, streamed) so exact OGG plays, not random event
-            return new VanillaFileSoundInstance(id, SoundSource.MUSIC);
+        if (id == null) {
+            LOGGER.warn("Invalid source ID: {}", track.getSourceId());
+            return null;
         }
-        // Disc or coarse vanilla: resolve SoundEvent from registry, play via MUSIC category
-        SoundEvent event = BuiltInRegistries.SOUND_EVENT.getValue(id);
-        if (event == null) return null;
-        // Preview uses MUSIC category per spec via SoundManager MUSIC
-        // For discs, SimpleSoundInstance.forMusic gives MUSIC category
-        return net.minecraft.client.resources.sounds.SimpleSoundInstance.forMusic(event);
+        Identifier fileId = id;
+        if (track.getSourceType() == SourceType.MUSIC_DISC) {
+            if (mc == null || mc.getSoundManager() == null) {
+                LOGGER.warn("SoundManager not available to resolve music disc {}", track.getSourceId());
+                return null;
+            }
+            WeighedSoundEvents event = mc.getSoundManager().getSoundEvent(id);
+            if (event == null) {
+                LOGGER.warn("SoundEvent not found for music disc {}", track.getSourceId());
+                return null;
+            }
+            Sound chosen = event.getSound(SoundInstance.createUnseededRandom());
+            if (chosen == null) {
+                LOGGER.warn("No sound chosen for music disc {}", track.getSourceId());
+                return null;
+            }
+            fileId = chosen.getLocation();
+        }
+        return new BufferedFileSoundInstance(fileId, SoundSource.MUSIC);
     }
 
-    /** Inner FILE-streamed instance for granular vanilla tracks. MUSIC category, streamed exact file. */
-    public static final class VanillaFileSoundInstance extends AbstractSoundInstance {
+    /** Inner FILE-buffered instance for active tracks. MUSIC category, static exact file. */
+    public static final class BufferedFileSoundInstance extends AbstractSoundInstance {
         private final Sound fileSound;
 
-        public VanillaFileSoundInstance(Identifier fileId, SoundSource source) {
+        public BufferedFileSoundInstance(Identifier fileId, SoundSource source) {
             super(fileId, source, SoundInstance.createUnseededRandom());
-            this.fileSound = new Sound(fileId, ConstantFloat.of(1.0f), ConstantFloat.of(1.0f), 1, Sound.Type.FILE, true, false, 16);
+            this.fileSound = new Sound(fileId, ConstantFloat.of(1.0f), ConstantFloat.of(1.0f),
+                    1, Sound.Type.FILE, false, false, 16);
             this.volume = 1.0f;
             this.pitch = 1.0f;
             this.looping = false;

@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.sounds.SoundSource;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 // ponytail: minimal director — eligible = enabled && ambientEligible, no local files, ambient timer
 public final class MusicDirector {
@@ -91,15 +92,25 @@ public final class MusicDirector {
     }
     public Optional<MusicTrack> getCurrentTrack() { return nativePlayback.getCurrentTrack(); }
     public float getPositionSecondsReal(Minecraft mc) {
-        float p = nativePlayback.getPositionSecondsReal(mc);
-        if (p >= 0) return p;
-        return getElapsedMs(mc) / 1000f;
+        return nativePlayback.positionSeconds();
     }
-    public boolean seek(Minecraft mc, float sec) { return nativePlayback.seek(mc, sec); }
-    public int getDurationSeconds() {
-        var cur = getCurrentTrack().orElse(null);
-        if (cur != null && cur.getDurationSeconds() != null) return cur.getDurationSeconds();
-        return nativePlayback.getDurationSeconds();
+    public float getPositionSeconds() {
+        return nativePlayback.positionSeconds();
+    }
+    public float positionSeconds() {
+        return nativePlayback.positionSeconds();
+    }
+    public boolean canSeek() {
+        return nativePlayback.canSeek();
+    }
+    public CompletableFuture<Boolean> seek(Minecraft mc, float sec) {
+        return nativePlayback.seek(mc, sec);
+    }
+    public float getDurationSeconds() {
+        return nativePlayback.durationSeconds();
+    }
+    public float durationSeconds() {
+        return nativePlayback.durationSeconds();
     }
 
     // ambient timer — called from client tick or widget

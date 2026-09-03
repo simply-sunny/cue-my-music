@@ -414,7 +414,6 @@ public final class VanillaTrackRegistry {
         t.setSourceId(sourceId);
         t.setAmbientEligible(true);
         t.setEnabled(true);
-        t.setDurationSeconds(180);
         l.addOrReplaceTrack(t);
     }
 
@@ -425,7 +424,6 @@ public final class VanillaTrackRegistry {
         t.setJukeboxSongId(jukeboxId);
         t.setAmbientEligible(false);
         t.setEnabled(true);
-        t.setDurationSeconds(180);
         l.addOrReplaceTrack(t);
     }
 
@@ -445,7 +443,6 @@ public final class VanillaTrackRegistry {
         track.setSourceId(soundId.toString());
         track.setEnabled(true);
         track.setAmbientEligible(true);
-        track.setDurationSeconds(180);
         library.addOrReplaceTrack(track);
     }
 
@@ -463,7 +460,6 @@ public final class VanillaTrackRegistry {
         track.setJukeboxSongId(songId.toString());
         track.setEnabled(true);
         track.setAmbientEligible(false);
-        track.setDurationSeconds(180);
         library.addOrReplaceTrack(track);
     }
 
