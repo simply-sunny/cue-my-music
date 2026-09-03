@@ -14,5 +14,14 @@ public class CueMyMusicClient implements ClientModInitializer {
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(mc->{
             try{ com.cuemymusic.client.playback.MusicDirector.getInstance().tick(mc);}catch(Exception ignored){}
         });
+
+        if (Boolean.getBoolean("cuemymusic.autotest")) {
+            try {
+                Class.forName("com.cuemymusic.client.testing.AutomatedClientAudioDriver")
+                        .getMethod("register").invoke(null);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("Client audio test driver unavailable", e);
+            }
+        }
     }
 }

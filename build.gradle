@@ -61,6 +61,14 @@ jar {
     }
 }
 
+tasks.named('jar') {
+    exclude 'com/cuemymusic/client/testing/**'
+}
+
+tasks.named('sourcesJar') {
+    exclude 'com/cuemymusic/client/testing/**'
+}
+
 publishing {
     publications {
         create("mavenJava", MavenPublication) {
