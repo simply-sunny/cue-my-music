@@ -46,6 +46,7 @@ public final class NativeMinecraftPlayback {
     private volatile boolean probePending;
     private float pausedPositionSeconds = -1;
     private float pendingResumeSeek = -1;
+    private long playbackGeneration = 0;
 
     private NativeMinecraftPlayback() {}
 
@@ -104,7 +105,48 @@ public final class NativeMinecraftPlayback {
     }
 
     public boolean canSeek() {
-        return seekCapable;
+        synchronized (lock) {
+            return lifecycle.state() == PlaybackState.PLAYING && seekCapable;
+        }
+    }
+
+    long getPlaybackGeneration() {
+        synchronized (lock) {
+            return playbackGeneration;
+        }
+    }
+
+    long incrementGeneration() {
+        synchronized (lock) {
+            return ++playbackGeneration;
+        }
+    }
+
+    boolean applyProbeResult(long token, float duration, float position, boolean hasError) {
+        synchronized (lock) {
+            if (token == playbackGeneration && lifecycle.state() == PlaybackState.PLAYING) {
+                if (!hasError && duration > 0) {
+                    durationSeconds = duration;
+                    positionSeconds = position;
+                    seekCapable = true;
+                    return true;
+                } else {
+                    seekCapable = false;
+                    return false;
+                }
+            }
+            return false;
+        }
+    }
+
+    boolean applySeekResult(long token, float target, boolean ok) {
+        synchronized (lock) {
+            boolean valid = ok && token == playbackGeneration && lifecycle.state() == PlaybackState.PLAYING;
+            if (valid) {
+                positionSeconds = target;
+            }
+            return valid;
+        }
     }
 
     public long getElapsedMs(Minecraft mc) {
@@ -144,6 +186,10 @@ public final class NativeMinecraftPlayback {
     private void probe(ChannelAccess.ChannelHandle handle) {
         if (probePending) return;
         probePending = true;
+        long gen;
+        synchronized (lock) {
+            gen = playbackGeneration;
+        }
         handle.execute(channel -> {
             try {
                 clearAlErrors();
@@ -155,17 +201,12 @@ public final class NativeMinecraftPlayback {
                 int frequency = AL10.alGetBufferi(buffer, AL10.AL_FREQUENCY);
                 int error = AL10.alGetError();
                 if (error == AL10.AL_NO_ERROR) {
-                    durationSeconds = durationSeconds(size, channels, bits, frequency);
+                    float dur = durationSeconds(size, channels, bits, frequency);
                     float pos = AL10.alGetSourcef(source, AL11.AL_SEC_OFFSET);
-                    int posError = AL10.alGetError();
-                    if (posError == AL10.AL_NO_ERROR) {
-                        positionSeconds = pos;
-                        seekCapable = durationSeconds > 0;
-                    } else {
-                        seekCapable = false;
-                    }
+                    boolean hasError = AL10.alGetError() != AL10.AL_NO_ERROR;
+                    applyProbeResult(gen, dur, pos, hasError);
                 } else {
-                    seekCapable = false;
+                    applyProbeResult(gen, -1, -1, true);
                 }
             } finally {
                 probePending = false;
@@ -176,11 +217,13 @@ public final class NativeMinecraftPlayback {
     public CompletableFuture<Boolean> seek(Minecraft mc, float requested) {
         ChannelAccess.ChannelHandle handle;
         float duration;
+        long gen;
         synchronized (lock) {
             handle = channelHandle(mc, currentSound);
             duration = durationSeconds;
+            gen = playbackGeneration;
         }
-        if (handle == null || !seekCapable || duration <= 0)
+        if (handle == null || handle.isStopped() || !canSeek() || duration <= 0)
             return CompletableFuture.completedFuture(false);
         float target = clampSeek(requested, duration);
         var result = new CompletableFuture<Boolean>();
@@ -189,8 +232,8 @@ public final class NativeMinecraftPlayback {
             clearAlErrors();
             AL10.alSourcef(source, AL11.AL_SEC_OFFSET, target);
             boolean ok = AL10.alGetError() == AL10.AL_NO_ERROR;
-            if (ok) positionSeconds = target;
-            result.complete(ok);
+            boolean applied = applySeekResult(gen, target, ok);
+            result.complete(applied);
         });
         return result.completeOnTimeout(false, 1, TimeUnit.SECONDS);
     }
@@ -206,12 +249,13 @@ public final class NativeMinecraftPlayback {
                         pendingResumeSeek = -1;
                         float duration = durationSeconds;
                         float clamped = duration > 0 ? clampSeek(target, duration) : target;
+                        long gen = playbackGeneration;
                         handle.execute(channel -> {
                             int source = ((ChannelAccessor) channel).cueMyMusic$getSource();
                             clearAlErrors();
                             AL10.alSourcef(source, AL11.AL_SEC_OFFSET, clamped);
                             boolean ok = AL10.alGetError() == AL10.AL_NO_ERROR;
-                            if (ok) positionSeconds = clamped;
+                            applySeekResult(gen, clamped, ok);
                         });
                     } else {
                         pendingResumeSeek = -1;
@@ -261,6 +305,7 @@ public final class NativeMinecraftPlayback {
     }
 
     private void stopLocked(Minecraft mc) {
+        playbackGeneration++;
         if (currentSound != null) {
             try { if (mc != null && mc.getSoundManager() != null) mc.getSoundManager().stop(currentSound); } catch (Exception ignored) {}
         }
@@ -282,6 +327,7 @@ public final class NativeMinecraftPlayback {
 
     private boolean pauseLocked(Minecraft mc) {
         if (lifecycle.state() != PlaybackState.PLAYING || currentSound == null) return false;
+        playbackGeneration++;
         pausedPositionSeconds = positionSeconds >= 0 ? positionSeconds : 0;
         if (currentSound != null) {
             try { if (mc != null && mc.getSoundManager() != null) mc.getSoundManager().stop(currentSound); } catch (Exception ignored) {}
@@ -304,6 +350,7 @@ public final class NativeMinecraftPlayback {
         if (lifecycle.state() != PlaybackState.PAUSED || track == null) return false;
         SoundInstance sound = createSound(mc, track);
         if (sound == null) return false;
+        playbackGeneration++;
         long now = System.currentTimeMillis();
         pendingResumeSeek = pausedPositionSeconds;
         lifecycle.resume(now);
