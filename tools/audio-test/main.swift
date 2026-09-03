@@ -58,20 +58,45 @@ func normalizedCorrelation(_ sample: [Float], _ reference: [Float], at offset: I
 
 func bestMatch(_ sample: [Float], in reference: [Float], step: Int = 240) -> (offset: Int, correlation: Float) {
     precondition(!sample.isEmpty && sample.count <= reference.count)
+    var sampleEnergy: Float = 0
+    vDSP_svesq(sample, 1, &sampleEnergy, vDSP_Length(sample.count))
+    guard sampleEnergy > 0 else { return (0, 0) }
+    
     var best = (0, -Float.infinity)
     let maxOffset = reference.count - sample.count
-    for offset in Swift.stride(from: 0, through: maxOffset, by: max(1, step)) {
-        let score = normalizedCorrelation(sample, reference, at: offset)
-        if score > best.1 {
-            best = (offset, score)
-        }
-    }
-    let fineStart = max(0, best.0 - step)
-    let fineEnd = min(maxOffset, best.0 + step)
-    for offset in fineStart ... fineEnd {
-        let score = normalizedCorrelation(sample, reference, at: offset)
-        if score > best.1 {
-            best = (offset, score)
+    let sampleCount = sample.count
+    
+    sample.withUnsafeBufferPointer { sBuf in
+        reference.withUnsafeBufferPointer { rBuf in
+            let sPtr = sBuf.baseAddress!
+            let rPtr = rBuf.baseAddress!
+            
+            for offset in Swift.stride(from: 0, through: maxOffset, by: max(1, step)) {
+                let rSlicePtr = rPtr + offset
+                var dot: Float = 0
+                var refEnergy: Float = 0
+                vDSP_dotpr(sPtr, 1, rSlicePtr, 1, &dot, vDSP_Length(sampleCount))
+                vDSP_svesq(rSlicePtr, 1, &refEnergy, vDSP_Length(sampleCount))
+                let denominator = sqrt(sampleEnergy * refEnergy)
+                let score = denominator > 0 ? dot / denominator : 0
+                if score > best.1 {
+                    best = (offset, score)
+                }
+            }
+            let fineStart = max(0, best.0 - step)
+            let fineEnd = min(maxOffset, best.0 + step)
+            for offset in fineStart ... fineEnd {
+                let rSlicePtr = rPtr + offset
+                var dot: Float = 0
+                var refEnergy: Float = 0
+                vDSP_dotpr(sPtr, 1, rSlicePtr, 1, &dot, vDSP_Length(sampleCount))
+                vDSP_svesq(rSlicePtr, 1, &refEnergy, vDSP_Length(sampleCount))
+                let denominator = sqrt(sampleEnergy * refEnergy)
+                let score = denominator > 0 ? dot / denominator : 0
+                if score > best.1 {
+                    best = (offset, score)
+                }
+            }
         }
     }
     return best
@@ -369,6 +394,13 @@ final class ProcessAudioCapture {
     private(set) var firstBufferEpochMs: Int64?
     
     func start(targetPID: pid_t) throws {
+        // Reserve capacity for ~35 seconds of stereo Float32 @ 48kHz to avoid allocations on real-time thread
+        os_unfair_lock_lock(&lock)
+        stereoSamples.removeAll(keepingCapacity: true)
+        stereoSamples.reserveCapacity(48_000 * 2 * 35)
+        firstBufferEpochMs = nil
+        os_unfair_lock_unlock(&lock)
+
         // Retry translating PID for up to 10 seconds in case the sound engine is initializing
         var procObj = AudioObjectID(0)
         var address = AudioObjectPropertyAddress(
@@ -490,7 +522,7 @@ final class ProcessAudioCapture {
         }
     }
     
-    fileprivate func processInput(inputData: UnsafePointer<AudioBufferList>) {
+    func processInput(inputData: UnsafePointer<AudioBufferList>) {
         os_unfair_lock_lock(&lock)
         defer { os_unfair_lock_unlock(&lock) }
         
@@ -499,45 +531,51 @@ final class ProcessAudioCapture {
             firstBufferEpochMs = nowMs
         }
         
-        let bl = inputData.pointee
-        if bl.mNumberBuffers == 1 {
-            let buf = bl.mBuffers
+        let abl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
+        if abl.count == 1 {
+            let buf = abl[0]
             if let data = buf.mData {
                 let floatPtr = data.assumingMemoryBound(to: Float.self)
                 let sampleCount = Int(buf.mDataByteSize) / MemoryLayout<Float>.size
                 stereoSamples.append(contentsOf: UnsafeBufferPointer(start: floatPtr, count: sampleCount))
             }
-        } else if bl.mNumberBuffers >= 2 {
-            withUnsafePointer(to: bl.mBuffers) { ptr in
-                let b0 = ptr[0]
-                let b1 = ptr[1]
-                if let d0 = b0.mData, let d1 = b1.mData {
-                    let leftPtr = d0.assumingMemoryBound(to: Float.self)
-                    let rightPtr = d1.assumingMemoryBound(to: Float.self)
-                    let frames = Int(b0.mDataByteSize) / MemoryLayout<Float>.size
-                    stereoSamples.reserveCapacity(stereoSamples.count + frames * 2)
-                    for i in 0 ..< frames {
-                        stereoSamples.append(leftPtr[i])
-                        stereoSamples.append(rightPtr[i])
-                    }
+        } else if abl.count >= 2 {
+            let b0 = abl[0]
+            let b1 = abl[1]
+            if let d0 = b0.mData, let d1 = b1.mData {
+                let leftPtr = d0.assumingMemoryBound(to: Float.self)
+                let rightPtr = d1.assumingMemoryBound(to: Float.self)
+                let frames = min(
+                    Int(b0.mDataByteSize) / MemoryLayout<Float>.size,
+                    Int(b1.mDataByteSize) / MemoryLayout<Float>.size
+                )
+                for i in 0 ..< frames {
+                    stereoSamples.append(leftPtr[i])
+                    stereoSamples.append(rightPtr[i])
                 }
             }
         }
     }
     
     func stopAndCleanup() {
-        if let procID = ioProcID, aggregateID != 0 {
-            AudioDeviceStop(aggregateID, procID)
-            AudioDeviceDestroyIOProcID(aggregateID, procID)
-            self.ioProcID = nil
+        os_unfair_lock_lock(&lock)
+        let procID = ioProcID
+        let agg = aggregateID
+        let tap = tapID
+        self.ioProcID = nil
+        self.aggregateID = 0
+        self.tapID = 0
+        os_unfair_lock_unlock(&lock)
+        
+        if let procID = procID, agg != 0 {
+            AudioDeviceStop(agg, procID)
+            AudioDeviceDestroyIOProcID(agg, procID)
         }
-        if aggregateID != 0 {
-            AudioHardwareDestroyAggregateDevice(aggregateID)
-            self.aggregateID = 0
+        if agg != 0 {
+            AudioHardwareDestroyAggregateDevice(agg)
         }
-        if tapID != 0 {
-            AudioHardwareDestroyProcessTap(tapID)
-            self.tapID = 0
+        if tap != 0 {
+            AudioHardwareDestroyProcessTap(tap)
         }
     }
     
@@ -975,12 +1013,136 @@ func runReportSelfTests() {
     fflush(stdout)
 }
 
+func writeOrUpdateErrorReport(at reportURL: URL, classification: String, errorDescription: String) {
+    var existingAssertions: [ReportAssertion] = []
+    if let existingData = try? Data(contentsOf: reportURL),
+       let existingReport = try? JSONDecoder().decode(Report.self, from: existingData),
+       !existingReport.assertions.isEmpty {
+        existingAssertions = existingReport.assertions
+    }
+    
+    let report = Report(
+        passed: false,
+        classification: classification,
+        error: errorDescription,
+        assertions: existingAssertions
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    if let data = try? encoder.encode(report) {
+        try? data.write(to: reportURL)
+    }
+}
+
+func runReportPreservationSelfTest() {
+    print("[SELF-TEST] Testing report preservation under error...")
+    fflush(stdout)
+    let tempDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+    try! FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    
+    let reportURL = tempDir.appendingPathComponent("report.json")
+    let initialReport = Report(
+        passed: false,
+        classification: "product",
+        error: "Product assertion failed",
+        assertions: [ReportAssertion(name: "sweden.seek.offset", measured: 5.0, expected: "60.0 ... 62.5", passed: false)]
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try! encoder.encode(initialReport).write(to: reportURL)
+    
+    // Call the error report update function
+    writeOrUpdateErrorReport(at: reportURL, classification: "product", errorDescription: "Top-level failure")
+    
+    let data = try! Data(contentsOf: reportURL)
+    let updatedReport = try! JSONDecoder().decode(Report.self, from: data)
+    precondition(!updatedReport.assertions.isEmpty, "Assertions should be preserved, not overwritten with []")
+    precondition(updatedReport.assertions.count == 1, "Expected 1 assertion preserved, got \(updatedReport.assertions.count)")
+    precondition(updatedReport.classification == "product")
+    precondition(updatedReport.error == "Top-level failure")
+    print("  [PASS] Preserved \(updatedReport.assertions.count) assertions in report.json")
+    fflush(stdout)
+}
+
+func runDeinterleavedAudioBufferListSelfTest() {
+    print("[SELF-TEST] Testing deinterleaved AudioBufferList and idempotent cleanup...")
+    fflush(stdout)
+    
+    let capture = ProcessAudioCapture()
+    
+    // Allocate a 2-buffer AudioBufferList (deinterleaved stereo, 3 frames)
+    // Left: [1.0, 2.0, 3.0], Right: [4.0, 5.0, 6.0]
+    var leftChannel: [Float] = [1.0, 2.0, 3.0]
+    var rightChannel: [Float] = [4.0, 5.0, 6.0]
+    
+    let ablSize = MemoryLayout<AudioBufferList>.size + MemoryLayout<AudioBuffer>.size
+    let rawMem = UnsafeMutableRawPointer.allocate(byteCount: ablSize, alignment: MemoryLayout<AudioBufferList>.alignment)
+    defer { rawMem.deallocate() }
+    
+    let ablPtr = rawMem.bindMemory(to: AudioBufferList.self, capacity: 1)
+    ablPtr.pointee.mNumberBuffers = 2
+    
+    leftChannel.withUnsafeMutableBufferPointer { leftBuf in
+        rightChannel.withUnsafeMutableBufferPointer { rightBuf in
+            let abl = UnsafeMutableAudioBufferListPointer(ablPtr)
+            abl[0] = AudioBuffer(mNumberChannels: 1, mDataByteSize: UInt32(3 * MemoryLayout<Float>.size), mData: leftBuf.baseAddress)
+            abl[1] = AudioBuffer(mNumberChannels: 1, mDataByteSize: UInt32(3 * MemoryLayout<Float>.size), mData: rightBuf.baseAddress)
+            
+            capture.processInput(inputData: UnsafePointer(ablPtr))
+        }
+    }
+    
+    let (samples, _, _) = capture.getCapturedSamples()
+    let expected: [Float] = [1.0, 4.0, 2.0, 5.0, 3.0, 6.0]
+    precondition(samples == expected, "Deinterleaved stereo was not properly interleaved: got \(samples), expected \(expected)")
+    print("  [PASS] Deinterleaved AudioBufferList successfully interleaved without out-of-bounds access")
+    fflush(stdout)
+    
+    // Test idempotent stopAndCleanup
+    capture.stopAndCleanup()
+    capture.stopAndCleanup() // safe duplicate call
+    print("  [PASS] stopAndCleanup verified idempotent across multiple invocations")
+    fflush(stdout)
+}
+
+func isTimeoutExceeded(startTime: Date, timeoutSeconds: TimeInterval, currentTime: Date = Date()) -> Bool {
+    return currentTime.timeIntervalSince(startTime) >= timeoutSeconds
+}
+
+func runSeparateTimeoutAnchorsSelfTest() {
+    print("[SELF-TEST] Testing separate timeout anchors helper...")
+    fflush(stdout)
+    
+    let t0 = Date(timeIntervalSince1970: 1000)
+    let pidFoundTime = Date(timeIntervalSince1970: 1020) // 20s later PID arrives
+    
+    // If scenario monitoring used t0, only 10s would remain
+    let wrongRemaining = 30.0 - pidFoundTime.timeIntervalSince(t0)
+    precondition(wrongRemaining == 10.0, "Old shared anchor drained scenario budget")
+    
+    // With separate scenario start anchor at pidFoundTime:
+    let scenarioStart = pidFoundTime
+    let scenarioCheckTime = Date(timeIntervalSince1970: 1045) // 25s into scenario
+    
+    precondition(!isTimeoutExceeded(startTime: scenarioStart, timeoutSeconds: 30.0, currentTime: scenarioCheckTime),
+                 "Scenario should not time out at 25s under separate anchor")
+    let scenarioTimeoutTime = Date(timeIntervalSince1970: 1051) // 31s into scenario
+    precondition(isTimeoutExceeded(startTime: scenarioStart, timeoutSeconds: 30.0, currentTime: scenarioTimeoutTime),
+                 "Scenario should time out after 30s under separate anchor")
+    print("  [PASS] Separate 30-second anchors verified")
+    fflush(stdout)
+}
+
 func runAllSelfTests() {
     print("=== STARTING AUDIO-TEST SELF-TEST ===")
     fflush(stdout)
     runDspSelfTests()
     runEventParsingSelfTests()
     runReportSelfTests()
+    runReportPreservationSelfTest()
+    runDeinterleavedAudioBufferListSelfTest()
+    runSeparateTimeoutAnchorsSelfTest()
     print("=== ALL SELF-TESTS PASSED ===")
     fflush(stdout)
 }
@@ -1000,10 +1162,10 @@ func runLiveCaptureAndAnalysis(eventsPath: String, outputDir: String, assetsDir:
     
     var targetPID: pid_t?
     var events: [PhaseEvent] = []
-    let timeoutSeconds: TimeInterval = 30.0
-    let startWait = Date()
+    let pidTimeoutSeconds: TimeInterval = 30.0
+    let pidWaitStart = Date()
     
-    while Date().timeIntervalSince(startWait) < timeoutSeconds {
+    while !isTimeoutExceeded(startTime: pidWaitStart, timeoutSeconds: pidTimeoutSeconds) {
         if fm.fileExists(atPath: eventsURL.path),
            let content = try? String(contentsOf: eventsURL, encoding: .utf8) {
             let parsed = parsePhaseEvents(from: content)
@@ -1017,7 +1179,7 @@ func runLiveCaptureAndAnalysis(eventsPath: String, outputDir: String, assetsDir:
     }
     
     guard let pid = targetPID else {
-        throw HarnessError.infrastructure("Timeout waiting for Java PID in \(eventsPath) after \(timeoutSeconds)s")
+        throw HarnessError.infrastructure("Timeout waiting for Java PID in \(eventsPath) after \(pidTimeoutSeconds)s")
     }
     
     print("[HARNESS] Found Java PID \(pid). Initializing CoreAudio process tap...")
@@ -1028,17 +1190,17 @@ func runLiveCaptureAndAnalysis(eventsPath: String, outputDir: String, assetsDir:
     print("[HARNESS] Process tap active on aggregate device at \(capture.sampleRate) Hz. Capturing...")
     fflush(stdout)
     
-    // Clean up tap & aggregate device regardless of how this function exits
+    // Clean up tap & aggregate device regardless of how this function exits (idempotent)
     defer {
-        print("[HARNESS] Cleaning up CoreAudio process tap and aggregate device...")
-        fflush(stdout)
         capture.stopAndCleanup()
     }
     
-    // Monitor events until FINISH, FAILED, or timeout
+    // Monitor events until FINISH, FAILED, or timeout (separate 30-second anchor)
+    let scenarioStart = Date()
+    let scenarioTimeoutSeconds: TimeInterval = 30.0
     var finished = false
     var failureError: String?
-    while Date().timeIntervalSince(startWait) < timeoutSeconds {
+    while !isTimeoutExceeded(startTime: scenarioStart, timeoutSeconds: scenarioTimeoutSeconds) {
         if let content = try? String(contentsOf: eventsURL, encoding: .utf8) {
             events = parsePhaseEvents(from: content)
             if let failEvent = events.first(where: { $0.phase.uppercased().contains("FAIL") || $0.success == false }) {
@@ -1066,7 +1228,9 @@ func runLiveCaptureAndAnalysis(eventsPath: String, outputDir: String, assetsDir:
     Thread.sleep(forTimeInterval: 1.5)
     
     let (stereoSamples, captureStartEpochMs, sampleRate) = capture.getCapturedSamples()
-    print("[HARNESS] Capture finished. Captured \(stereoSamples.count / 2) stereo frames (\(String(format: "%.2f", Double(stereoSamples.count / 2) / sampleRate))s).")
+    // Explicit early stop/cleanup of CoreAudio capture before file writing and DSP analysis
+    capture.stopAndCleanup()
+    print("[HARNESS] Capture finished and device stopped. Captured \(stereoSamples.count / 2) stereo frames (\(String(format: "%.2f", Double(stereoSamples.count / 2) / sampleRate))s).")
     fflush(stdout)
     
     // Write capture.wav
@@ -1156,26 +1320,15 @@ if isSelfTest {
         exit(0)
     } catch let err as HarnessError {
         fputs("\(err.description)\n", stderr)
-        // Attempt to write failing report.json if outputDir exists
         let outputURL = URL(fileURLWithPath: outDir)
         let reportURL = outputURL.appendingPathComponent("report.json")
-        let report = Report(passed: false, classification: err.classification, error: err.description, assertions: [])
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? encoder.encode(report) {
-            try? data.write(to: reportURL)
-        }
+        writeOrUpdateErrorReport(at: reportURL, classification: err.classification, errorDescription: err.description)
         exit(1)
     } catch {
         fputs("[INFRASTRUCTURE ERROR] Unexpected error: \(error)\n", stderr)
         let outputURL = URL(fileURLWithPath: outDir)
         let reportURL = outputURL.appendingPathComponent("report.json")
-        let report = Report(passed: false, classification: "infrastructure", error: "\(error)", assertions: [])
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? encoder.encode(report) {
-            try? data.write(to: reportURL)
-        }
+        writeOrUpdateErrorReport(at: reportURL, classification: "infrastructure", errorDescription: "\(error)")
         exit(1)
     }
 } else {
