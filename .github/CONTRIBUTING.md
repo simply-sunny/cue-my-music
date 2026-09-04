@@ -17,7 +17,7 @@ Run focused tests when possible: `./gradlew test --tests <Class>`.
 ## Expectations
 
 - Keep changes focused and scoped to one concern per PR.
-- Match existing style: vanilla `Screen` widgets, no Cloth Config.
+- Match existing style: vanilla `Screen` widgets.
 - Verify docs and metadata match the source; no unverified claims.
 - Do not add Queue or external import features in this pre-queue line.
 

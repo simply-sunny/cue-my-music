@@ -31,3 +31,14 @@ Thumbs.db
 
 # Fabric
 remappedSrc/
+
+# Dev & testing tools (non-mcfunction)
+tools/
+
+# AI / Assistant artifacts
+.pi/
+.agents/
+.superpowers/
+.claude/
+.cursor/
+
