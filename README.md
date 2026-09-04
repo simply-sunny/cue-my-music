@@ -18,16 +18,16 @@ Browse, preview, and control Minecraft music (70 vanilla + 22 music discs = 92 e
 ## Requirements
 
 - Minecraft 26.2
-- Fabric Loader 0.19.3
-- Fabric API 0.158.0+26.2
-- Java 25
-- Mod Menu 20.0.1 (optional)
+- Fabric Loader (any version supporting 26.2)
+- Fabric API (any version compatible with 26.2)
+- Java 25+
+- Mod Menu (optional, any version compatible with 26.2)
 
 ## Install
 
 1. Install Fabric Loader for Minecraft 26.2.
 2. Add Fabric API and (optionally) Mod Menu to `mods/`.
-3. Add `cue-my-music-1.0.0-pre-queue.jar` to `mods/`.
+3. Add `cue-my-music-1.0.0-pre-queue.jar` (from [Releases](https://github.com/simply-sunny/cue-my-music/releases)) to `mods/`.
 4. Launch the client.
 
 ## Controls
