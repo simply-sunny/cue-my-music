@@ -6,7 +6,7 @@ Browse, preview, and control Minecraft music through a native client-side librar
 
 - Jukebox Library screen built with vanilla `Screen` widgets (no Cloth Config)
 - Unified track model for vanilla background music and music discs
-- Search, source filtering, and sorting by artist/title/source
+- Fuzzy search by title/artist/id and sorting by artist/title/source
 - Per-row preview and ambient-eligibility toggle
 - Global playback scrub with seek support via buffered decoding
 - Persistent enabled/ambient state in `cue-my-music/` under the game directory
@@ -32,7 +32,7 @@ Browse, preview, and control Minecraft music through a native client-side librar
 - Library: search field filters by title/artist, sort button cycles artist/title/source.
 - Row checkbox: include or exclude track from ambient selection.
 - Row preview button (`>` / `||`): preview the track.
-- Top scrub bar: drag to seek when a seekable track is playing; time appears on hover/drag.
+- Top scrub bar: drag to seek when a seekable track is playing; displays current time and duration.
 - Done: saves state and returns to the previous screen.
 
 ## Build

@@ -8,6 +8,14 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PublicReleaseContractTest {
+    @Test void readmeDocumentsFeaturesAndControlsAccurately() throws Exception {
+        String readme = Files.readString(Path.of("README.md"));
+        assertTrue(readme.contains("Fuzzy search by title/artist/id"));
+        assertFalse(readme.contains("source filtering"));
+        assertTrue(readme.contains("displays current time and duration"));
+        assertFalse(readme.contains("time appears on hover/drag"));
+    }
+
     @Test void publicReleaseMetadataIsAccurate() throws Exception {
         String readme = Files.readString(Path.of("README.md"));
         String props = Files.readString(Path.of("gradle.properties"));
