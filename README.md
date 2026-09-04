@@ -18,10 +18,9 @@ Browse, preview, and control Minecraft music (70 vanilla + 22 music discs = 92 e
 ## Requirements
 
 - Minecraft 26.2
-- Fabric Loader (any version supporting 26.2)
-- Fabric API (any version compatible with 26.2)
-- Java 25+
-- Mod Menu (optional, any version compatible with 26.2)
+- Fabric Loader
+- Fabric API
+- Mod Menu (optional)
 
 ## Install
 
