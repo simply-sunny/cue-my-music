@@ -4,7 +4,7 @@
 
 # Cue My Music
 
-Browse, preview, and control Minecraft music (70 vanilla + 22 music discs = 92 exact tracks) through a native client-side library.
+Browse, preview, and control Minecraft music through a native client-side library.
 
 ## Features
 
