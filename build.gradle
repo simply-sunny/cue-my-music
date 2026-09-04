@@ -65,18 +65,33 @@ tasks.named('jar') {
     preserveFileTimestamps = false
     reproducibleFileOrder = true
     exclude 'com/cuemymusic/client/testing/**'
+    outputs.cacheIf { false }
     doLast {
         def jarFile = archiveFile.get().asFile
         def manifestAttr = "Fabric-Loom-Client-Only-Entries"
-        def jarIn = new java.util.jar.JarFile(jarFile)
-        def manifest = jarIn.getManifest()
-        if (manifest != null) {
+        def tmp = new File(jarFile.parent, jarFile.name + ".tmp")
+        boolean needsRewrite = false
+        java.util.jar.Manifest manifest = null
+        // Use try-with-resources for JarFile to avoid leaks; capture manifest safely
+        try (def jarIn = new java.util.jar.JarFile(jarFile)) {
+            manifest = jarIn.getManifest()
+            if (manifest == null) {
+                return
+            }
             def val = manifest.getMainAttributes().getValue(manifestAttr)
-            if (val != null && val.contains("client/testing")) {
-                def filtered = val.split(";").findAll { !it.contains("client/testing") }.join(";")
-                manifest.getMainAttributes().putValue(manifestAttr, filtered)
-                def tmp = new File(jarFile.parent, jarFile.name + ".tmp")
-                def jos = new java.util.jar.JarOutputStream(new FileOutputStream(tmp))
+            if (val == null || !val.contains("client/testing")) {
+                return
+            }
+            def filteredList = val.split(";").findAll { !it.contains("client/testing") }
+            if (filteredList.isEmpty()) {
+                manifest.getMainAttributes().remove(new java.util.jar.Attributes.Name(manifestAttr))
+            } else {
+                manifest.getMainAttributes().putValue(manifestAttr, filteredList.join(";"))
+            }
+            needsRewrite = true
+            // Re-open for rewrite after manifest mutation; keep jarIn open for reading entries
+            // Use try-with-resources for output and ensure cleanup on failure
+            try (def jos = new java.util.jar.JarOutputStream(new FileOutputStream(tmp))) {
                 def manifestEntry = new java.util.jar.JarEntry("META-INF/MANIFEST.MF")
                 manifestEntry.time = 0
                 manifestEntry.lastModifiedTime = java.nio.file.attribute.FileTime.fromMillis(0)
@@ -92,19 +107,29 @@ tasks.named('jar') {
                     newEntry.lastModifiedTime = java.nio.file.attribute.FileTime.fromMillis(0)
                     jos.putNextEntry(newEntry)
                     if (!entry.isDirectory()) {
-                        jos.write(jarIn.getInputStream(entry).bytes)
+                        try (def is = jarIn.getInputStream(entry)) {
+                            is.transferTo(jos)
+                        }
                     }
                     jos.closeEntry()
                 }
-                jos.close()
-                jarIn.close()
-                if (!jarFile.delete()) { throw new GradleException("Failed to delete original jar") }
-                if (!tmp.renameTo(jarFile)) { throw new GradleException("Failed to rename filtered jar") }
-            } else {
-                jarIn.close()
             }
-        } else {
-            jarIn.close()
+        } catch (Exception e) {
+            // Cleanup temp on failure before rethrowing
+            if (tmp.exists()) {
+                tmp.delete()
+            }
+            throw e
+        }
+        if (needsRewrite) {
+            try {
+                java.nio.file.Files.move(tmp.toPath(), jarFile.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
+                java.nio.file.Files.move(tmp.toPath(), jarFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } catch (java.io.IOException ex) {
+                // Fallback for non-atomic filesystems
+                java.nio.file.Files.move(tmp.toPath(), jarFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
         }
     }
 }
