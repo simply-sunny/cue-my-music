@@ -29,6 +29,23 @@ class ClientAudioDriverContractTest {
     }
 
     @Test
+    void productionJarExcludesTestingEntriesAndManifest() throws Exception {
+        var jarPath = Path.of("build/libs/cue-my-music-1.0.0-pre-queue.jar");
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(jarPath), "Production jar must exist - run :jar before :test: " + jarPath);
+        try (var jar = new java.util.jar.JarFile(jarPath.toFile())) {
+            var hasTestingEntry = jar.stream().anyMatch(e -> e.getName().contains("client/testing"));
+            org.junit.jupiter.api.Assertions.assertFalse(hasTestingEntry, "Production jar must not contain client/testing entries");
+            var manifest = jar.getManifest();
+            org.junit.jupiter.api.Assertions.assertNotNull(manifest, "Manifest must exist");
+            var val = manifest.getMainAttributes().getValue("Fabric-Loom-Client-Only-Entries");
+            if (val != null) {
+                org.junit.jupiter.api.Assertions.assertFalse(val.contains("client/testing"),
+                        "Manifest Fabric-Loom-Client-Only-Entries must not contain client/testing, but was: " + val);
+            }
+        }
+    }
+
+    @Test
     void driverEnumHasExactFourteenPhases() {
         var states = com.cuemymusic.client.testing.AutomatedClientAudioDriver.State.values();
         org.junit.jupiter.api.Assertions.assertEquals(14, states.length);

@@ -62,7 +62,51 @@ jar {
 }
 
 tasks.named('jar') {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
     exclude 'com/cuemymusic/client/testing/**'
+    doLast {
+        def jarFile = archiveFile.get().asFile
+        def manifestAttr = "Fabric-Loom-Client-Only-Entries"
+        def jarIn = new java.util.jar.JarFile(jarFile)
+        def manifest = jarIn.getManifest()
+        if (manifest != null) {
+            def val = manifest.getMainAttributes().getValue(manifestAttr)
+            if (val != null && val.contains("client/testing")) {
+                def filtered = val.split(";").findAll { !it.contains("client/testing") }.join(";")
+                manifest.getMainAttributes().putValue(manifestAttr, filtered)
+                def tmp = new File(jarFile.parent, jarFile.name + ".tmp")
+                def jos = new java.util.jar.JarOutputStream(new FileOutputStream(tmp))
+                def manifestEntry = new java.util.jar.JarEntry("META-INF/MANIFEST.MF")
+                manifestEntry.time = 0
+                manifestEntry.lastModifiedTime = java.nio.file.attribute.FileTime.fromMillis(0)
+                jos.putNextEntry(manifestEntry)
+                manifest.write(jos)
+                jos.closeEntry()
+                def entries = jarIn.entries()
+                while (entries.hasMoreElements()) {
+                    def entry = entries.nextElement()
+                    if (entry.name == "META-INF/MANIFEST.MF") continue
+                    def newEntry = new java.util.jar.JarEntry(entry)
+                    newEntry.time = 0
+                    newEntry.lastModifiedTime = java.nio.file.attribute.FileTime.fromMillis(0)
+                    jos.putNextEntry(newEntry)
+                    if (!entry.isDirectory()) {
+                        jos.write(jarIn.getInputStream(entry).bytes)
+                    }
+                    jos.closeEntry()
+                }
+                jos.close()
+                jarIn.close()
+                if (!jarFile.delete()) { throw new GradleException("Failed to delete original jar") }
+                if (!tmp.renameTo(jarFile)) { throw new GradleException("Failed to rename filtered jar") }
+            } else {
+                jarIn.close()
+            }
+        } else {
+            jarIn.close()
+        }
+    }
 }
 
 tasks.named('sourcesJar') {
@@ -79,6 +123,7 @@ publishing {
 
 test {
     useJUnitPlatform()
+    dependsOn tasks.named('jar')
 }
 
 dependencies {
