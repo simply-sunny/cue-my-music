@@ -26,7 +26,7 @@ Browse, preview, and control Minecraft music through a native client-side librar
 
 1. Install Fabric Loader for Minecraft 26.2.
 2. Add Fabric API and (optionally) Mod Menu to `mods/`.
-3. Add `cue-my-music-1.0.0-pre-queue.jar` (from [Releases](https://github.com/simply-sunny/cue-my-music/releases)) to `mods/`.
+3. Add `cue-my-music-1.0.0.jar` (from [Releases](https://github.com/simply-sunny/cue-my-music/releases)) to `mods/`.
 4. Launch the client.
 
 ## Controls
@@ -43,13 +43,13 @@ Browse, preview, and control Minecraft music through a native client-side librar
 ./gradlew clean test build
 ```
 
-Output jar: `build/libs/cue-my-music-1.0.0-pre-queue.jar` (requires Java 25).
+Output jar: `build/libs/cue-my-music-1.0.0.jar` (requires Java 25).
 
 ## Limitations
 
 - Client-side only; no server sync or multiplayer state.
 - Library covers vanilla tracks and music discs only.
-- No external imports, streaming, or queue editing in this pre-queue build.
+- No external imports, streaming, or custom queue editing in this build.
 - Ambient replacement respects vanilla music timing and volume settings.
 
 ## License

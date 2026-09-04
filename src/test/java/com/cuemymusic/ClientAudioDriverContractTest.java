@@ -30,7 +30,7 @@ class ClientAudioDriverContractTest {
 
     @Test
     void productionJarExcludesTestingEntriesAndManifest() throws Exception {
-        var jarPath = Path.of("build/libs/cue-my-music-1.0.0-pre-queue.jar");
+        var jarPath = Path.of("build/libs/cue-my-music-1.0.0.jar");
         org.junit.jupiter.api.Assertions.assertTrue(Files.exists(jarPath), "Production jar must exist - run :jar before :test: " + jarPath);
         try (var jar = new java.util.jar.JarFile(jarPath.toFile())) {
             var hasTestingEntry = jar.stream().anyMatch(e -> e.getName().contains("client/testing"));
