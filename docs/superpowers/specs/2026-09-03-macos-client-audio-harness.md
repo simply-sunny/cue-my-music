@@ -140,7 +140,7 @@ Infrastructure failures are reported separately from product assertion failures.
 
 Swift unit checks use generated PCM arrays to prove correlation, offset detection, residual overlap rejection, and silence thresholds before the harness is trusted against Minecraft.
 
-The end-to-end test must first run with a temporary one-line regression injection that changes the active sound back to streamed mode, and fail specifically because the post-seek reference offset remains near playback time instead of 60 seconds. The regression injection is then restored; the same unchanged harness must pass against buffered playback.
+The end-to-end test must first run with a temporary regression injection that leaves buffered playback and the visible slider active but turns the OpenAL seek application into a successful no-op. It must fail specifically because the post-seek reference offset remains near playback time instead of 60 seconds. The regression injection is then restored; the same unchanged harness must pass against real buffered seeking.
 
 ## Operational requirements
 
