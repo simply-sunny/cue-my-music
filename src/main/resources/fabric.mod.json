@@ -3,7 +3,7 @@
   "id": "cue_my_music",
   "version": "${version}",
   "name": "Cue My Music",
-  "description": "Manage vanilla music, discs, and local cached tracks through a Jukebox Library UI.",
+  "description": "Browse, preview, and control Minecraft music through a native client-side library.",
   "authors": ["You"],
   "contact": {
     "homepage": "https://github.com/simply-sunny/cue-my-music",
@@ -11,7 +11,7 @@
   },
   "license": "MIT",
   "icon": "assets/cue_my_music/icon.png",
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
     "main": ["com.cuemymusic.CueMyMusic"],
     "client": ["com.cuemymusic.client.CueMyMusicClient"],
