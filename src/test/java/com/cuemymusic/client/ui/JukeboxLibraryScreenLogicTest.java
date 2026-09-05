@@ -54,6 +54,14 @@ public class JukeboxLibraryScreenLogicTest {
     }
 
     @Test
+    void downloadAllButtonLayoutFitsInFooter() {
+        var l = JukeboxLibraryScreen.computeLayout(854, 480);
+        assertTrue(l.doneY() > l.listBottom());
+        assertTrue(l.downloadAllX() + l.downloadAllW() <= l.doneX());
+        assertTrue(l.downloadAllX() >= l.contentL());
+    }
+
+    @Test
     void playbackSliderFormatMath() {
         assertEquals("0:00", PlaybackSlider.format(0f));
         assertEquals("0:05", PlaybackSlider.format(5.3f));

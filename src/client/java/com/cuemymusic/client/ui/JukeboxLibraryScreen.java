@@ -1,6 +1,8 @@
 package com.cuemymusic.client.ui;
 
 import com.cuemymusic.CueMyMusic;
+import com.cuemymusic.client.CueMyMusicClient;
+import com.cuemymusic.client.download.YoutubeDownloader;
 import com.cuemymusic.client.playback.MusicDirector;
 import com.cuemymusic.client.playback.PlaybackState;
 import com.cuemymusic.data.MusicLibrary;
@@ -23,7 +25,7 @@ import java.util.function.Consumer;
 
 public class JukeboxLibraryScreen extends Screen {
     private static final Component TITLE = Component.literal("Cue My Music");
-    private static final Component SUB = Component.literal("Vanilla Music & Discs");
+    private static final Component SUB = Component.literal("Vanilla Music, Discs & YouTube");
     public static final int ROW_H = 20, ROW_CONTROL_SIZE = 20;
 
     public record Layout(
@@ -47,7 +49,11 @@ public class JukeboxLibraryScreen extends Screen {
         int doneX,
         int doneY,
         int doneW,
-        int doneH
+        int doneH,
+        int downloadAllX,
+        int downloadAllY,
+        int downloadAllW,
+        int downloadAllH
     ) {
         public int searchRight() { return searchX + searchW; }
         public int sortRight() { return sortX + sortW; }
@@ -79,6 +85,12 @@ public class JukeboxLibraryScreen extends Screen {
         int doneX = (width - doneW) / 2;
         int doneH = 20;
         int listHeight = Math.max(ROW_H, doneY - 8 - listTop);
+
+        int downloadAllW = Math.min(110, Math.max(70, doneX - contentL - 10));
+        int downloadAllX = doneX - downloadAllW - 8;
+        int downloadAllY = doneY;
+        int downloadAllH = 20;
+
         return new Layout(
             contentW,
             contentL,
@@ -100,7 +112,11 @@ public class JukeboxLibraryScreen extends Screen {
             doneX,
             doneY,
             doneW,
-            doneH
+            doneH,
+            downloadAllX,
+            downloadAllY,
+            downloadAllW,
+            downloadAllH
         );
     }
 
@@ -116,6 +132,7 @@ public class JukeboxLibraryScreen extends Screen {
     private Button sortButton;
     private PlaybackSlider slider;
     private TrackList trackList;
+    private Button downloadAllButton;
     private Button doneButton;
 
     public JukeboxLibraryScreen(Screen parent) {
@@ -166,11 +183,29 @@ public class JukeboxLibraryScreen extends Screen {
         trackList = new TrackList(minecraft, layout);
         addRenderableWidget(trackList);
 
+        downloadAllButton = Button.builder(Component.literal("Download all"), b -> handleDownloadAll())
+                .bounds(layout.downloadAllX(), layout.downloadAllY(), layout.downloadAllW(), layout.downloadAllH())
+                .build();
+        addRenderableWidget(downloadAllButton);
+
         doneButton = Button.builder(Component.literal("Done"), b -> onClose())
                 .bounds(layout.doneX(), layout.doneY(), layout.doneW(), layout.doneH())
                 .build();
         addRenderableWidget(doneButton);
 
+        rebuild();
+    }
+
+    private void handleDownloadAll() {
+        var dl = CueMyMusicClient.getDownloader();
+        if (dl == null) return;
+        dl.downloadAll(
+                () -> Minecraft.getInstance().execute(this::rebuild),
+                () -> Minecraft.getInstance().execute(() -> {
+                    try { Minecraft.getInstance().reloadResourcePacks(); } catch (Exception ignored) {}
+                    rebuild();
+                })
+        );
         rebuild();
     }
 
@@ -191,6 +226,13 @@ public class JukeboxLibraryScreen extends Screen {
         displayed.addAll(filtered);
         if (trackList != null) {
             trackList.setTracks(displayed);
+        }
+        if (downloadAllButton != null) {
+            var dl = CueMyMusicClient.getDownloader();
+            int missing = dl != null ? dl.getMissingCount() : 0;
+            downloadAllButton.visible = missing > 0;
+            downloadAllButton.active = dl != null && !dl.isDownloading();
+            downloadAllButton.setMessage(Component.literal("Download all (" + missing + ")"));
         }
     }
 
@@ -289,7 +331,7 @@ public class JukeboxLibraryScreen extends Screen {
     final class TrackRow extends ContainerObjectSelectionList.Entry<TrackRow> {
         private final MusicTrack track;
         private final Button queued;
-        private final Button preview;
+        private final Button actionBtn;
 
         TrackRow(MusicTrack track) {
             this.track = track;
@@ -302,25 +344,45 @@ public class JukeboxLibraryScreen extends Screen {
                     .createNarration(ignored -> Component.literal(
                             (track.isAmbientEligible() ? "Remove from queue: " : "Add to queue: ") + (track.getTitle() != null ? track.getTitle() : track.getId())))
                     .bounds(0, 0, ROW_CONTROL_SIZE, ROW_CONTROL_SIZE).build();
-            preview = Button.builder(Component.literal(">"), b -> previewTrack(track))
-                    .createNarration(ignored -> Component.literal("Preview " + (track.getTitle() != null ? track.getTitle() : track.getId()) + " by " + (track.getArtist() != null ? track.getArtist() : "Unknown")))
+
+            actionBtn = Button.builder(Component.literal(">"), b -> handleAction())
+                    .createNarration(ignored -> Component.literal("Action for " + (track.getTitle() != null ? track.getTitle() : track.getId())))
                     .bounds(0, 0, ROW_CONTROL_SIZE, ROW_CONTROL_SIZE).build();
+        }
+
+        private void handleAction() {
+            if (track.getSourceType() == SourceType.YOUTUBE) {
+                var dl = CueMyMusicClient.getDownloader();
+                if (dl != null) {
+                    String slug = track.getId().startsWith("youtube:") ? track.getId().substring("youtube:".length()) : track.getId();
+                    var status = dl.getStatus(slug);
+                    if (status == YoutubeDownloader.DownloadStatus.MISSING || status == YoutubeDownloader.DownloadStatus.FAILED) {
+                        dl.downloadTrack(slug, () -> Minecraft.getInstance().execute(() -> {
+                            try { Minecraft.getInstance().reloadResourcePacks(); } catch (Exception ignored) {}
+                            rebuild();
+                        }));
+                        rebuild();
+                        return;
+                    }
+                }
+            }
+            previewTrack(track);
         }
 
         @Override
         public List<? extends GuiEventListener> children() {
-            return List.of(queued, preview);
+            return List.of(queued, actionBtn);
         }
 
         @Override
         public List<? extends NarratableEntry> narratables() {
-            return List.of(queued, preview);
+            return List.of(queued, actionBtn);
         }
 
         @Override
         public void visitWidgets(Consumer<AbstractWidget> consumer) {
             consumer.accept(queued);
-            consumer.accept(preview);
+            consumer.accept(actionBtn);
         }
 
         @Override
@@ -335,23 +397,53 @@ public class JukeboxLibraryScreen extends Screen {
             var curTrack = director.getCurrentTrack().orElse(null);
             boolean isCurrent = curTrack != null && curTrack.getId().equals(track.getId());
             boolean isPlaying = isCurrent && director.getState() == PlaybackState.PLAYING;
-            preview.setMessage(Component.literal(isPlaying ? "||" : ">"));
 
-            int previewX = getContentRight() - ROW_CONTROL_SIZE - 6;
-            preview.setPosition(previewX, y);
-            preview.extractRenderState(gfx, mouseX, mouseY, partialTick);
+            if (track.getSourceType() == SourceType.YOUTUBE) {
+                var dl = CueMyMusicClient.getDownloader();
+                String slug = track.getId().startsWith("youtube:") ? track.getId().substring("youtube:".length()) : track.getId();
+                var status = dl != null ? dl.getStatus(slug) : YoutubeDownloader.DownloadStatus.MISSING;
+                switch (status) {
+                    case MISSING -> {
+                        actionBtn.setMessage(Component.literal("↓"));
+                        actionBtn.active = true;
+                    }
+                    case DOWNLOADING -> {
+                        actionBtn.setMessage(Component.literal("…"));
+                        actionBtn.active = false;
+                    }
+                    case FAILED -> {
+                        actionBtn.setMessage(Component.literal("↻"));
+                        actionBtn.active = true;
+                    }
+                    case READY -> {
+                        actionBtn.setMessage(Component.literal(isPlaying ? "||" : ">"));
+                        actionBtn.active = true;
+                    }
+                }
+            } else {
+                actionBtn.setMessage(Component.literal(isPlaying ? "||" : ">"));
+                actionBtn.active = true;
+            }
+
+            int actionX = getContentRight() - ROW_CONTROL_SIZE - 6;
+            actionBtn.setPosition(actionX, y);
+            actionBtn.extractRenderState(gfx, mouseX, mouseY, partialTick);
 
             int textY = y + (ROW_H - 9) / 2;
             int colSourceX = x + 24;
             int colTitleX = x + 68;
-            int availableTextW = Math.max(10, previewX - 6 - colTitleX);
+            int availableTextW = Math.max(10, actionX - 6 - colTitleX);
             int titleW = (int) (availableTextW * 0.55);
             int artistW = Math.max(10, availableTextW - titleW);
             int colArtistX = colTitleX + titleW;
 
             Font font = Minecraft.getInstance().font;
 
-            String sourceType = track.getSourceType() == SourceType.MUSIC_DISC ? "Disc" : "Music";
+            String sourceType = switch (track.getSourceType()) {
+                case MUSIC_DISC -> "Disc";
+                case YOUTUBE -> "YT";
+                default -> "Music";
+            };
             gfx.text(font, Component.literal(sourceType), colSourceX, textY, 0xFFAAAAAA);
 
             String title = track.getTitle() != null ? track.getTitle() : track.getId();
