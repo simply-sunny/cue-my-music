@@ -53,9 +53,14 @@ public final class MusicDirector {
     }
 
     public List<MusicTrack> getEligibleCandidates() {
-        if (library == null) return List.of();
+        var lib = this.library;
+        if (lib == null) {
+            var inst = CueMyMusic.getInstance();
+            if (inst != null) lib = inst.getLibrary();
+        }
+        if (lib == null) return List.of();
         List<MusicTrack> eligible = new ArrayList<>();
-        for (var t : library.getAllTracks()) if (t.isEnabled() && t.isAmbientEligible()) eligible.add(t);
+        for (var t : lib.getAllTracks()) if (t.isEnabled() && t.isAmbientEligible()) eligible.add(t);
         return List.copyOf(eligible);
     }
 
@@ -150,7 +155,12 @@ public final class MusicDirector {
     public void tick(Minecraft mc) {
         nativePlayback.tick(mc, System.currentTimeMillis());
         if (blocksAutoStart(nativePlayback.getState())) return;
-        if (library == null) return;
+        var lib = this.library;
+        if (lib == null) {
+            var inst = CueMyMusic.getInstance();
+            if (inst != null) lib = inst.getLibrary();
+        }
+        if (lib == null) return;
         if (nativePlayback.hasOwnership()) { trackEndMs = 0; return; }
         if (nextDelayMs == 0) scheduleNextDelay();
         if (trackEndMs == 0) trackEndMs = System.currentTimeMillis();

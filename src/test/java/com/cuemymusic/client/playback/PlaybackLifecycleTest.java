@@ -80,4 +80,28 @@ class PlaybackLifecycleTest {
         assertFalse(playback.hasOwnership());
         assertEquals(PlaybackState.STOPPED, playback.getState());
     }
+
+    @Test void directorStopCurrentStopsPlayback() {
+        var director = MusicDirector.getInstance();
+        director.stopCurrent(null);
+        assertFalse(director.isPlaying());
+        assertFalse(director.hasOwnership());
+    }
+
+    @Test void directorEligibleCandidatesWithLibrary() {
+        var director = MusicDirector.getInstance();
+        var lib = new com.cuemymusic.data.MusicLibrary();
+        var t1 = new MusicTrack("t1", "Title 1", "Artist", SourceType.VANILLA);
+        t1.setEnabled(true);
+        t1.setAmbientEligible(true);
+        var t2 = new MusicTrack("t2", "Title 2", "Artist", SourceType.YOUTUBE);
+        t2.setEnabled(true);
+        t2.setAmbientEligible(false);
+        lib.addTracks(java.util.List.of(t1, t2));
+
+        director.init(lib);
+        var eligible = director.getEligibleCandidates();
+        assertEquals(1, eligible.size());
+        assertEquals("t1", eligible.get(0).getId());
+    }
 }

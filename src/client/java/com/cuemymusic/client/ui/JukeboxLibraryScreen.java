@@ -293,6 +293,15 @@ public class JukeboxLibraryScreen extends Screen {
         Minecraft.getInstance().setScreenAndShow(parent);
     }
 
+    @Override
+    public void removed() {
+        super.removed();
+        try {
+            var mc = Minecraft.getInstance();
+            MusicDirector.getInstance().stopCurrent(mc);
+        } catch (Exception ignored) {}
+    }
+
     static String ellipsize(Font font, String s, int maxW) {
         if (s == null) return "";
         if (maxW <= 0) return "";

@@ -30,6 +30,7 @@ public class CueMyMusicClient implements ClientModInitializer {
                 VanillaTrackRegistry.registerAll(inst.getLibrary());
                 YoutubeTrackRegistry.registerAll(inst.getLibrary());
                 inst.getLibrary().applyPersistedState(inst.getPersistenceManager().loadLibraryIndex());
+                com.cuemymusic.client.playback.MusicDirector.getInstance().init(inst.getLibrary());
                 LOGGER.info("registered {} tracks", inst.getLibrary().getAllTracks().size());
             }
         } catch (Exception e) {
