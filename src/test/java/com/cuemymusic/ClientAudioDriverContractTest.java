@@ -19,7 +19,7 @@ class ClientAudioDriverContractTest {
 
     @Test
     void jarExcludesDriverClassIfJarExists() throws Exception {
-        var jarPath = Path.of("build/libs/cue-my-music-1.0.0.jar");
+        var jarPath = Path.of("build/libs/cue-my-music-0.1.0.jar");
         if (Files.exists(jarPath)) {
             try (var jar = new java.util.jar.JarFile(jarPath.toFile())) {
                 var entry = jar.getEntry("com/cuemymusic/client/testing/AutomatedClientAudioDriver.class");
@@ -30,7 +30,7 @@ class ClientAudioDriverContractTest {
 
     @Test
     void productionJarExcludesTestingEntriesAndManifest() throws Exception {
-        var jarPath = Path.of("build/libs/cue-my-music-1.0.0.jar");
+        var jarPath = Path.of("build/libs/cue-my-music-0.1.0.jar");
         org.junit.jupiter.api.Assertions.assertTrue(Files.exists(jarPath), "Production jar must exist - run :jar before :test: " + jarPath);
         try (var jar = new java.util.jar.JarFile(jarPath.toFile())) {
             var hasTestingEntry = jar.stream().anyMatch(e -> e.getName().contains("client/testing"));

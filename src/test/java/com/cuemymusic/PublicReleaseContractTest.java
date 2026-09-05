@@ -26,7 +26,8 @@ class PublicReleaseContractTest {
         assertTrue(readme.contains("Fabric API"));
         assertFalse(readme.contains("Spotify"));
         assertTrue(readme.contains("YouTube"));
-        assertTrue(props.contains("version=1.0.0"));
+        assertTrue(props.contains("mod_version=0.1.0"));
+        assertTrue(props.contains("version=0.1.0"));
         assertTrue(metadata.contains("\"environment\": \"client\""));
     }
 }

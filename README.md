@@ -28,7 +28,7 @@ Browse, preview, download, and control Minecraft music through a native client-s
 
 1. Install Fabric Loader for Minecraft 26.2.
 2. Add Fabric API and (optionally) Mod Menu to `mods/`.
-3. Add `cue-my-music-1.0.0.jar` (from [Releases](https://github.com/simply-sunny/cue-my-music/releases)) to `mods/`.
+3. Add `cue-my-music-0.1.0.jar` (from [Releases](https://github.com/simply-sunny/cue-my-music/releases)) to `mods/`.
 4. Launch the client.
 
 ## Controls
@@ -46,7 +46,7 @@ Browse, preview, download, and control Minecraft music through a native client-s
 ./gradlew clean test build
 ```
 
-Output jar: `build/libs/cue-my-music-1.0.0.jar` (requires Java 25).
+Output jar: `build/libs/cue-my-music-0.1.0.jar` (requires Java 25).
 
 ## Limitations
 
