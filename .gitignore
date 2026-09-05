@@ -24,6 +24,11 @@ crash-reports/
 
 # Mod data (per-user)
 cue-my-music-dev/
+cue-my-music/
+
+# Python
+__pycache__/
+*.pyc
 
 # OS
 .DS_Store
