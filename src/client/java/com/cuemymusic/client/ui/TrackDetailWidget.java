@@ -151,6 +151,7 @@ public final class TrackDetailWidget {
         return switch (t) {
             case VANILLA -> 0xFF7ED321;
             case MUSIC_DISC -> 0xFF5AA9FF;
+            case YOUTUBE -> 0xFFFF5555;
         };
     }
 
@@ -159,6 +160,7 @@ public final class TrackDetailWidget {
         return switch (t) {
             case VANILLA -> "Vanilla Music";
             case MUSIC_DISC -> "Music Discs";
+            case YOUTUBE -> "YouTube";
         };
     }
 
