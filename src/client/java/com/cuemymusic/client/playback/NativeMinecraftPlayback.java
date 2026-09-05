@@ -382,19 +382,19 @@ public final class NativeMinecraftPlayback {
             return null;
         }
         Identifier fileId = id;
-        if (track.getSourceType() == SourceType.MUSIC_DISC) {
+        if (track.getSourceType() == SourceType.MUSIC_DISC || track.getSourceType() == SourceType.YOUTUBE) {
             if (mc == null || mc.getSoundManager() == null) {
-                LOGGER.warn("SoundManager not available to resolve music disc {}", track.getSourceId());
+                LOGGER.warn("SoundManager not available to resolve sound {}", track.getSourceId());
                 return null;
             }
             WeighedSoundEvents event = mc.getSoundManager().getSoundEvent(id);
             if (event == null) {
-                LOGGER.warn("SoundEvent not found for music disc {}", track.getSourceId());
+                LOGGER.warn("SoundEvent not found for sound {}", track.getSourceId());
                 return null;
             }
             Sound chosen = event.getSound(SoundInstance.createUnseededRandom());
             if (chosen == null) {
-                LOGGER.warn("No sound chosen for music disc {}", track.getSourceId());
+                LOGGER.warn("No sound chosen for sound {}", track.getSourceId());
                 return null;
             }
             fileId = chosen.getLocation();
