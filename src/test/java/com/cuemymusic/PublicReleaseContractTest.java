@@ -14,6 +14,8 @@ class PublicReleaseContractTest {
         assertFalse(readme.contains("source filtering"));
         assertTrue(readme.contains("displays current time and duration"));
         assertFalse(readme.contains("time appears on hover/drag"));
+        assertTrue(readme.contains("206 tracks"));
+        assertTrue(readme.contains("yt-dlp"));
     }
 
     @Test void publicReleaseMetadataIsAccurate() throws Exception {
@@ -23,7 +25,7 @@ class PublicReleaseContractTest {
         assertTrue(readme.contains("Minecraft 26.2"));
         assertTrue(readme.contains("Fabric API"));
         assertFalse(readme.contains("Spotify"));
-        assertFalse(readme.contains("YouTube"));
+        assertTrue(readme.contains("YouTube"));
         assertTrue(props.contains("version=1.0.0"));
         assertTrue(metadata.contains("\"environment\": \"client\""));
     }
