@@ -1,54 +1,63 @@
 package com.cuemymusic.client;
 
-import com.cuemymusic.CueMyMusic;
-import com.cuemymusic.client.download.YoutubeDownloader;
-import com.cuemymusic.client.download.YoutubePackManager;
-import com.cuemymusic.client.music.VanillaTrackRegistry;
-import com.cuemymusic.client.music.YoutubeTrackRegistry;
+import java.util.concurrent.ThreadLocalRandom;
+
+import com.cuemymusic.client.music.MusicDirector;
+import com.cuemymusic.client.ui.PauseMusicWidget;
+
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.resource.v1.ResourceLoader;
+import net.fabricmc.fabric.api.resource.v1.reloader.SimpleReloadListener;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.resources.PreparableReloadListener;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class CueMyMusicClient implements ClientModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("cue_my_music/client");
-    private static YoutubePackManager packManager;
-    private static YoutubeDownloader downloader;
 
-    public static YoutubePackManager getPackManager() { return packManager; }
-    public static YoutubeDownloader getDownloader() { return downloader; }
+    @Override
+    public void onInitializeClient() {
+        LOGGER.info("[Cue My Music] deterministic vanilla music controls");
+        PauseMusicWidget.register();
 
-    @Override public void onInitializeClient(){
-        LOGGER.info("[Cue My Music] init client");
-        try {
-            var inst = CueMyMusic.getInstance();
-            if (inst != null && inst.getLibrary() != null) {
-                if (inst.getPersistenceManager() != null) {
-                    packManager = new YoutubePackManager(inst.getPersistenceManager().getDataDir().resolve("pack"));
-                    downloader = new YoutubeDownloader(packManager);
-                    packManager.ensurePackStructure();
-                }
-                VanillaTrackRegistry.registerAll(inst.getLibrary());
-                YoutubeTrackRegistry.registerAll(inst.getLibrary());
-                inst.getLibrary().applyPersistedState(inst.getPersistenceManager().loadLibraryIndex());
-                com.cuemymusic.client.playback.MusicDirector.getInstance().init(inst.getLibrary());
-                LOGGER.info("registered {} tracks", inst.getLibrary().getAllTracks().size());
+        // World-session boundaries (join/disconnect, not dimension transfer):
+        // outgoing menu/world audio stops at the boundary, vanilla's delay RNG
+        // is reseeded from a session-derived salt, vanilla delay is computed
+        // from the active situational context without custom delay constants,
+        // and session queue/planner/transport state is reset.
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            long sessionSeed = ThreadLocalRandom.current().nextLong();
+            if (client.getMusicManager() != null) {
+                MusicDirector.getInstance().seedDelayRandom(client.getMusicManager(), sessionSeed);
+                client.getMusicManager().stopPlaying();
             }
-        } catch (Exception e) {
-            LOGGER.warn("register fail", e);
-        }
-
-        // tick for ambient auto-next
-        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-            try { com.cuemymusic.client.playback.MusicDirector.getInstance().tick(mc); } catch (Exception ignored) {}
+            MusicDirector.getInstance().beginSession(sessionSeed);
+        });
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            if (client.getMusicManager() != null) {
+                client.getMusicManager().stopPlaying();
+            }
+            MusicDirector.getInstance().endSession();
         });
 
-        if (Boolean.getBoolean("cuemymusic.autotest")) {
-            try {
-                Class.forName("com.cuemymusic.client.testing.AutomatedClientAudioDriver")
-                        .getMethod("register").invoke(null);
-            } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException("Client audio test driver unavailable", e);
-            }
-        }
+        // Resource reload: drop the resource-dependent future pin and prune
+        // history references against the live graph.
+        ResourceLoader.get(PackType.CLIENT_RESOURCES).registerReloadListener(
+                Identifier.fromNamespaceAndPath("cue_my_music", "music_session"),
+                new SimpleReloadListener<Void>() {
+                    @Override
+                    protected Void prepare(PreparableReloadListener.SharedState sharedState) {
+                        return null;
+                    }
+
+                    @Override
+                    protected void apply(Void data, PreparableReloadListener.SharedState sharedState) {
+                        MusicDirector.getInstance().onResourcesReloaded();
+                    }
+                });
     }
 }

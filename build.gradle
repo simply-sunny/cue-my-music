@@ -10,17 +10,6 @@ base {
     archivesName = project.archives_base_name
 }
 
-repositories {
-    maven {
-        name = 'Terraformers'
-        url = 'https://maven.terraformersmc.com/releases/'
-    }
-    maven {
-        name = 'Modrinth'
-        url = 'https://api.modrinth.com/maven'
-    }
-}
-
 loom {
     splitEnvironmentSourceSets()
 
@@ -36,11 +25,8 @@ dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-    // Fabric API
+    // Fabric API (screen events for the Pause-screen widget)
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-
-    // Mod Menu (vanilla Screen, no Cloth Config needed)
-    implementation "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
 processResources {
@@ -71,78 +57,7 @@ jar {
 tasks.named('jar') {
     preserveFileTimestamps = false
     reproducibleFileOrder = true
-    exclude 'com/cuemymusic/client/testing/**'
     outputs.cacheIf { false }
-    doLast {
-        def jarFile = archiveFile.get().asFile
-        def manifestAttr = "Fabric-Loom-Client-Only-Entries"
-        def tmp = new File(jarFile.parent, jarFile.name + ".tmp")
-        boolean needsRewrite = false
-        java.util.jar.Manifest manifest = null
-        // Use try-with-resources for JarFile to avoid leaks; capture manifest safely
-        try (def jarIn = new java.util.jar.JarFile(jarFile)) {
-            manifest = jarIn.getManifest()
-            if (manifest == null) {
-                return
-            }
-            def val = manifest.getMainAttributes().getValue(manifestAttr)
-            if (val == null || !val.contains("client/testing")) {
-                return
-            }
-            def filteredList = val.split(";").findAll { !it.contains("client/testing") }
-            if (filteredList.isEmpty()) {
-                manifest.getMainAttributes().remove(new java.util.jar.Attributes.Name(manifestAttr))
-            } else {
-                manifest.getMainAttributes().putValue(manifestAttr, filteredList.join(";"))
-            }
-            needsRewrite = true
-            // Re-open for rewrite after manifest mutation; keep jarIn open for reading entries
-            // Use try-with-resources for output and ensure cleanup on failure
-            try (def jos = new java.util.jar.JarOutputStream(new FileOutputStream(tmp))) {
-                def manifestEntry = new java.util.jar.JarEntry("META-INF/MANIFEST.MF")
-                manifestEntry.time = 0
-                manifestEntry.lastModifiedTime = java.nio.file.attribute.FileTime.fromMillis(0)
-                jos.putNextEntry(manifestEntry)
-                manifest.write(jos)
-                jos.closeEntry()
-                def entries = jarIn.entries()
-                while (entries.hasMoreElements()) {
-                    def entry = entries.nextElement()
-                    if (entry.name == "META-INF/MANIFEST.MF") continue
-                    def newEntry = new java.util.jar.JarEntry(entry)
-                    newEntry.time = 0
-                    newEntry.lastModifiedTime = java.nio.file.attribute.FileTime.fromMillis(0)
-                    jos.putNextEntry(newEntry)
-                    if (!entry.isDirectory()) {
-                        try (def is = jarIn.getInputStream(entry)) {
-                            is.transferTo(jos)
-                        }
-                    }
-                    jos.closeEntry()
-                }
-            }
-        } catch (Exception e) {
-            // Cleanup temp on failure before rethrowing
-            if (tmp.exists()) {
-                tmp.delete()
-            }
-            throw e
-        }
-        if (needsRewrite) {
-            try {
-                java.nio.file.Files.move(tmp.toPath(), jarFile.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-            } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
-                java.nio.file.Files.move(tmp.toPath(), jarFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-            } catch (java.io.IOException ex) {
-                // Fallback for non-atomic filesystems
-                java.nio.file.Files.move(tmp.toPath(), jarFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-            }
-        }
-    }
-}
-
-tasks.named('sourcesJar') {
-    exclude 'com/cuemymusic/client/testing/**'
 }
 
 publishing {

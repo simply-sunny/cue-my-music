@@ -4,11 +4,14 @@
   "compatibilityLevel": "JAVA_25",
   "mixins": [],
   "client": [
+    "ChannelAudibleMixin",
     "MusicManagerMixin",
-    "SoundManagerAccessor",
-    "SoundEngineAccessor",
-    "ChannelAccessor",
-    "ChannelHandleAccessor"
+    "MusicManagerAccessor",
+    "NestedSoundAccessor",
+    "SoundBufferLibraryMixin",
+    "SoundEngineProvider",
+    "SoundEngineTransportMixin",
+    "WeighedSoundEventsAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

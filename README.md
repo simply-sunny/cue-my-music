@@ -4,41 +4,41 @@
 
 # Cue My Music
 
-Browse, preview, download, and control Minecraft music through a native client-side library.
+Deterministic vanilla background music with a boxed Pause-screen transport: Play/Pause, draggable scrub bar, Previous, immediate Next, and End song with the natural delay.
 
 ## Features
 
-- **Jukebox Library screen**: Vanilla `Screen` UI with Mod Menu integration (`Configure` opens library).
-- **Track catalog**: Full collection of 206 tracks (92 built-in native tracks + 114 extended YouTube tracks).
-- **Selective & Batch Downloads**: Download missing YouTube tracks on click (`↓`) or batch download all missing tracks via `yt-dlp`.
-- **Search & Sort**: Fuzzy search by title/artist/id, sort by Artist/Title/Source.
-- **Preview & Ambient Queue**: Per-row preview (`>` / `||`) and ambient-rotation checkbox.
-- **Scrub & Seek**: Playback scrub bar with drag-to-seek support while playing.
-- **Persistent State**: Automatically saves enabled/ambient preferences across game restarts.
+- **Vanilla Playback Ownership**: Integrates directly with Minecraft's native `MusicManager` to preserve ticks, fades, delays, streaming backend, replacement rules, and toasts.
+- **Pause Screen Transport**: Compact top-right transport panel on the Escape menu with track metadata, live audible clock, and full playback controls.
+- **Previous, Next & End**: Skip immediately to deterministic situational tracks, simulate natural song ends with normal delay recomputation, or step back through recently played history.
+- **Channel Play/Pause**: Pauses only the background music channel without disrupting world sounds, ambient audio, or global volume resets.
+- **Draggable Scrub Bar**: Real-time seeking via off-thread stream skipping and compressed OGG framing duration detection.
+- **Deterministic Session Isolation**: Seeded per-session music planner maintaining deterministic context-aware track selection across world joins and disconnects.
+- **Zero Bloat**: No external audio codecs, downloads, background services, custom registries, or extraneous configuration screens.
 
 ## Requirements
 
 - Minecraft 26.2
-- Fabric Loader
+- Fabric Loader (>=0.19.3)
 - Fabric API
-- Mod Menu (optional)
-- `yt-dlp` installed and on PATH (for downloading optional YouTube tracks)
+- Java 25
 
 ## Install
 
 1. Install Fabric Loader for Minecraft 26.2.
-2. Add Fabric API and (optionally) Mod Menu to `mods/`.
+2. Add Fabric API to `mods/`.
 3. Add `cue-my-music-0.1.0.jar` (from [Releases](https://github.com/simply-sunny/cue-my-music/releases)) to `mods/`.
 4. Launch the client.
 
 ## Controls
 
-- Library: search field filters by title/artist, sort button cycles artist/title/source.
-- Row checkbox: include or exclude track from ambient selection.
-- Row action button: `↓` to download missing track, `…` while downloading, `↻` to retry failed download, `>` / `||` to preview.
-- Footer Download all button: batch downloads all missing YouTube tracks.
-- Top scrub bar: drag to seek when a seekable track is playing; displays current time and duration.
-- Done: saves state and returns to the previous screen.
+- Open Pause Screen: press `Escape`.
+- Transport Controls (top-right panel):
+  - **Previous**: Step back through recently played tracks in the current context.
+  - **Play / Pause**: Toggle music playback without muting environmental sounds.
+  - **Next**: Immediately advance to the next context-appropriate track.
+  - **End**: Stop the current song and trigger natural vanilla cooldown delay before next track.
+  - **Scrub Bar**: Click or drag slider (or use arrow keys when focused) to seek within the song.
 
 ## Build
 
@@ -50,9 +50,10 @@ Output jar: `build/libs/cue-my-music-0.1.0.jar` (requires Java 25).
 
 ## Limitations
 
-- Client-side only; no server sync or multiplayer state.
-- YouTube downloads require `yt-dlp` installed on the system.
-- Ambient replacement respects vanilla music timing and volume settings.
+- Client-side only; hooks into native Minecraft client audio engine.
+- Seeking is stream-discard based (`O(target duration)`) capped at 256 MiB dropped PCM to avoid memory overhead.
+- Chained OGG stream containers report duration based on initial bitstream framing.
+- Built specifically for Mojang-mapped Minecraft 26.2 runtime.
 
 ## License
 

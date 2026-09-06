@@ -3,7 +3,7 @@
   "id": "cue_my_music",
   "version": "${version}",
   "name": "Cue My Music",
-  "description": "Browse, preview, and control Minecraft music through a native client-side library.",
+  "description": "Deterministic vanilla background music with Pause-screen Previous/Next controls.",
   "authors": ["You"],
   "contact": {
     "homepage": "https://github.com/simply-sunny/cue-my-music",
@@ -13,9 +13,7 @@
   "icon": "assets/cue_my_music/icon.png",
   "environment": "client",
   "entrypoints": {
-    "main": ["com.cuemymusic.CueMyMusic"],
-    "client": ["com.cuemymusic.client.CueMyMusicClient"],
-    "modmenu": ["com.cuemymusic.client.integration.ModMenuIntegration"]
+    "client": ["com.cuemymusic.client.CueMyMusicClient"]
   },
   "mixins": ["cue_my_music.mixins.json"],
   "depends": {
@@ -23,8 +21,5 @@
     "fabric-api": "*",
     "minecraft": "26.2",
     "java": ">=25"
-  },
-  "suggests": {
-    "modmenu": "*"
   }
 }
