@@ -65,6 +65,8 @@ public final class PauseMusicWidget {
     static final int CARD_BG_COLOR = 0xD0101010;
     static final int CARD_BORDER_COLOR = 0xFF505050;
 
+    private static final java.util.Map<Screen, Panel> ATTACHED_PANELS = new java.util.WeakHashMap<>();
+
     private PauseMusicWidget() {
     }
 
@@ -337,6 +339,24 @@ public final class PauseMusicWidget {
             this.queueItems = queueItems;
         }
 
+        void addWidgets(List<net.minecraft.client.gui.components.AbstractWidget> widgets) {
+            if (!widgets.contains(title)) {
+                widgets.add(title);
+                widgets.add(artist);
+                widgets.add(slider);
+                widgets.add(minimizeButton);
+                widgets.add(previous);
+                widgets.add(playPause);
+                widgets.add(next);
+                widgets.add(end);
+                widgets.add(queueButton);
+                widgets.add(queueHeader);
+                for (StringWidget item : queueItems) {
+                    widgets.add(item);
+                }
+            }
+        }
+
         PanelLayout computeLayout() {
             var font = client.font;
             MusicDirector director = MusicDirector.getInstance();
@@ -538,6 +558,13 @@ public final class PauseMusicWidget {
 
     private static void attach(net.minecraft.client.Minecraft client, Screen screen) {
         var widgets = Screens.getWidgets(screen);
+        Panel existing = ATTACHED_PANELS.get(screen);
+        if (existing != null) {
+            existing.addWidgets(widgets);
+            existing.refresh();
+            return;
+        }
+
         var font = client.font;
         PanelLayout layout = panelLayout(screen.width, screen.height, font.width(FALLBACK_TEXT), 0,
                 font.lineHeight, false);
@@ -645,6 +672,7 @@ public final class PauseMusicWidget {
         Panel panel = new Panel(client, screen, title, artist, slider, previous, playPause, next, end,
                 queueButton, minimizeButton, queueHeader, queueItems);
         panelHolder[0] = panel;
+        ATTACHED_PANELS.put(screen, panel);
 
         ScreenEvents.beforeExtract(screen).register((scr, extractor, mouseX, mouseY, tickProgress) -> {
             panel.extractBackground(extractor);

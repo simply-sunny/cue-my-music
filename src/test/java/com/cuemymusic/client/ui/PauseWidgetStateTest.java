@@ -141,4 +141,13 @@ class PauseWidgetStateTest {
         assertTrue(layout.previousX() >= 0);
         assertTrue(layout.queueX() + PauseMusicWidget.QUEUE_WIDTH <= layout.boxX() + layout.boxWidth());
     }
+
+    @Test void addWidgetsDoesNotDuplicateOnMultipleCalls() throws Exception {
+        String source = Files.readString(
+                Path.of("src/client/java/com/cuemymusic/client/ui/PauseMusicWidget.java"));
+        assertTrue(source.contains("ATTACHED_PANELS"),
+                "PauseMusicWidget must track ATTACHED_PANELS per screen to prevent duplication on resize");
+        assertTrue(source.contains("!widgets.contains(title)"),
+                "addWidgets must check for existing widgets before adding");
+    }
 }

@@ -29,6 +29,13 @@ dependencies {
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 }
 
+tasks.matching { it.name.startsWith('run') }.configureEach {
+    doFirst {
+        file("${layout.buildDirectory.get().asFile}/classes/java/main").mkdirs()
+        file("${layout.buildDirectory.get().asFile}/resources/client").mkdirs()
+    }
+}
+
 processResources {
     def version = project.version
     inputs.property "version", version
