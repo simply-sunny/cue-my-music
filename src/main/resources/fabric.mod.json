@@ -13,7 +13,8 @@
   "icon": "assets/cue_my_music/icon.png",
   "environment": "client",
   "entrypoints": {
-    "client": ["com.cuemymusic.client.CueMyMusicClient"]
+    "client": ["com.cuemymusic.client.CueMyMusicClient"],
+    "modmenu": ["com.cuemymusic.client.CueMyMusicModMenu"]
   },
   "mixins": ["cue_my_music.mixins.json"],
   "depends": {

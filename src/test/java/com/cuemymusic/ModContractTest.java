@@ -40,7 +40,7 @@ class ModContractTest {
                                 || lower.contains("musictrack") || lower.contains("catalog")
                                 || lower.contains("bufferedplayback") || lower.contains("playbacklifecycle")
                                 || lower.contains("nativeminecraftplayback")
-                                || lower.contains("modmenu") || lower.contains("automatedclient")
+                                || lower.contains("automatedclient")
                                 || lower.contains("channelaccessor") || lower.contains("channelhandle")
                                 || lower.contains("soundengineaccessor") || lower.contains("soundmanageraccessor")
                                 || lower.contains("vanillatrackregistry");
@@ -62,7 +62,8 @@ class ModContractTest {
         String json = Files.readString(SRC.resolve("main/resources/fabric.mod.json"));
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
         JsonObject entrypoints = root.getAsJsonObject("entrypoints");
-        assertFalse(entrypoints.has("modmenu"), "no Mod Menu API entrypoint is needed");
+        assertEquals("com.cuemymusic.client.CueMyMusicModMenu",
+                entrypoints.getAsJsonArray("modmenu").get(0).getAsString());
         assertFalse(entrypoints.has("main"), "pure-client mod must not ship a common initializer");
         assertTrue(entrypoints.has("client"), "client entrypoint must remain");
         assertEquals("*", root.getAsJsonObject("depends").get("modmenu").getAsString());
@@ -98,8 +99,7 @@ class ModContractTest {
                                     || name.startsWith("client" + java.io.File.separator)))
                     .count();
         }
-        // Minimal surface: reduction survivors plus the approved transport
-        // (clock, OGG probe, bounded discard, panel, three mixins, gate).
-        assertTrue(productionFiles <= 18, "expected a minimal production surface, found " + productionFiles);
+        // Minimal surface: reduction survivors, transport, and two Mod Menu screen adapters.
+        assertTrue(productionFiles <= 20, "expected a minimal production surface, found " + productionFiles);
     }
 }

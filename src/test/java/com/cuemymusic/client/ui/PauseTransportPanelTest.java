@@ -116,6 +116,18 @@ class PauseTransportPanelTest {
         assertTrue(PauseMusicWidget.requiresMinimizedPanel(520, false));
     }
 
+    @Test void modMenuPlayerCentersWithoutJumpingWhenQueueOpens() {
+        PauseMusicWidget.PanelLayout closed =
+                PauseMusicWidget.panelLayout(692, 423, 60, 40, 9, false, false, true);
+        PauseMusicWidget.PanelLayout open =
+                PauseMusicWidget.panelLayout(692, 423, 60, 40, 9, true, false, true);
+        assertEquals(204, closed.boxWidth());
+        assertEquals(244, closed.boxX());
+        assertEquals(185, closed.boxY());
+        assertEquals(closed.boxX(), open.boxX());
+        assertEquals(closed.boxY(), open.boxY());
+    }
+
     @Test void narrowScreensStillFitTransportRow() {
         PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(220, 0, 0, 9);
         assertTrue(layout.previousX() >= 0, "transport row must stay on-screen");

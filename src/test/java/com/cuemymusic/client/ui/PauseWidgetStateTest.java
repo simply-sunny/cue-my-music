@@ -75,6 +75,10 @@ class PauseWidgetStateTest {
         assertFalse(PauseMusicWidget.isEligible(SubOptionsScreen.class, false));
         assertFalse(PauseMusicWidget.isEligible(SubOptionsScreen.class, true));
 
+        // dedicated Mod Menu player true regardless
+        assertTrue(PauseMusicWidget.isEligible(MusicPlayerScreen.class, false));
+        assertTrue(PauseMusicWidget.isEligible(MusicPlayerScreen.class, true));
+
         // title false regardless
         assertFalse(PauseMusicWidget.isEligible(TitleScreen.class, false));
         assertFalse(PauseMusicWidget.isEligible(TitleScreen.class, true));
@@ -86,6 +90,11 @@ class PauseWidgetStateTest {
         // null screen false
         assertFalse(PauseMusicWidget.isEligible(null, false));
         assertFalse(PauseMusicWidget.isEligible(null, true));
+    }
+
+    @Test void playerWrapsNonOptionsOriginsWithVanillaOptions() {
+        assertFalse(MusicPlayerScreen.requiresOptionsTarget(OptionsScreen.class));
+        assertTrue(MusicPlayerScreen.requiresOptionsTarget(PauseScreen.class));
     }
 
     @Test void toggleMinimizeClearsFocusWhenNewlyMinimized() throws Exception {
@@ -100,6 +109,8 @@ class PauseWidgetStateTest {
         assertEquals("+", PauseMusicWidget.RESTORE_TEXT);
         assertEquals("Minimize", PauseMusicWidget.MINIMIZE_TOOLTIP);
         assertEquals("Restore", PauseMusicWidget.RESTORE_TOOLTIP);
+        assertEquals("×", PauseMusicWidget.CLOSE_TEXT);
+        assertEquals("Open music player in Mod Menu", PauseMusicWidget.OPEN_PLAYER_TOOLTIP);
     }
 
     @Test void minimizeTogglesStateWhilePreservingQueueOpen() {

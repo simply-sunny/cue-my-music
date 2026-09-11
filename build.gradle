@@ -31,7 +31,7 @@ dependencies {
 
     // Fabric API (screen events for the Pause-screen widget)
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-    clientRuntimeOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+    clientImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
 tasks.matching { it.name.startsWith('run') }.configureEach {

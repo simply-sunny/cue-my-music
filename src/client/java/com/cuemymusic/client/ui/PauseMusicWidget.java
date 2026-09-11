@@ -58,6 +58,7 @@ public final class PauseMusicWidget {
     static final String QUEUE_ICON = "≡";
     static final String MINIMIZE_TEXT = "−";
     static final String RESTORE_TEXT = "+";
+    static final String CLOSE_TEXT = "×";
     static final String PLAY_PAUSE_TOOLTIP = "Play or pause the current song";
     static final String NEXT_TOOLTIP = "Next track (plays immediately)";
     static final String END_TOOLTIP = "End song (natural delay before the next song)";
@@ -65,7 +66,8 @@ public final class PauseMusicWidget {
     static final String SCRUB_TOOLTIP = "Seek (drag or arrow keys)";
     static final String MINIMIZE_TOOLTIP = "Minimize";
     static final String RESTORE_TOOLTIP = "Restore";
-    static final String TOO_NARROW_TOOLTIP = "Window too narrow to expand transport panel";
+    static final String OPEN_PLAYER_TOOLTIP = "Open music player in Mod Menu";
+    static final String CLOSE_TOOLTIP = "Back to Options";
     static final int CARD_BG_COLOR = 0xD0101010;
     static final int CARD_BORDER_COLOR = 0xFF505050;
 
@@ -89,11 +91,13 @@ public final class PauseMusicWidget {
     }
 
     static PanelLayout panelLayout(int screenWidth, int screenHeight, int titleTextWidth, int artistTextWidth,
-            int lineHeight, boolean queueOpen, boolean optionsScreen) {
-        int boxWidth = Math.min(FIXED_WIDTH,
-                Math.max(MIN_WIDTH, availablePanelWidth(screenWidth, optionsScreen)));
-        int boxX = Math.max(0, screenWidth - MARGIN - boxWidth);
-        int boxY = MARGIN;
+            int lineHeight, boolean queueOpen, boolean optionsScreen, boolean centered) {
+        int playerCardHeight = PAD * 2 + BUTTON_SIZE * 2 + GAP;
+        int boxWidth = centered
+                ? Math.min(FIXED_WIDTH, screenWidth - MARGIN * 2)
+                : Math.min(FIXED_WIDTH, Math.max(MIN_WIDTH, availablePanelWidth(screenWidth, optionsScreen)));
+        int boxX = centered ? (screenWidth - boxWidth) / 2 : Math.max(0, screenWidth - MARGIN - boxWidth);
+        int boxY = centered ? Math.max(MARGIN, (screenHeight - playerCardHeight) / 2) : MARGIN;
 
         int innerX = boxX + PAD;
         int innerY = boxY + PAD;
@@ -126,8 +130,6 @@ public final class PauseMusicWidget {
         int endX = nextX + BUTTON_SIZE + GAP;
         int endWidth = Math.max(20, queueX - GAP - endX);
 
-        int playerCardHeight = PAD * 2 + BUTTON_SIZE * 2 + GAP;
-
         int queueCardX = boxX;
         int queueCardY = boxY + playerCardHeight + GAP;
         int queueCardWidth = boxWidth;
@@ -149,6 +151,12 @@ public final class PauseMusicWidget {
                 endX, endWidth, queueX,
                 queueCardX, queueCardY, queueCardWidth, queueCardHeight,
                 queueHeaderY, queueListY);
+    }
+
+    static PanelLayout panelLayout(int screenWidth, int screenHeight, int titleTextWidth, int artistTextWidth,
+            int lineHeight, boolean queueOpen, boolean optionsScreen) {
+        return panelLayout(screenWidth, screenHeight, titleTextWidth, artistTextWidth, lineHeight, queueOpen,
+                optionsScreen, false);
     }
 
     static PanelLayout panelLayout(int screenWidth, int screenHeight, int titleTextWidth, int artistTextWidth,
@@ -288,7 +296,8 @@ public final class PauseMusicWidget {
         if (screenClass == null) {
             return false;
         }
-        if (PauseScreen.class.isAssignableFrom(screenClass)) {
+        if (PauseScreen.class.isAssignableFrom(screenClass)
+                || MusicPlayerScreen.class.isAssignableFrom(screenClass)) {
             return true;
         }
         if (screenClass == OptionsScreen.class) {
@@ -382,7 +391,7 @@ public final class PauseMusicWidget {
             int titleWidth = font.width(lines.get(0));
             int artistWidth = lines.size() > 1 ? font.width(lines.get(1)) : 0;
             return panelLayout(screen.width, screen.height, titleWidth, artistWidth, font.lineHeight, queueOpen,
-                    screen instanceof OptionsScreen);
+                    screen instanceof OptionsScreen, screen instanceof MusicPlayerScreen);
         }
 
         void toggleMinimize() {
@@ -426,7 +435,9 @@ public final class PauseMusicWidget {
         }
 
         void refresh() {
-            boolean forcedMinimized = requiresMinimizedPanel(screen.width, screen instanceof OptionsScreen);
+            boolean playerScreen = screen instanceof MusicPlayerScreen;
+            boolean forcedMinimized = !playerScreen
+                    && requiresMinimizedPanel(screen.width, screen instanceof OptionsScreen);
             if (forcedMinimized) {
                 minimized = true;
             }
@@ -451,13 +462,13 @@ public final class PauseMusicWidget {
                 }
                 minimizeButton.setMessage(Component.literal(RESTORE_TEXT));
                 minimizeButton.setTooltip(Tooltip.create(Component.literal(
-                        forcedMinimized ? TOO_NARROW_TOOLTIP : RESTORE_TOOLTIP)));
+                        forcedMinimized ? OPEN_PLAYER_TOOLTIP : RESTORE_TOOLTIP)));
                 minimizeButton.setX(screen.width - MARGIN - BUTTON_SIZE);
                 minimizeButton.setY(MARGIN);
                 minimizeButton.setWidth(BUTTON_SIZE);
                 minimizeButton.setHeight(BUTTON_SIZE);
                 minimizeButton.visible = true;
-                minimizeButton.active = !forcedMinimized;
+                minimizeButton.active = true;
                 return;
             }
 
@@ -493,8 +504,9 @@ public final class PauseMusicWidget {
             slider.sync(live ? director.transportPositionSeconds() : 0.0,
                     live ? director.transportDurationSeconds() : Double.NaN);
 
-            minimizeButton.setMessage(Component.literal(MINIMIZE_TEXT));
-            minimizeButton.setTooltip(Tooltip.create(Component.literal(MINIMIZE_TOOLTIP)));
+            minimizeButton.setMessage(Component.literal(playerScreen ? CLOSE_TEXT : MINIMIZE_TEXT));
+            minimizeButton.setTooltip(Tooltip.create(Component.literal(
+                    playerScreen ? CLOSE_TOOLTIP : MINIMIZE_TOOLTIP)));
             minimizeButton.setX(layout.minimizeX());
             minimizeButton.setY(layout.minimizeY());
             minimizeButton.setWidth(layout.minimizeWidth());
@@ -591,7 +603,7 @@ public final class PauseMusicWidget {
 
         var font = client.font;
         PanelLayout layout = panelLayout(screen.width, screen.height, font.width(FALLBACK_TEXT), 0,
-                font.lineHeight, false, screen instanceof OptionsScreen);
+                font.lineHeight, false, screen instanceof OptionsScreen, screen instanceof MusicPlayerScreen);
 
         StringWidget title = new StringWidget(layout.titleX(), layout.titleY(), layout.titleWidth(),
                 font.lineHeight, Component.literal(FALLBACK_TEXT), font);
@@ -608,14 +620,32 @@ public final class PauseMusicWidget {
 
         Button minimizeButton = Button.builder(Component.literal(MINIMIZE_TEXT),
                 button -> {
-                    if (panelHolder[0] != null) {
-                        panelHolder[0].toggleMinimize();
+                    Panel panel = panelHolder[0];
+                    if (panel == null) {
+                        return;
+                    }
+                    if (panel.screen instanceof MusicPlayerScreen playerScreen) {
+                        playerScreen.openOptions();
+                    } else if (requiresMinimizedPanel(panel.screen.width,
+                            panel.screen instanceof OptionsScreen)) {
+                        MusicPlayerScreen.openFromVanillaScreen(panel.client, panel.screen);
+                    } else {
+                        panel.toggleMinimize();
                     }
                 })
                 .bounds(layout.minimizeX(), layout.minimizeY(), layout.minimizeWidth(), layout.minimizeHeight())
                 .tooltip(Tooltip.create(Component.literal(MINIMIZE_TOOLTIP)))
-                .createNarration(narration -> Component.literal(
-                        panelHolder[0] != null && panelHolder[0].minimized ? RESTORE_TOOLTIP : MINIMIZE_TOOLTIP))
+                .createNarration(narration -> {
+                    Panel panel = panelHolder[0];
+                    if (panel != null && panel.screen instanceof MusicPlayerScreen) {
+                        return Component.literal(CLOSE_TOOLTIP);
+                    }
+                    if (panel != null && requiresMinimizedPanel(panel.screen.width,
+                            panel.screen instanceof OptionsScreen)) {
+                        return Component.literal(OPEN_PLAYER_TOOLTIP);
+                    }
+                    return Component.literal(panel != null && panel.minimized ? RESTORE_TOOLTIP : MINIMIZE_TOOLTIP);
+                })
                 .build();
 
         Button previous = Button.builder(Component.literal(PREVIOUS_TEXT),
