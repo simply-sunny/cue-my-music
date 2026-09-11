@@ -21,7 +21,7 @@ Deterministic vanilla background music with a boxed Pause-screen transport: Play
 - Minecraft 26.2
 - Fabric Loader (>=0.19.3)
 - Fabric API
-- Mod Menu 20.0.1 or another Minecraft 26.2-compatible version
+- Mod Menu
 - Java 25
 
 ## Install
