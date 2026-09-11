@@ -42,6 +42,7 @@ public final class PauseMusicWidget {
     static final int LINE_GAP = 2;
     static final int PAD = 4;
     static final int FIXED_WIDTH = 204;
+    static final int PLAYER_SCREEN_WIDTH = FIXED_WIDTH * 3 / 2;
     static final int MIN_WIDTH = 160;
     static final int OPTIONS_HALF_WIDTH = 154;
     static final int PAUSE_HALF_WIDTH = 102;
@@ -93,10 +94,27 @@ public final class PauseMusicWidget {
     static PanelLayout panelLayout(int screenWidth, int screenHeight, int titleTextWidth, int artistTextWidth,
             int lineHeight, boolean queueOpen, boolean optionsScreen, boolean centered) {
         int playerCardHeight = PAD * 2 + BUTTON_SIZE * 2 + GAP;
-        int boxWidth = centered
-                ? Math.min(FIXED_WIDTH, screenWidth - MARGIN * 2)
-                : Math.min(FIXED_WIDTH, Math.max(MIN_WIDTH, availablePanelWidth(screenWidth, optionsScreen)));
-        int boxX = centered ? (screenWidth - boxWidth) / 2 : Math.max(0, screenWidth - MARGIN - boxWidth);
+        int queueCardWidth;
+        int boxWidth;
+        int boxX;
+        if (centered && queueOpen) {
+            int available = Math.max(0, screenWidth - MARGIN * 2 - GAP);
+            if (available >= PLAYER_SCREEN_WIDTH + FIXED_WIDTH) {
+                boxWidth = PLAYER_SCREEN_WIDTH;
+                queueCardWidth = FIXED_WIDTH;
+            } else {
+                boxWidth = Math.min(available, Math.max(MIN_WIDTH,
+                        available * PLAYER_SCREEN_WIDTH / (PLAYER_SCREEN_WIDTH + FIXED_WIDTH)));
+                queueCardWidth = available - boxWidth;
+            }
+            boxX = (screenWidth - boxWidth - GAP - queueCardWidth) / 2;
+        } else {
+            boxWidth = centered
+                    ? Math.min(PLAYER_SCREEN_WIDTH, screenWidth - MARGIN * 2)
+                    : Math.min(FIXED_WIDTH, Math.max(MIN_WIDTH, availablePanelWidth(screenWidth, optionsScreen)));
+            boxX = centered ? (screenWidth - boxWidth) / 2 : Math.max(0, screenWidth - MARGIN - boxWidth);
+            queueCardWidth = boxWidth;
+        }
         int boxY = centered ? Math.max(MARGIN, (screenHeight - playerCardHeight) / 2) : MARGIN;
 
         int innerX = boxX + PAD;
@@ -130,15 +148,16 @@ public final class PauseMusicWidget {
         int endX = nextX + BUTTON_SIZE + GAP;
         int endWidth = Math.max(20, queueX - GAP - endX);
 
-        int queueCardX = boxX;
-        int queueCardY = boxY + playerCardHeight + GAP;
-        int queueCardWidth = boxWidth;
+        int queueCardX = centered ? boxX + boxWidth + GAP : boxX;
+        int queueCardY = centered ? boxY : boxY + playerCardHeight + GAP;
         int lineStep = lineHeight + LINE_GAP;
         int queueCardHeight = queueOpen ? (PAD * 2 + lineStep * 6) : 0;
         int queueHeaderY = queueCardY + PAD;
         int queueListY = queueHeaderY + lineStep;
 
-        int boxHeight = playerCardHeight + (queueOpen ? GAP + queueCardHeight : 0);
+        int boxHeight = centered
+                ? Math.max(playerCardHeight, queueCardHeight)
+                : playerCardHeight + (queueOpen ? GAP + queueCardHeight : 0);
 
         return new PanelLayout(
                 boxX, boxY, boxWidth, boxHeight,

@@ -116,16 +116,29 @@ class PauseTransportPanelTest {
         assertTrue(PauseMusicWidget.requiresMinimizedPanel(520, false));
     }
 
-    @Test void modMenuPlayerCentersWithoutJumpingWhenQueueOpens() {
+    @Test void modMenuPlayerIsFiftyPercentWiderWithQueueOnRight() {
         PauseMusicWidget.PanelLayout closed =
                 PauseMusicWidget.panelLayout(692, 423, 60, 40, 9, false, false, true);
         PauseMusicWidget.PanelLayout open =
                 PauseMusicWidget.panelLayout(692, 423, 60, 40, 9, true, false, true);
-        assertEquals(204, closed.boxWidth());
-        assertEquals(244, closed.boxX());
+        assertEquals(306, closed.boxWidth());
+        assertEquals(193, closed.boxX());
         assertEquals(185, closed.boxY());
-        assertEquals(closed.boxX(), open.boxX());
-        assertEquals(closed.boxY(), open.boxY());
+        assertEquals(open.boxX() + open.boxWidth() + PauseMusicWidget.GAP, open.queueCardX());
+        assertEquals(open.boxY(), open.queueCardY());
+        assertEquals(204, open.queueCardWidth());
+        assertEquals((692 - open.boxWidth() - PauseMusicWidget.GAP - open.queueCardWidth()) / 2,
+                open.boxX());
+    }
+
+    @Test void narrowModMenuPlayerAndRightQueueFitScreen() {
+        PauseMusicWidget.PanelLayout open =
+                PauseMusicWidget.panelLayout(300, 209, 60, 40, 9, true, false, true);
+        assertTrue(open.boxWidth() >= PauseMusicWidget.MIN_WIDTH);
+        assertTrue(open.boxX() >= PauseMusicWidget.MARGIN);
+        assertEquals(open.boxX() + open.boxWidth() + PauseMusicWidget.GAP, open.queueCardX());
+        assertTrue(open.queueCardWidth() > 0);
+        assertTrue(open.queueCardX() + open.queueCardWidth() <= 300 - PauseMusicWidget.MARGIN);
     }
 
     @Test void narrowScreensStillFitTransportRow() {
