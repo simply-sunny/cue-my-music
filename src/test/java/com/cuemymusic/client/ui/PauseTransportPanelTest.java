@@ -96,10 +96,24 @@ class PauseTransportPanelTest {
         assertEquals(854 - PauseMusicWidget.MARGIN - 204, layout.boxX());
     }
 
-    @Test void highGuiScaleShrinksPanelToHalfTheScreen() {
-        PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(320, 240, 60, 40, 9, false);
-        assertEquals(160, layout.boxWidth());
-        assertEquals(320 - PauseMusicWidget.MARGIN, layout.boxX() + layout.boxWidth());
+    @Test void optionsPanelClearsCenteredHeaderAtGuiScaleFive() {
+        PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(692, 423, 60, 40, 9, false, true);
+        assertEquals(182, layout.boxWidth());
+        assertEquals(504, layout.boxX());
+        assertTrue(layout.boxX() >= 500 + PauseMusicWidget.GAP,
+                "panel must clear the Options header by one gap");
+    }
+
+    @Test void pausePanelKeepsFullWidthWhenItsRightGutterFits() {
+        PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(692, 423, 60, 40, 9, false, false);
+        assertEquals(204, layout.boxWidth());
+        assertEquals(482, layout.boxX());
+    }
+
+    @Test void panelsForceMinimizedStateBelowStructuralWidth() {
+        assertFalse(PauseMusicWidget.requiresMinimizedPanel(692, true));
+        assertTrue(PauseMusicWidget.requiresMinimizedPanel(620, true));
+        assertTrue(PauseMusicWidget.requiresMinimizedPanel(520, false));
     }
 
     @Test void narrowScreensStillFitTransportRow() {

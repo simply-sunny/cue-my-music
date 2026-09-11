@@ -264,13 +264,14 @@ class MenuMusicWidgetTest {
                 "opening the queue must grow the box: " + closed.boxHeight() + " -> " + open.boxHeight());
     }
 
-    @Test void bothScreensAgreeOnCompactBox() {
+    @Test void narrowAndWideScreensUseResponsiveBoxWidths() {
         PauseMusicWidget.PanelLayout pause =
                 PauseMusicWidget.panelLayout(PAUSE_WIDTH, PAUSE_HEIGHT, 60, 40, LINE_HEIGHT, false);
         PauseMusicWidget.PanelLayout options =
                 PauseMusicWidget.panelLayout(TITLE_WIDTH, TITLE_HEIGHT, 60, 40, LINE_HEIGHT, false);
         assertEquals(pause.boxHeight(), options.boxHeight());
-        assertEquals(pause.boxWidth(), options.boxWidth());
+        assertEquals(PauseMusicWidget.MIN_WIDTH, pause.boxWidth());
+        assertEquals(PauseMusicWidget.FIXED_WIDTH, options.boxWidth());
         assertEquals(PAUSE_WIDTH - PauseMusicWidget.MARGIN, pause.boxX() + pause.boxWidth());
         assertEquals(TITLE_WIDTH - PauseMusicWidget.MARGIN, options.boxX() + options.boxWidth());
         assertEquals(PauseMusicWidget.MARGIN, pause.boxY());

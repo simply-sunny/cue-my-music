@@ -42,6 +42,9 @@ public final class PauseMusicWidget {
     static final int LINE_GAP = 2;
     static final int PAD = 4;
     static final int FIXED_WIDTH = 204;
+    static final int MIN_WIDTH = 160;
+    static final int OPTIONS_HALF_WIDTH = 154;
+    static final int PAUSE_HALF_WIDTH = 102;
     static final int QUEUE_WIDTH = 20;
     static final int SLIDER_HEIGHT = 20;
     static final String FALLBACK_TEXT = "No music playing";
@@ -62,6 +65,7 @@ public final class PauseMusicWidget {
     static final String SCRUB_TOOLTIP = "Seek (drag or arrow keys)";
     static final String MINIMIZE_TOOLTIP = "Minimize";
     static final String RESTORE_TOOLTIP = "Restore";
+    static final String TOO_NARROW_TOOLTIP = "Window too narrow to expand transport panel";
     static final int CARD_BG_COLOR = 0xD0101010;
     static final int CARD_BORDER_COLOR = 0xFF505050;
 
@@ -85,8 +89,9 @@ public final class PauseMusicWidget {
     }
 
     static PanelLayout panelLayout(int screenWidth, int screenHeight, int titleTextWidth, int artistTextWidth,
-            int lineHeight, boolean queueOpen) {
-        int boxWidth = Math.min(FIXED_WIDTH, Math.max(160, screenWidth / 2));
+            int lineHeight, boolean queueOpen, boolean optionsScreen) {
+        int boxWidth = Math.min(FIXED_WIDTH,
+                Math.max(MIN_WIDTH, availablePanelWidth(screenWidth, optionsScreen)));
         int boxX = Math.max(0, screenWidth - MARGIN - boxWidth);
         int boxY = MARGIN;
 
@@ -146,8 +151,21 @@ public final class PauseMusicWidget {
                 queueHeaderY, queueListY);
     }
 
+    static PanelLayout panelLayout(int screenWidth, int screenHeight, int titleTextWidth, int artistTextWidth,
+            int lineHeight, boolean queueOpen) {
+        return panelLayout(screenWidth, screenHeight, titleTextWidth, artistTextWidth, lineHeight, queueOpen, false);
+    }
+
     static PanelLayout panelLayout(int screenWidth, int titleTextWidth, int artistTextWidth, int lineHeight) {
         return panelLayout(screenWidth, 400, titleTextWidth, artistTextWidth, lineHeight, false);
+    }
+
+    static int availablePanelWidth(int screenWidth, boolean optionsScreen) {
+        return screenWidth / 2 - (optionsScreen ? OPTIONS_HALF_WIDTH : PAUSE_HALF_WIDTH) - MARGIN - GAP;
+    }
+
+    static boolean requiresMinimizedPanel(int screenWidth, boolean optionsScreen) {
+        return availablePanelWidth(screenWidth, optionsScreen) < MIN_WIDTH;
     }
 
     /** Pure display lines: title/artist, title only, or the fallback. */
@@ -363,7 +381,8 @@ public final class PauseMusicWidget {
             List<String> lines = displayLines(director.nowPlaying());
             int titleWidth = font.width(lines.get(0));
             int artistWidth = lines.size() > 1 ? font.width(lines.get(1)) : 0;
-            return panelLayout(screen.width, screen.height, titleWidth, artistWidth, font.lineHeight, queueOpen);
+            return panelLayout(screen.width, screen.height, titleWidth, artistWidth, font.lineHeight, queueOpen,
+                    screen instanceof OptionsScreen);
         }
 
         void toggleMinimize() {
@@ -407,6 +426,10 @@ public final class PauseMusicWidget {
         }
 
         void refresh() {
+            boolean forcedMinimized = requiresMinimizedPanel(screen.width, screen instanceof OptionsScreen);
+            if (forcedMinimized) {
+                minimized = true;
+            }
             if (minimized) {
                 title.visible = false;
                 artist.visible = false;
@@ -427,13 +450,14 @@ public final class PauseMusicWidget {
                     item.visible = false;
                 }
                 minimizeButton.setMessage(Component.literal(RESTORE_TEXT));
-                minimizeButton.setTooltip(Tooltip.create(Component.literal(RESTORE_TOOLTIP)));
+                minimizeButton.setTooltip(Tooltip.create(Component.literal(
+                        forcedMinimized ? TOO_NARROW_TOOLTIP : RESTORE_TOOLTIP)));
                 minimizeButton.setX(screen.width - MARGIN - BUTTON_SIZE);
                 minimizeButton.setY(MARGIN);
                 minimizeButton.setWidth(BUTTON_SIZE);
                 minimizeButton.setHeight(BUTTON_SIZE);
                 minimizeButton.visible = true;
-                minimizeButton.active = true;
+                minimizeButton.active = !forcedMinimized;
                 return;
             }
 
@@ -567,7 +591,7 @@ public final class PauseMusicWidget {
 
         var font = client.font;
         PanelLayout layout = panelLayout(screen.width, screen.height, font.width(FALLBACK_TEXT), 0,
-                font.lineHeight, false);
+                font.lineHeight, false, screen instanceof OptionsScreen);
 
         StringWidget title = new StringWidget(layout.titleX(), layout.titleY(), layout.titleWidth(),
                 font.lineHeight, Component.literal(FALLBACK_TEXT), font);
