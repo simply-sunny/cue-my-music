@@ -86,7 +86,7 @@ public final class PauseMusicWidget {
 
     static PanelLayout panelLayout(int screenWidth, int screenHeight, int titleTextWidth, int artistTextWidth,
             int lineHeight, boolean queueOpen) {
-        int boxWidth = Math.min(FIXED_WIDTH, Math.max(160, screenWidth - MARGIN * 2));
+        int boxWidth = Math.min(FIXED_WIDTH, Math.max(160, screenWidth / 2));
         int boxX = Math.max(0, screenWidth - MARGIN - boxWidth);
         int boxY = MARGIN;
 

@@ -132,8 +132,8 @@ class PauseWidgetStateTest {
 
     @Test void layoutClipsWideTextToBoundedCardWidth() {
         PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(400, 10_000, 9_000, 9);
-        assertEquals(204, layout.boxWidth());
-        assertEquals(400 - PauseMusicWidget.MARGIN - 204, layout.boxX());
+        assertEquals(200, layout.boxWidth());
+        assertEquals(400 - PauseMusicWidget.MARGIN - 200, layout.boxX());
     }
 
     @Test void layoutAlwaysFitsTheButtonRow() {

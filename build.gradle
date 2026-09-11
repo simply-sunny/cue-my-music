@@ -3,6 +3,10 @@ plugins {
     id 'maven-publish'
 }
 
+repositories {
+    maven { url = "https://maven.terraformersmc.com/" }
+}
+
 version = project.mod_version
 group = project.maven_group
 
@@ -27,6 +31,7 @@ dependencies {
 
     // Fabric API (screen events for the Pause-screen widget)
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    clientRuntimeOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
 tasks.matching { it.name.startsWith('run') }.configureEach {

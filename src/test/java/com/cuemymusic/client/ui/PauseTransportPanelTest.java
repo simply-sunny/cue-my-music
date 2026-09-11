@@ -91,9 +91,15 @@ class PauseTransportPanelTest {
     }
 
     @Test void wideTextClipsToBoundedCardWidth() {
-        PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(400, 10_000, 9_000, 9);
+        PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(854, 10_000, 9_000, 9);
         assertEquals(204, layout.boxWidth());
-        assertEquals(400 - PauseMusicWidget.MARGIN - 204, layout.boxX());
+        assertEquals(854 - PauseMusicWidget.MARGIN - 204, layout.boxX());
+    }
+
+    @Test void highGuiScaleShrinksPanelToHalfTheScreen() {
+        PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(320, 240, 60, 40, 9, false);
+        assertEquals(160, layout.boxWidth());
+        assertEquals(320 - PauseMusicWidget.MARGIN, layout.boxX() + layout.boxWidth());
     }
 
     @Test void narrowScreensStillFitTransportRow() {

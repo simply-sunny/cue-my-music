@@ -9,7 +9,7 @@ Deterministic vanilla background music with a boxed Pause-screen transport: Play
 ## Features
 
 - **Vanilla Playback Ownership**: Integrates directly with Minecraft's native `MusicManager` to preserve ticks, fades, delays, streaming backend, replacement rules, and toasts.
-- **Pause Screen Transport**: Compact top-right transport panel on the Escape menu with track metadata, live audible clock, and full playback controls.
+- **Pause Screen Transport**: Compact, GUI-scale-aware top-right transport panel on the Escape menu with track metadata, live audible clock, and full playback controls.
 - **Previous, Next & End**: Skip immediately to deterministic situational tracks, simulate natural song ends with normal delay recomputation, or step back through recently played history.
 - **Channel Play/Pause**: Pauses only the background music channel without disrupting world sounds, ambient audio, or global volume resets.
 - **Draggable Scrub Bar**: Real-time seeking via off-thread stream skipping and compressed OGG framing duration detection.
@@ -21,13 +21,14 @@ Deterministic vanilla background music with a boxed Pause-screen transport: Play
 - Minecraft 26.2
 - Fabric Loader (>=0.19.3)
 - Fabric API
+- Mod Menu 20.0.1 or another Minecraft 26.2-compatible version
 - Java 25
 
 ## Install
 
 1. Install Fabric Loader for Minecraft 26.2.
-2. Add Fabric API to `mods/`.
-3. Add `cue-my-music-0.1.0.jar` (from [Releases](https://github.com/simply-sunny/cue-my-music/releases)) to `mods/`.
+2. Add Fabric API and a Minecraft 26.2-compatible Mod Menu to `mods/`.
+3. Add `cue-my-music-0.1.1.jar` (from [Releases](https://github.com/simply-sunny/cue-my-music/releases)) to `mods/`.
 4. Launch the client.
 
 ## Controls
@@ -46,7 +47,7 @@ Deterministic vanilla background music with a boxed Pause-screen transport: Play
 ./gradlew clean test build
 ```
 
-Output jar: `build/libs/cue-my-music-0.1.0.jar` (requires Java 25).
+Output jar: `build/libs/cue-my-music-0.1.1.jar` (requires Java 25).
 
 ## Limitations
 

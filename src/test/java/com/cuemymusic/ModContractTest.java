@@ -16,8 +16,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * Reduction contract: the shipped mod must contain only the deterministic
  * vanilla-music product plus the explicitly user-approved Pause transport
  * (boxed panel, Play/Pause, scrub bar, Previous/Next/End) — no
- * library/search/config/persistence/YouTube systems, no Mod Menu wiring, no
- * download scripts or catalogs.
+ * library/search/config/persistence/YouTube systems, required Mod Menu integration,
+ * and no download scripts or catalogs.
  */
 class ModContractTest {
 
@@ -58,16 +58,14 @@ class ModContractTest {
                 "youtube_catalog.json must be deleted");
     }
 
-    @Test void modMetadataHasNoModMenuWiring() throws Exception {
+    @Test void modMetadataRequiresAnyCompatibleModMenu() throws Exception {
         String json = Files.readString(SRC.resolve("main/resources/fabric.mod.json"));
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
         JsonObject entrypoints = root.getAsJsonObject("entrypoints");
-        assertFalse(entrypoints.has("modmenu"), "modmenu entrypoint must be removed");
+        assertFalse(entrypoints.has("modmenu"), "no Mod Menu API entrypoint is needed");
         assertFalse(entrypoints.has("main"), "pure-client mod must not ship a common initializer");
         assertTrue(entrypoints.has("client"), "client entrypoint must remain");
-        if (root.has("suggests")) {
-            assertFalse(root.getAsJsonObject("suggests").has("modmenu"), "modmenu suggest must be removed");
-        }
+        assertEquals("*", root.getAsJsonObject("depends").get("modmenu").getAsString());
     }
 
     @Test void mixinConfigListsOnlySurvivingMixins() throws Exception {
