@@ -194,9 +194,9 @@ public final class RadialWeightWidget extends AbstractWidget implements AutoClos
                         double endAngle = matchedEnd * 2 * Math.PI;
                         double dAngleStart = angleDiff(angle, startAngle);
                         double dAngleEnd = angleDiff(angle, endAngle);
-                        double distToStart = radius * Math.sin(dAngleStart);
-                        double distToEnd = radius * Math.sin(dAngleEnd);
-                        nearBoundary = distToStart <= 2.0 || distToEnd <= 2.0;
+                        boolean nearStart = dAngleStart <= Math.PI / 2.0 && (radius * Math.sin(dAngleStart) <= 2.0);
+                        boolean nearEnd = dAngleEnd <= Math.PI / 2.0 && (radius * Math.sin(dAngleEnd) <= 2.0);
+                        nearBoundary = nearStart || nearEnd;
                     }
                     if (nearBoundary) {
                         color = brighten(color);
@@ -259,7 +259,7 @@ public final class RadialWeightWidget extends AbstractWidget implements AutoClos
 
     @Override
     protected void extractWidgetRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickProgress) {
-        extractor.blit(textureId, getX(), getY(), size, size, 0F, 0F, 1F, 1F);
+        extractor.blit(textureId, getX(), getY(), getX() + size, getY() + size, 0.0F, 1.0F, 0.0F, 1.0F);
 
         double relX = mouseX - getX();
         double relY = mouseY - getY();

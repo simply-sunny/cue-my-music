@@ -144,4 +144,31 @@ class RadialWeightWidgetTest {
         int color = RadialWeightWidget.stableColor("solo");
         assertTrue(Arrays.stream(raster).anyMatch(p -> p == color || p == RadialWeightWidget.brighten(color)));
     }
+
+    @Test void selectedSliceOver180DegreesDoesNotHighlightOppositeRay() {
+        List<RadialWeightWidget.Slice> slices = List.of(slice("big", 0.75), slice("small", 0.25));
+        int size = 100;
+        int[] raster = RadialWeightWidget.rasterize(size, slices, "big");
+        int baseColor = RadialWeightWidget.stableColor("big");
+        int highlightColor = RadialWeightWidget.brighten(baseColor);
+
+        // Actual start ray is at 12 o'clock (angle 0, dy < 0). Point (51, 10) has dx=1, dy=-40, radius=40.
+        int actualRayPixel = raster[10 * size + 51];
+        assertEquals(highlightColor, actualRayPixel, "Actual boundary ray must be highlighted");
+
+        // Opposite start ray is at 6 o'clock (angle pi, dy > 0). Point (50, 90) has dx=0, dy=40, radius=40.
+        // This is in the interior of the 75% slice (which spans 0 to 1.5pi) and far from radial boundaries.
+        int oppositeRayPixel = raster[90 * size + 50];
+        assertEquals(baseColor, oppositeRayPixel,
+                "Interior opposite to boundary ray must remain base color without phantom highlight");
+    }
+
+    @Test void blitParametersPassExtentsAndNonCollapsedUV() throws Exception {
+        String source = java.nio.file.Files.readString(
+                java.nio.file.Path.of("src/client/java/com/cuemymusic/client/ui/RadialWeightWidget.java"));
+        assertTrue(source.contains("getX() + size") && source.contains("getY() + size"),
+                "blit must pass x1 = getX() + size and y1 = getY() + size");
+        assertTrue(source.contains("0.0F, 1.0F, 0.0F, 1.0F") || source.contains("0F, 1F, 0F, 1F"),
+                "blit must pass u0=0, u1=1, v0=0, v1=1 to avoid collapsed UVs");
+    }
 }

@@ -125,7 +125,7 @@ public final class TrackWeightScreen extends Screen {
         int top = 50;
         int bottom = screenHeight - 28;
         int availableHeight = Math.max(0, bottom - top);
-        int size = Math.clamp(Math.min(availableWidth - 20, availableHeight - 20), 64, 180);
+        int size = Math.clamp(Math.min(availableWidth - 20, availableHeight - 20), 16, 180);
         int x = left + Math.max(0, (availableWidth - size) / 2);
         int y = top + Math.max(0, (availableHeight - size) / 2);
         return new Bounds(x, y, size, size);

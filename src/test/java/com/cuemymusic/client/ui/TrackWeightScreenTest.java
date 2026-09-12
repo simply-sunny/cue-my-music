@@ -400,20 +400,23 @@ class TrackWeightScreenTest {
 
     @Test void wideWheelBoundsGuaranteesNoOverlapAcrossBoundaryWidths() {
         int[] widths = {640, 679, 680, 800, 1920};
+        int[] heights = {100, 114, 150, 250, 400, 1080};
         for (int w : widths) {
-            TrackWeightScreen.Bounds list = TrackWeightScreen.wideListBounds(w, 400);
-            TrackWeightScreen.Bounds editor = TrackWeightScreen.wideEditorBounds(w, 400);
-            TrackWeightScreen.Bounds bottomBar = TrackWeightScreen.wideBottomBarBounds(w, 400);
-            TrackWeightScreen.Bounds wheel = TrackWeightScreen.wideWheelBounds(w, 400);
+            for (int h : heights) {
+                TrackWeightScreen.Bounds list = TrackWeightScreen.wideListBounds(w, h);
+                TrackWeightScreen.Bounds editor = TrackWeightScreen.wideEditorBounds(w, h);
+                TrackWeightScreen.Bounds bottomBar = TrackWeightScreen.wideBottomBarBounds(w, h);
+                TrackWeightScreen.Bounds wheel = TrackWeightScreen.wideWheelBounds(w, h);
 
-            assertTrue(wheel.x() >= list.right(),
-                    "Wheel left (" + wheel.x() + ") must be >= list right (" + list.right() + ") at width " + w);
-            assertTrue(wheel.right() <= editor.x(),
-                    "Wheel right (" + wheel.right() + ") must be <= editor left (" + editor.x() + ") at width " + w);
-            assertTrue(wheel.y() >= 50,
-                    "Wheel top (" + wheel.y() + ") must be >= top boundary 50 at width " + w);
-            assertTrue(wheel.bottom() <= bottomBar.y(),
-                    "Wheel bottom (" + wheel.bottom() + ") must be <= bottom bar y (" + bottomBar.y() + ") at width " + w);
+                assertTrue(wheel.x() >= list.right(),
+                        "Wheel left (" + wheel.x() + ") must be >= list right (" + list.right() + ") at " + w + "x" + h);
+                assertTrue(wheel.right() <= editor.x(),
+                        "Wheel right (" + wheel.right() + ") must be <= editor left (" + editor.x() + ") at " + w + "x" + h);
+                assertTrue(wheel.y() >= 50,
+                        "Wheel top (" + wheel.y() + ") must be >= top boundary 50 at " + w + "x" + h);
+                assertTrue(wheel.bottom() <= bottomBar.y(),
+                        "Wheel bottom (" + wheel.bottom() + ") must be <= bottom bar y (" + bottomBar.y() + ") at " + w + "x" + h);
+            }
         }
     }
 
