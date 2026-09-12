@@ -45,11 +45,11 @@ final class TrackPreviewPlayer {
         this.playPause = Button.builder(Component.literal(playPauseIcon(initial != null ? initial.state() : State.PAUSED)),
                 b -> onToggle.run())
                 .bounds(0, 0, 20, 20)
-                .createNarration(supplier -> Component.literal("Pause or resume preview"))
+                .createNarration(supplier -> Component.literal("Pause or resume preview: " + currentTitle()))
                 .build();
         this.stop = Button.builder(Component.literal("■"), b -> onStop.run())
                 .bounds(0, 0, 20, 20)
-                .createNarration(supplier -> Component.literal("Stop preview"))
+                .createNarration(supplier -> Component.literal("Stop preview: " + currentTitle()))
                 .build();
         this.widgets = List.of(this.title, this.scrub, this.playPause, this.stop);
         tick();
@@ -83,38 +83,55 @@ final class TrackPreviewPlayer {
         return stop;
     }
 
+    private String currentTitle() {
+        Snapshot snap = snapshot.get();
+        return snap != null && snap.title() != null ? snap.title() : "";
+    }
+
+    static final int TITLE_HEIGHT = 9;
+    static final int TITLE_GAP = 2;
+    static final int MIN_ROW_HEIGHT = 18;
+    static final int MAX_ROW_HEIGHT = 20;
+    static final int PLAYER_BUTTON_WIDTH = 20;
+    static final int PLAYER_BUTTON_GAP = 2;
+
     void setBounds(TrackWeightScreen.Bounds bounds) {
         if (bounds == null) {
             return;
         }
-        int titleHeight = 9;
+        boolean compact = bounds.height() < TITLE_HEIGHT + TITLE_GAP + MIN_ROW_HEIGHT;
         title.setX(bounds.x());
         title.setY(bounds.y());
         title.setWidth(bounds.width());
-        title.setHeight(titleHeight);
-        try {
-            title.setMaxWidth(Math.max(0, bounds.width()));
-        } catch (Exception ignored) {}
-
-        int rowY = bounds.y() + titleHeight + 2;
-        int rowHeight = Math.max(18, bounds.bottom() - rowY);
-        if (rowHeight > 20) {
-            rowHeight = 20;
+        title.setHeight(TITLE_HEIGHT);
+        title.setMaxWidth(Math.max(0, bounds.width()));
+        title.visible = !compact;
+        if (compact) {
+            int rowH = Math.clamp(bounds.height(), MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+            int rowY = bounds.y() + Math.max(0, (bounds.height() - rowH) / 2);
+            layoutRow(bounds, rowY, rowH);
+        } else {
+            int rowY = bounds.y() + TITLE_HEIGHT + TITLE_GAP;
+            int rowH = Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, bounds.bottom() - rowY));
+            layoutRow(bounds, rowY, rowH);
         }
+    }
+
+    private void layoutRow(TrackWeightScreen.Bounds bounds, int rowY, int rowH) {
         playPause.setX(bounds.x());
         playPause.setY(rowY);
-        playPause.setWidth(20);
-        playPause.setHeight(rowHeight);
-        stop.setX(bounds.x() + 22);
+        playPause.setWidth(PLAYER_BUTTON_WIDTH);
+        playPause.setHeight(rowH);
+        stop.setX(bounds.x() + PLAYER_BUTTON_WIDTH + PLAYER_BUTTON_GAP);
         stop.setY(rowY);
-        stop.setWidth(20);
-        stop.setHeight(rowHeight);
-        int sliderX = bounds.x() + 44;
-        int sliderWidth = Math.max(40, bounds.right() - sliderX);
+        stop.setWidth(PLAYER_BUTTON_WIDTH);
+        stop.setHeight(rowH);
+        int sliderX = bounds.x() + 2 * (PLAYER_BUTTON_WIDTH + PLAYER_BUTTON_GAP);
+        int sliderWidth = Math.max(0, bounds.right() - sliderX);
         scrub.setX(sliderX);
         scrub.setY(rowY);
         scrub.setWidth(sliderWidth);
-        scrub.setHeight(rowHeight);
+        scrub.setHeight(rowH);
     }
 
     void tick() {

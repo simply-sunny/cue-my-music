@@ -173,6 +173,52 @@ class TrackPreviewPlayerTest {
         assertTrue(scrub.active, "Scrub must be enabled when duration is known");
     }
 
+    @Test void activeNarrationIncludesTrackTitle() {
+        AtomicReference<Snapshot> snap = new AtomicReference<>(
+                new Snapshot(State.PLAYING, "id", "Sweden", 10.0, 200.0, true));
+        TrackPreviewPlayer player = new TrackPreviewPlayer(null, snap::get, () -> {}, v -> {}, () -> {});
+        player.setBounds(new Bounds(0, 0, 300, 60));
+        player.tick();
+        assertTrue(narrationText(player.widgets().get(2)).contains("Sweden"),
+                "Play/pause narration must include the track title");
+        assertTrue(narrationText(player.widgets().get(3)).contains("Sweden"),
+                "Stop narration must include the track title");
+    }
+
+    private static Bounds widgetBounds(AbstractWidget widget) {
+        try {
+            java.lang.reflect.Field xField = AbstractWidget.class.getDeclaredField("x");
+            java.lang.reflect.Field yField = AbstractWidget.class.getDeclaredField("y");
+            java.lang.reflect.Field wField = AbstractWidget.class.getDeclaredField("width");
+            java.lang.reflect.Field hField = AbstractWidget.class.getDeclaredField("height");
+            xField.setAccessible(true);
+            yField.setAccessible(true);
+            wField.setAccessible(true);
+            hField.setAccessible(true);
+            return new Bounds(xField.getInt(widget), yField.getInt(widget),
+                    wField.getInt(widget), hField.getInt(widget));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test void compactBoundsKeepAllWidgetsInsidePreview() {
+        AtomicReference<Snapshot> snap = new AtomicReference<>(
+                new Snapshot(State.PLAYING, "id", "Sweden", 10.0, 200.0, true));
+        TrackPreviewPlayer player = new TrackPreviewPlayer(null, snap::get, () -> {}, v -> {}, () -> {});
+        Bounds preview = new Bounds(30, 136, 240, 18);
+        player.setBounds(preview);
+        player.tick();
+        for (AbstractWidget w : player.widgets()) {
+            Bounds extent = widgetBounds(w);
+            assertTrue(preview.contains(extent),
+                    "Widget " + w.getMessage().getString() + " extent " + extent
+                            + " must stay inside compact preview " + preview);
+        }
+        assertTrue(narrationText(player.widgets().get(2)).contains("Sweden"),
+                "Compact play/pause narration must retain the track title");
+    }
+
     @Test void playerControlsTogglePauseAndStop() {
         AtomicBoolean toggled = new AtomicBoolean(false);
         AtomicBoolean stopped = new AtomicBoolean(false);

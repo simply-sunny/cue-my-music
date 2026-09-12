@@ -85,6 +85,23 @@ class TrackWeightScreenTest {
         }
     }
 
+    private static Bounds widgetFieldBounds(net.minecraft.client.gui.components.AbstractWidget widget) {
+        try {
+            java.lang.reflect.Field xField = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredField("x");
+            java.lang.reflect.Field yField = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredField("y");
+            java.lang.reflect.Field wField = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredField("width");
+            java.lang.reflect.Field hField = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredField("height");
+            xField.setAccessible(true);
+            yField.setAccessible(true);
+            wField.setAccessible(true);
+            hField.setAccessible(true);
+            return new Bounds(xField.getInt(widget), yField.getInt(widget),
+                    wField.getInt(widget), hField.getInt(widget));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private static String getWidgetNarration(net.minecraft.client.gui.components.AbstractWidget widget) {
         try {
             java.lang.reflect.Method method = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredMethod("createNarrationMessage");
@@ -363,6 +380,84 @@ class TrackWeightScreenTest {
             assertEquals(layout.main().bottom(), layout.preview().bottom(),
                     "Active preview must extend to main-panel bottom at " + w + "x" + h);
         }
+    }
+
+    @Test
+    void steadyIdleTicksRetainIdleButtonInChildren() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+        screen.initForDimensions(1200, 800);
+
+        Button idle = screen.previewButton();
+        assertNotNull(idle, "Idle preview must exist");
+        for (int i = 0; i < 3; i++) {
+            screen.tick();
+        }
+        assertSame(idle, screen.previewButton(), "Steady idle ticks must retain the same button instance");
+        assertTrue(screen.children().contains(idle), "Idle button must stay in children after steady ticks");
+        assertEquals("▶", screen.previewButton().getMessage().getString());
+    }
+
+    @Test
+    void stopToIdlePlusExtraTickRetainsIdleButton() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+        screen.initForDimensions(1200, 800);
+
+        screen.previewButton().onPress(null);
+        screen.tick();
+        assertNotNull(screen.previewPlayer());
+
+        screen.previewPlayer().stopButton().onPress(null);
+        screen.tick();
+        assertNull(screen.previewPlayer());
+        assertNotNull(screen.previewButton(), "Idle control must return after stop");
+        screen.tick();
+        assertNotNull(screen.previewButton(), "Extra idle tick must retain the button");
+        assertTrue(screen.children().contains(screen.previewButton()),
+                "Idle button must stay in children after stop plus extra tick");
+    }
+
+    @Test
+    void naturalCompletionSwapsPlayerBackToIdle() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+        screen.initForDimensions(1200, 800);
+
+        screen.previewButton().onPress(null);
+        screen.tick();
+        assertNotNull(screen.previewPlayer(), "Player must appear after start");
+
+        for (int i = 0; i < 60; i++) {
+            screen.tick();
+        }
+        assertNull(screen.previewPlayer(), "Natural completion must remove the player");
+        assertNotNull(screen.previewButton(), "Natural completion must restore the idle control");
+        assertTrue(screen.children().contains(screen.previewButton()),
+                "Restored idle button must be in children");
+        assertEquals("▶", screen.previewButton().getMessage().getString());
+    }
+
+    @Test
+    void activePlayerWidgetsStayInsidePreviewAt300x209() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+        screen.initForDimensions(300, 209);
+        assertNotNull(screen.previewButton(), "Idle preview must exist at 300x209");
+
+        screen.previewButton().onPress(null);
+        screen.tick();
+        assertNotNull(screen.previewPlayer(), "Player must appear at 300x209");
+        Bounds preview = screen.responsiveLayout().preview();
+        for (net.minecraft.client.gui.components.AbstractWidget w : screen.previewPlayer().widgets()) {
+            Bounds extent = widgetFieldBounds(w);
+            assertTrue(preview.contains(extent),
+                    "Widget " + w.getMessage().getString() + " extent " + extent
+                            + " must stay inside preview " + preview + " at 300x209");
+        }
+        int errorY = screen.responsiveLayout().bottomToolbar().y() - 12;
+        assertTrue(preview.bottom() <= errorY,
+                "Preview bottom must stay above the save-error row at 300x209");
     }
 
     @Test void configureButtonIsLongAndBottomCentered() {

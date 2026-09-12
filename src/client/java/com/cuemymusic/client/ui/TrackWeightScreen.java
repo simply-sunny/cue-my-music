@@ -739,26 +739,28 @@ public final class TrackWeightScreen extends Screen {
                 previewPlayer.tick();
             }
         } else {
-            boolean hadPlayer = previewPlayer != null;
-            removePreviewWidgets();
-            previewPlayer = null;
+            if (previewPlayer != null) {
+                for (var widget : previewPlayer.widgets()) {
+                    removeWidget(widget);
+                }
+                previewPlayer = null;
+            }
             if (previewButton == null) {
                 previewButton = createIdlePreviewButton();
+            }
+            if (!children().contains(previewButton)) {
                 addRenderableWidget(previewButton);
             }
             refreshIdlePreviewButton();
-            if (hadPlayer) {
-                refreshIdlePreviewButton();
-            }
         }
     }
 
     private Button createIdlePreviewButton() {
         Bounds preview = layout != null ? layout.preview() : null;
-        int x = preview != null ? preview.x() : 0;
-        int y = preview != null ? preview.y() : 0;
-        int w = preview != null ? Math.min(20, preview.width()) : 20;
-        int h = preview != null ? Math.min(20, Math.max(18, preview.height())) : 20;
+        int w = 20;
+        int h = preview != null ? Math.max(18, Math.min(20, preview.height())) : 20;
+        int x = preview != null ? preview.x() + Math.max(0, (preview.width() - w) / 2) : 0;
+        int y = preview != null ? preview.y() + Math.max(0, (preview.height() - h) / 2) : 0;
         net.minecraft.network.chat.MutableComponent narration = Component.literal("Preview selected track");
         Button button = Button.builder(Component.literal("▶"), b -> {
             Track track = model.selectedTrack();
