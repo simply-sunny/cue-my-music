@@ -105,6 +105,26 @@ class ModContractTest {
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/TrackWeightConfig.java")));
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/WeightedMusicCatalog.java")));
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/ui/TrackWeightScreen.java")));
+        assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/ui/RadialWeightWidget.java")));
         assertTrue(productionFiles <= 24, "expected approved production surface, found " + productionFiles);
+    }
+
+    @Test void radialWeightWidgetRemainsRendererAgnostic() throws Exception {
+        Path path = SRC.resolve("client/java/com/cuemymusic/client/ui/RadialWeightWidget.java");
+        assertTrue(Files.exists(path), "RadialWeightWidget.java must exist");
+        String source = Files.readString(path);
+        assertFalse(source.contains("RenderSystem"), "RadialWeightWidget must not use RenderSystem");
+        assertFalse(source.contains("com.mojang.blaze3d.systems"), "RadialWeightWidget must not import blaze3d systems");
+        assertFalse(source.contains("org.lwjgl"), "RadialWeightWidget must not import LWJGL / GL");
+        assertFalse(source.contains("GL11") || source.contains("GL20") || source.contains("GL30"),
+                "RadialWeightWidget must not use GL");
+        assertFalse(source.contains("net.fabricmc.fabric.api.client.rendering"),
+                "RadialWeightWidget must not use Fabric rendering API");
+        assertFalse(source.contains("net.fabricmc.fabric.api.renderer"),
+                "RadialWeightWidget must not use Fabric renderer API");
+        assertFalse(source.contains("RenderPipeline"), "RadialWeightWidget must not use RenderPipeline");
+        assertFalse(source.contains("Shader"), "RadialWeightWidget must not use Shaders");
+        assertFalse(source.toLowerCase().contains("vulkan"), "RadialWeightWidget must not use Vulkan");
+        assertFalse(source.toLowerCase().contains("metal"), "RadialWeightWidget must not use Metal");
     }
 }

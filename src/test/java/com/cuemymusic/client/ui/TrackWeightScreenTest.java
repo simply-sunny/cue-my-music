@@ -383,4 +383,85 @@ class TrackWeightScreenTest {
         list.selectTrackEntry(thirdTrack.resourceId());
         assertEquals(2, selectionCallbacks.get(), "Selecting already selected track must be a no-op");
     }
+
+    @Test void radialWheelAppearsOnlyInWideLayout() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+
+        TrackWeightScreen wideScreen = new TrackWeightScreen(null, saved, pool);
+        wideScreen.initForDimensions(800, 400);
+        assertNotNull(wideScreen.radialWheel(), "Wheel must appear in wide layout");
+        assertEquals(wideScreen.radialWheel().getWidth(), wideScreen.radialWheel().getHeight());
+
+        TrackWeightScreen narrowScreen = new TrackWeightScreen(null, saved, pool);
+        narrowScreen.initForDimensions(400, 300);
+        assertNull(narrowScreen.radialWheel(), "Wheel must not appear in narrow layout");
+    }
+
+    @Test void wideWheelBoundsGuaranteesNoOverlapAcrossBoundaryWidths() {
+        int[] widths = {640, 679, 680, 800, 1920};
+        for (int w : widths) {
+            TrackWeightScreen.Bounds list = TrackWeightScreen.wideListBounds(w, 400);
+            TrackWeightScreen.Bounds editor = TrackWeightScreen.wideEditorBounds(w, 400);
+            TrackWeightScreen.Bounds bottomBar = TrackWeightScreen.wideBottomBarBounds(w, 400);
+            TrackWeightScreen.Bounds wheel = TrackWeightScreen.wideWheelBounds(w, 400);
+
+            assertTrue(wheel.x() >= list.right(),
+                    "Wheel left (" + wheel.x() + ") must be >= list right (" + list.right() + ") at width " + w);
+            assertTrue(wheel.right() <= editor.x(),
+                    "Wheel right (" + wheel.right() + ") must be <= editor left (" + editor.x() + ") at width " + w);
+            assertTrue(wheel.y() >= 50,
+                    "Wheel top (" + wheel.y() + ") must be >= top boundary 50 at width " + w);
+            assertTrue(wheel.bottom() <= bottomBar.y(),
+                    "Wheel bottom (" + wheel.bottom() + ") must be <= bottom bar y (" + bottomBar.y() + ") at width " + w);
+        }
+    }
+
+    @Test void wheelModelSynchronizesWithCatalogChancesAndPreservesOrder() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pool);
+        screen.initForDimensions(800, 400);
+
+        RadialWeightWidget wheel = screen.radialWheel();
+        assertNotNull(wheel);
+        List<RadialWeightWidget.Slice> slices = wheel.slices();
+        assertEquals(3, slices.size(), "Wheel must receive all tracks in the pool");
+
+        // Preserves track-list order
+        assertEquals(pool.tracks().get(0).resourceId(), slices.get(0).resourceId());
+        assertEquals(pool.tracks().get(1).resourceId(), slices.get(1).resourceId());
+        assertEquals(pool.tracks().get(2).resourceId(), slices.get(2).resourceId());
+
+        // Normalized chances
+        assertEquals(1.0 / 3.0, slices.get(0).chance(), 1e-6);
+        assertEquals(1.0 / 3.0, slices.get(1).chance(), 1e-6);
+        assertEquals(1.0 / 3.0, slices.get(2).chance(), 1e-6);
+
+        // Initial selected track
+        assertEquals(pool.tracks().getFirst().resourceId(), wheel.selectedResourceId());
+
+        // Searching tracks in the search box does NOT change the wheel slices (search-independent)
+        screen.model().setSearchQuery("relic");
+        screen.initForDimensions(800, 400);
+        assertEquals(3, screen.radialWheel().slices().size(), "Wheel slices must remain search-independent");
+        assertEquals("minecraft:music/game/relic", screen.radialWheel().selectedResourceId(),
+                "Search selecting new track must update wheel selected resource ID");
+
+        // Changing track selection via selectTrack updates wheel highlight
+        screen.selectTrack("minecraft:music/game/sweden");
+        assertEquals("minecraft:music/game/sweden", screen.radialWheel().selectedResourceId());
+
+        // Selecting track updates model and wheel
+        screen.selectTrack("minecraft:music/game/unknown");
+        assertEquals("Unknown Song", screen.model().selectedTrack().title());
+        assertEquals("minecraft:music/game/unknown", screen.radialWheel().selectedResourceId());
+
+        // Draft mutation (applyAll 1x, mute 0x) updates wheel chances
+        screen.model().mute();
+        screen.selectTrack("minecraft:music/game/unknown");
+        for (RadialWeightWidget.Slice s : screen.radialWheel().slices()) {
+            assertEquals(0.0, s.chance(), 1e-6, "Muted pool must result in 0 chance for all wheel slices");
+        }
+    }
 }

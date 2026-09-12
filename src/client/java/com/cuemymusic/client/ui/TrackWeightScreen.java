@@ -76,6 +76,7 @@ public final class TrackWeightScreen extends Screen {
     private Button testRollButton;
     private Button jsonButton;
     private Button doneButton;
+    private RadialWeightWidget radialWheel;
 
     public TrackWeightScreen(MusicPlayerScreen parent) {
         this(parent, MusicDirector.getInstance().weightingConfig(), MusicDirector.getInstance().weightedCatalog().pools());
@@ -94,7 +95,7 @@ public final class TrackWeightScreen extends Screen {
     }
 
     TrackWeightScreen(MusicPlayerScreen parent, TrackWeightConfig saved, List<Pool> pools) {
-        super(Component.literal("Configure Track Pools"));
+        super(Minecraft.getInstance(), Minecraft.getInstance() != null ? Minecraft.getInstance().font : null, Component.literal("Configure Track Pools"));
         this.parent = parent;
         this.saved = saved != null ? saved : TrackWeightConfig.defaults();
         this.model = new Model(this.saved, pools);
@@ -115,6 +116,19 @@ public final class TrackWeightScreen extends Screen {
     public static Bounds wideBottomBarBounds(int screenWidth, int screenHeight) {
         int totalW = 506;
         return new Bounds((screenWidth - totalW) / 2, screenHeight - 28, totalW, 20);
+    }
+
+    public static Bounds wideWheelBounds(int screenWidth, int screenHeight) {
+        int left = 240;
+        int right = screenWidth - 220;
+        int availableWidth = Math.max(0, right - left);
+        int top = 50;
+        int bottom = screenHeight - 28;
+        int availableHeight = Math.max(0, bottom - top);
+        int size = Math.clamp(Math.min(availableWidth - 20, availableHeight - 20), 64, 180);
+        int x = left + Math.max(0, (availableWidth - size) / 2);
+        int y = top + Math.max(0, (availableHeight - size) / 2);
+        return new Bounds(x, y, size, size);
     }
 
     public static NarrowGeometry narrowGeometry(int width, int height) {
@@ -254,6 +268,23 @@ public final class TrackWeightScreen extends Screen {
                     && track.occurrences() != null
                     && !track.occurrences().isEmpty();
         }
+        updateWheelModel();
+    }
+
+    private void updateWheelModel() {
+        if (radialWheel != null && model.selectedPool() != null && model.selectedPool().tracks() != null) {
+            List<RadialWeightWidget.Slice> slices = new java.util.ArrayList<>();
+            for (Track track : model.selectedPool().tracks()) {
+                double chance = model.currentChances().getOrDefault(track.resourceId(), 0.0);
+                int color = RadialWeightWidget.stableColor(track.resourceId());
+                String label = track.title() != null ? track.title() : track.resourceId();
+                slices.add(new RadialWeightWidget.Slice(track.resourceId(), label, chance, color));
+            }
+            String selectedId = model.selectedTrack() != null ? model.selectedTrack().resourceId() : null;
+            radialWheel.setModel(slices, selectedId);
+        } else if (radialWheel != null) {
+            radialWheel.setModel(List.of(), null);
+        }
     }
 
     private void setQuickMultiplier(double multiplier) {
@@ -290,6 +321,14 @@ public final class TrackWeightScreen extends Screen {
     }
 
     @Override
+    public void removed() {
+        super.removed();
+        if (radialWheel != null) {
+            radialWheel.close();
+        }
+    }
+
+    @Override
     public void onClose() {
         if (minecraft != null) {
             minecraft.setScreenAndShow(parent);
@@ -299,6 +338,11 @@ public final class TrackWeightScreen extends Screen {
     @Override
     protected void init() {
         super.init();
+
+        if (radialWheel != null) {
+            radialWheel.close();
+            radialWheel = null;
+        }
 
         boolean wide = usesWideLayout(width);
 
@@ -335,6 +379,10 @@ public final class TrackWeightScreen extends Screen {
         trackList = new TrackList(minecraft, listBounds.width(), listBounds.height(), listBounds.y(), 20, model, this::updateSelectedTrackWidgets);
         trackList.setX(listBounds.x());
         addRenderableWidget(trackList);
+
+        Bounds wheelBounds = wideWheelBounds(width, height);
+        radialWheel = new RadialWeightWidget(wheelBounds.x(), wheelBounds.y(), wheelBounds.width(), this::selectTrack);
+        addRenderableWidget(radialWheel);
 
         Bounds editorBounds = wideEditorBounds(width, height);
         int rightX = editorBounds.x();
@@ -591,6 +639,16 @@ public final class TrackWeightScreen extends Screen {
 
     Model model() {
         return model;
+    }
+
+    RadialWeightWidget radialWheel() {
+        return radialWheel;
+    }
+
+    void initForDimensions(int width, int height) {
+        this.width = width;
+        this.height = height;
+        init();
     }
 
     public static final class Model {
