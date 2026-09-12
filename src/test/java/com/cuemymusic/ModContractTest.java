@@ -35,9 +35,9 @@ class ModContractTest {
                         String lower = name.toLowerCase();
                         return lower.contains("youtube") || lower.contains("download")
                                 || lower.contains("jukebox") || lower.contains("playbackslider")
-                                || lower.contains("trackdetail") || lower.contains("config")
+                                || lower.contains("trackdetail")
                                 || lower.contains("persist") || lower.contains("musiclibrary")
-                                || lower.contains("musictrack") || lower.contains("catalog")
+                                || lower.contains("musictrack")
                                 || lower.contains("bufferedplayback") || lower.contains("playbacklifecycle")
                                 || lower.contains("nativeminecraftplayback")
                                 || lower.contains("automatedclient")
@@ -99,7 +99,10 @@ class ModContractTest {
                                     || name.startsWith("client" + java.io.File.separator)))
                     .count();
         }
-        // Minimal surface: reduction survivors, transport, and two Mod Menu screen adapters.
-        assertTrue(productionFiles <= 20, "expected a minimal production surface, found " + productionFiles);
+        // Minimal surface: reduction survivors, transport, two Mod Menu screen adapters,
+        // and the approved track-weighting config (Task 1; catalog, settings screen,
+        // and radial widget assertions arrive in Tasks 2, 5, and 7).
+        assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/TrackWeightConfig.java")));
+        assertTrue(productionFiles <= 24, "expected approved production surface, found " + productionFiles);
     }
 }
