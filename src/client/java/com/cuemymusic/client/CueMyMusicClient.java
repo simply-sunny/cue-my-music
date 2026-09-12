@@ -3,12 +3,15 @@ package com.cuemymusic.client;
 import java.util.concurrent.ThreadLocalRandom;
 
 import com.cuemymusic.client.music.MusicDirector;
+import com.cuemymusic.client.music.TrackWeightConfig;
 import com.cuemymusic.client.ui.PauseMusicWidget;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.resource.v1.ResourceLoader;
 import net.fabricmc.fabric.api.resource.v1.reloader.SimpleReloadListener;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
@@ -23,6 +26,7 @@ public class CueMyMusicClient implements ClientModInitializer {
     public void onInitializeClient() {
         LOGGER.info("[Cue My Music] deterministic vanilla music controls");
         PauseMusicWidget.register();
+        MusicDirector.getInstance().initializeWeighting(TrackWeightConfig.defaultPath());
 
         // World-session boundaries (join/disconnect, not dimension transfer):
         // outgoing menu/world audio stops at the boundary, vanilla's delay RNG
@@ -56,7 +60,17 @@ public class CueMyMusicClient implements ClientModInitializer {
 
                     @Override
                     protected void apply(Void data, PreparableReloadListener.SharedState sharedState) {
-                        MusicDirector.getInstance().onResourcesReloaded();
+                        MusicDirector director = MusicDirector.getInstance();
+                        director.onResourcesReloaded();
+                        Minecraft client = Minecraft.getInstance();
+                        if (client != null) {
+                            client.execute(() -> {
+                                SoundManager sounds = client.getSoundManager();
+                                if (sounds != null) {
+                                    director.reloadWeightedCatalog(sounds);
+                                }
+                            });
+                        }
                     }
                 });
     }

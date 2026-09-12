@@ -1,10 +1,18 @@
 package com.cuemymusic.client.music;
 
+import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+
+import net.minecraft.client.resources.sounds.Sound;
+import net.minecraft.client.sounds.WeighedSoundEvents;
+import net.minecraft.client.sounds.Weighted;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.valueproviders.ConstantFloat;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -13,6 +21,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * sequence deterministically.
  */
 class MusicPlannerQueueInteractionTest {
+
+    @AfterEach void resetSingleton() {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(0L);
+        director.setWeightingConfig(TrackWeightConfig.defaults());
+        director.setWeightedCatalog(WeightedMusicCatalog.empty());
+        director.setWeightingPath(null);
+    }
 
     @Test
     void forwardPlaysAdvanceUpcomingQueuePointer() {
@@ -129,5 +145,59 @@ class MusicPlannerQueueInteractionTest {
 
         // Overworld sequence is completely intact
         assertEquals(3, planner.peekSequence(overworld));
+    }
+
+    @Test
+    void queueProjectionChainsAntiRepeatWithoutMutatingPlanner() {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(12345L);
+
+        Sound sweden = new Sound(Identifier.parse("minecraft:music/game/sweden"),
+                ConstantFloat.of(1.0F), ConstantFloat.of(1.0F), 1, Sound.Type.FILE, false, false, 16);
+        Sound clark = new Sound(Identifier.parse("minecraft:music/game/clark"),
+                ConstantFloat.of(1.0F), ConstantFloat.of(1.0F), 1, Sound.Type.FILE, false, false, 16);
+        WeighedSoundEvents event = new WeighedSoundEvents(Identifier.parse("minecraft:music.game"), null);
+        event.addSound(sweden);
+        event.addSound(clark);
+
+        MusicGraph.entriesProvider = ev -> {
+            try {
+                Field f = WeighedSoundEvents.class.getDeclaredField("list");
+                f.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                List<Weighted<Sound>> entries = (List<Weighted<Sound>>) f.get(ev);
+                return entries;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        };
+
+        WeightedMusicCatalog catalog = WeightedMusicCatalog.fromEvents(
+                List.of(Identifier.parse("minecraft:music.game")),
+                id -> event,
+                entry -> null,
+                entry -> null);
+        director.setWeightedCatalog(catalog);
+        director.setWeightingConfig(TrackWeightConfig.defaults().withAntiRepeat(true));
+
+        Identifier poolId = Identifier.parse("minecraft:music.game");
+        long baseIndex = director.planner().peekSequence(poolId.toString());
+
+        // Queue projection of 4 items with previous = sweden
+        List<WeightedMusicCatalog.Occurrence> projected =
+                director.projectFresh(poolId, "minecraft:music/game/sweden", baseIndex, 4);
+        assertEquals(4, projected.size());
+
+        // In a two-track pool with Anti-Repeat, consecutive picks alternate!
+        for (int i = 0; i < projected.size() - 1; i++) {
+            assertNotEquals(projected.get(i).resourceId(), projected.get(i + 1).resourceId(),
+                    "Consecutive queue projections must alternate when anti-repeat is active");
+        }
+        // First projected track must not be sweden (the previous resource)
+        assertNotEquals("minecraft:music/game/sweden", projected.get(0).resourceId());
+
+        // Projection must NOT mutate planner sequence or history!
+        assertEquals(baseIndex, director.planner().peekSequence(poolId.toString()));
+        assertTrue(director.planner().historySnapshot().isEmpty());
     }
 }

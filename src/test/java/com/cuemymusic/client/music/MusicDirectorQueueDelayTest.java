@@ -1,9 +1,20 @@
 package com.cuemymusic.client.music;
 
+import java.lang.reflect.Field;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import net.minecraft.client.resources.sounds.Sound;
+import net.minecraft.client.sounds.SoundManager;
+import net.minecraft.client.sounds.WeighedSoundEvents;
+import net.minecraft.client.sounds.Weighted;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.valueproviders.ConstantFloat;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -20,8 +31,133 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class MusicDirectorQueueDelayTest {
 
+    @BeforeEach void injectTestListProvider() {
+        MusicGraph.entriesProvider = event -> {
+            try {
+                Field field = WeighedSoundEvents.class.getDeclaredField("list");
+                field.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                List<Weighted<Sound>> entries = (List<Weighted<Sound>>) field.get(event);
+                return entries;
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        };
+    }
+
     @AfterEach void resetSingleton() {
-        MusicDirector.getInstance().beginSession(0L);
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(0L);
+        director.setWeightingConfig(TrackWeightConfig.defaults());
+        director.setWeightedCatalog(WeightedMusicCatalog.empty());
+        director.setWeightingPath(null);
+    }
+
+    private static Sound file(String name, float volume, float pitch, int weight,
+            boolean stream, boolean preload) {
+        return new Sound(
+                Identifier.parse("minecraft:" + name),
+                ConstantFloat.of(volume),
+                ConstantFloat.of(pitch),
+                weight,
+                Sound.Type.FILE,
+                stream,
+                preload,
+                16);
+    }
+
+    private static WeighedSoundEvents event(String id, List<Weighted<Sound>> entries) {
+        WeighedSoundEvents event = new WeighedSoundEvents(Identifier.parse(id), null);
+        for (Weighted<Sound> entry : entries) {
+            event.addSound(entry);
+        }
+        return event;
+    }
+
+    private static WeightedMusicCatalog catalogOf(Map<Identifier, WeighedSoundEvents> registry) {
+        Collection<Identifier> ids = registry.keySet();
+        return WeightedMusicCatalog.fromEvents(ids, registry::get, entry -> null, entry -> null);
+    }
+
+    @Test void configuredMultiplierChangesPinnedResourceSelectedForKnownSeeds() {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(42L);
+        Sound sweden = file("music/game/sweden", 1.0F, 1.0F, 1, false, false);
+        Sound clark = file("music/game/clark", 1.0F, 1.0F, 1, false, false);
+        WeighedSoundEvents fallback = event("minecraft:music.game", List.of(sweden, clark));
+        WeightedMusicCatalog catalog = catalogOf(Map.of(Identifier.parse("minecraft:music.game"), fallback));
+        director.setWeightedCatalog(catalog);
+
+        Identifier poolId = Identifier.parse("minecraft:music.game");
+        long seed = 0L;
+        while (!director.chooseFresh(poolId, fallback, seed, null).getPath().equals(sweden.getPath())) {
+            seed++;
+        }
+        assertEquals(sweden.getPath(),
+                director.chooseFresh(poolId, fallback, seed, null).getPath());
+
+        TrackWeightConfig mutedSweden = TrackWeightConfig.defaults()
+                .withMultiplier("minecraft:music.game", sweden.getPath().toString(), 0.0);
+        director.setWeightingConfig(mutedSweden);
+
+        Sound chosen = director.chooseFresh(poolId, fallback, seed, null);
+        assertEquals(clark.getPath(), chosen.getPath());
+    }
+
+    @Test void actualAndQueueUseSameConfiguredSelector() {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(777L);
+        Sound sweden = file("music/game/sweden", 1.0F, 1.0F, 1, false, false);
+        Sound clark = file("music/game/clark", 1.0F, 1.0F, 1, false, false);
+        WeighedSoundEvents weighedFallback = event("minecraft:music.game", List.of(sweden, clark));
+        WeightedMusicCatalog catalog = catalogOf(Map.of(Identifier.parse("minecraft:music.game"), weighedFallback));
+        director.setWeightedCatalog(catalog);
+
+        Identifier poolId = Identifier.parse("minecraft:music.game");
+        long index = director.planner().peekSequence(poolId.toString());
+        long seed = MusicPlanner.selectionSeed(director.planner().getSessionSeed(), poolId.toString(), index);
+        Sound actual = director.chooseFresh(poolId, weighedFallback, seed, null);
+        Sound queued = director.projectFresh(poolId, null, index, 1).getFirst().sound();
+        assertEquals(actual.getPath(), queued.getPath());
+    }
+
+    @Test void mutedKnownPoolReturnsIntentionallyEmptySoundAndEmptyQueue() {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(42L);
+        Sound sweden = file("music/game/sweden", 1.0F, 1.0F, 1, false, false);
+        WeighedSoundEvents fallback = event("minecraft:music.game", List.of(sweden));
+        WeightedMusicCatalog catalog = catalogOf(Map.of(Identifier.parse("minecraft:music.game"), fallback));
+        director.setWeightedCatalog(catalog);
+
+        TrackWeightConfig muted = TrackWeightConfig.defaults()
+                .withMultiplier("minecraft:music.game", sweden.getPath().toString(), 0.0);
+        director.setWeightingConfig(muted);
+
+        Identifier poolId = Identifier.parse("minecraft:music.game");
+        long index = director.planner().peekSequence(poolId.toString());
+        long seed = MusicPlanner.selectionSeed(director.planner().getSessionSeed(), poolId.toString(), index);
+
+        Sound actual = director.chooseFresh(poolId, fallback, seed, null);
+        assertSame(SoundManager.INTENTIONALLY_EMPTY_SOUND, actual);
+
+        List<WeightedMusicCatalog.Occurrence> queued = director.projectFresh(poolId, null, index, 5);
+        assertTrue(queued.isEmpty());
+    }
+
+    @Test void undiscoveredPoolFallsBackToWeighedSoundEvents() {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(42L);
+        director.setWeightedCatalog(WeightedMusicCatalog.empty());
+
+        Sound sweden = file("music/game/sweden", 1.0F, 1.0F, 1, false, false);
+        WeighedSoundEvents fallback = event("minecraft:music.game", List.of(sweden));
+
+        Identifier poolId = Identifier.parse("minecraft:music.game");
+        long seed = 123L;
+
+        Sound actual = director.chooseFresh(poolId, fallback, seed, null);
+        assertNotEquals(SoundManager.INTENTIONALLY_EMPTY_SOUND, actual);
+        assertEquals(fallback.getSound(net.minecraft.util.RandomSource.create(seed)).getPath(), actual.getPath());
     }
 
     @Test void upcomingTracksDoesNotAdvanceSequence() {

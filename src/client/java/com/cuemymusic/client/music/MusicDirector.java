@@ -1,7 +1,9 @@
 package com.cuemymusic.client.music;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,7 +24,6 @@ import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.AudioStream;
 import net.minecraft.client.sounds.MusicManager;
 import net.minecraft.client.sounds.SoundEngine;
-import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.client.sounds.WeighedSoundEvents;
 import net.minecraft.locale.Language;
@@ -68,6 +69,10 @@ public final class MusicDirector {
     /** Hard ceiling on decoded bytes dropped for one seek (far past any music track). */
     static final long SKIP_BUDGET_BYTES = 256L << 20;
     static final int SKIP_CHUNK_BYTES = 1 << 16;
+
+    private volatile TrackWeightConfig weightingConfig = TrackWeightConfig.defaults();
+    private volatile WeightedMusicCatalog weightedCatalog = WeightedMusicCatalog.empty();
+    private Path weightingPath;
 
     /** Pending offset reopen, captured by the play redirect at stream-open time. */
     public record OffsetRequest(long generation, double startSeconds) {
@@ -119,6 +124,65 @@ public final class MusicDirector {
         return planner;
     }
 
+    public void initializeWeighting(Path path) {
+        this.weightingPath = path;
+        this.weightingConfig = path != null ? TrackWeightConfig.load(path) : TrackWeightConfig.defaults();
+    }
+
+    public TrackWeightConfig weightingConfig() {
+        return weightingConfig;
+    }
+
+    public WeightedMusicCatalog weightedCatalog() {
+        return weightedCatalog;
+    }
+
+    public void saveWeightingConfig(TrackWeightConfig draft) throws IOException {
+        Path path = this.weightingPath != null ? this.weightingPath : TrackWeightConfig.defaultPath();
+        draft.save(path);
+        this.weightingConfig = draft;
+    }
+
+    public void reloadWeightedCatalog(SoundManager sounds) {
+        this.weightedCatalog = sounds != null ? WeightedMusicCatalog.discover(sounds) : WeightedMusicCatalog.empty();
+    }
+
+    Sound chooseFresh(Identifier eventId, WeighedSoundEvents fallback, long seed, String previousResourceId) {
+        Optional<WeightedMusicCatalog.Pool> poolOpt = weightedCatalog.pool(eventId.toString());
+        if (poolOpt.isPresent()) {
+            Optional<WeightedMusicCatalog.Occurrence> selected =
+                    WeightedMusicCatalog.select(poolOpt.get(), weightingConfig, previousResourceId, seed);
+            return selected.map(WeightedMusicCatalog.Occurrence::sound)
+                    .orElse(SoundManager.INTENTIONALLY_EMPTY_SOUND);
+        }
+        return fallback != null ? fallback.getSound(RandomSource.create(seed)) : SoundManager.INTENTIONALLY_EMPTY_SOUND;
+    }
+
+    List<WeightedMusicCatalog.Occurrence> projectFresh(
+            Identifier eventId, String previousResourceId, long startIndex, int count) {
+        if (count <= 0) {
+            return List.of();
+        }
+        Optional<WeightedMusicCatalog.Pool> poolOpt = weightedCatalog.pool(eventId.toString());
+        if (poolOpt.isPresent()) {
+            return WeightedMusicCatalog.project(poolOpt.get(), weightingConfig, previousResourceId,
+                    planner.getSessionSeed(), startIndex, count);
+        }
+        return List.of();
+    }
+
+    void setWeightingConfig(TrackWeightConfig config) {
+        this.weightingConfig = config != null ? config : TrackWeightConfig.defaults();
+    }
+
+    void setWeightedCatalog(WeightedMusicCatalog catalog) {
+        this.weightedCatalog = catalog != null ? catalog : WeightedMusicCatalog.empty();
+    }
+
+    void setWeightingPath(Path path) {
+        this.weightingPath = path;
+    }
+
     /**
      * Builds the deterministically pinned instance for a vanilla start.
      * Called from the {@code startPlaying} redirect; never throws.
@@ -147,8 +211,10 @@ public final class MusicDirector {
         }
         long index = planner.nextSequence(eventId.toString());
         long seed = MusicPlanner.selectionSeed(planner.getSessionSeed(), eventId.toString(), index);
-        Sound chosen = weighed.getSound(RandomSource.create(seed));
-        // Pin exactly what vanilla selection returned, including intentional
+        List<MusicPlanner.Entry> history = planner.historySnapshot();
+        String previousResourceId = history.isEmpty() ? null : history.get(0).filePath();
+        Sound chosen = chooseFresh(eventId, weighed, seed, previousResourceId);
+        // Pin exactly what selection returned, including intentional
         // silence (identifier-compared: delegates build copies, so reference
         // identity would miss nested silence). Never re-roll: a fresh random
         // factory would hide selection bugs behind nondeterminism.
@@ -380,6 +446,20 @@ public final class MusicDirector {
         return new TrackInfo(resolved.substring(separator + 3), resolved.substring(0, separator));
     }
 
+    static TrackInfo trackInfo(Sound sound) {
+        if (sound == null) {
+            return null;
+        }
+        String key = sound.getLocation().toShortLanguageKey().replace('/', '.');
+        Language language = Language.getInstance();
+        if (language.has(key)) {
+            return splitCredit(language.getOrDefault(key));
+        }
+        String path = sound.getPath().getPath();
+        int slash = path.lastIndexOf('/');
+        return new TrackInfo(slash >= 0 ? path.substring(slash + 1) : path, null);
+    }
+
     /**
      * Current track for the Pause-screen widget: the native translation
      * ({@code music.game.sweden} = {@code C418 - Sweden}) when present,
@@ -391,14 +471,7 @@ public final class MusicDirector {
         if (sound == null) {
             return Optional.empty();
         }
-        String key = sound.getLocation().toShortLanguageKey().replace('/', '.');
-        Language language = Language.getInstance();
-        if (language.has(key)) {
-            return Optional.of(splitCredit(language.getOrDefault(key)));
-        }
-        String path = sound.getPath().getPath();
-        int slash = path.lastIndexOf('/');
-        return Optional.of(new TrackInfo(slash >= 0 ? path.substring(slash + 1) : path, null));
+        return Optional.ofNullable(trackInfo(sound));
     }
 
     /**
@@ -458,6 +531,9 @@ public final class MusicDirector {
      * the current situational context.
      */
     public List<TrackInfo> upcomingTracks(int count) {
+        if (count <= 0) {
+            return List.of();
+        }
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null) {
             return List.of();
@@ -471,11 +547,26 @@ public final class MusicDirector {
             return List.of();
         }
         Identifier eventId = situational.sound().value().location();
+        Optional<WeightedMusicCatalog.Pool> poolOpt = weightedCatalog.pool(eventId.toString());
+        if (poolOpt.isPresent()) {
+            List<MusicPlanner.Entry> history = planner.historySnapshot();
+            String previousResourceId = history.isEmpty() ? null : history.get(0).filePath();
+            long baseIndex = planner.peekSequence(eventId.toString());
+            List<WeightedMusicCatalog.Occurrence> occurrences =
+                    projectFresh(eventId, previousResourceId, baseIndex, count);
+            List<TrackInfo> list = new java.util.ArrayList<>(occurrences.size());
+            for (WeightedMusicCatalog.Occurrence occ : occurrences) {
+                TrackInfo info = trackInfo(occ.sound());
+                if (info != null) {
+                    list.add(info);
+                }
+            }
+            return list;
+        }
         WeighedSoundEvents weighed = sounds.getSoundEvent(eventId);
         if (weighed == null) {
             return List.of();
         }
-        Language language = Language.getInstance();
         List<TrackInfo> list = new java.util.ArrayList<>();
         long baseIndex = planner.peekSequence(eventId.toString());
         long sessionSeed = planner.getSessionSeed();
@@ -484,13 +575,9 @@ public final class MusicDirector {
             long seed = MusicPlanner.selectionSeed(sessionSeed, eventId.toString(), index);
             Sound chosen = weighed.getSound(RandomSource.create(seed));
             if (chosen != null && !MusicGraph.isSilence(chosen)) {
-                String key = chosen.getLocation().toShortLanguageKey().replace('/', '.');
-                if (language.has(key)) {
-                    list.add(splitCredit(language.getOrDefault(key)));
-                } else {
-                    String path = chosen.getPath().getPath();
-                    int slash = path.lastIndexOf('/');
-                    list.add(new TrackInfo(slash >= 0 ? path.substring(slash + 1) : path, null));
+                TrackInfo info = trackInfo(chosen);
+                if (info != null) {
+                    list.add(info);
                 }
             }
         }
