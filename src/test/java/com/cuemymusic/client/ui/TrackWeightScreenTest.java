@@ -53,15 +53,29 @@ class TrackWeightScreenTest {
         assertTrue(source.contains("saved"), "Must store saved config");
         assertTrue(source.contains("draft"), "Must store draft config");
         assertTrue(source.contains("onClose()"), "Must override onClose()");
-        assertTrue(source.contains("minecraft.setScreenAndShow(parent)"),
-                "Transitions must return to parent");
-        assertTrue(source.contains("saveWeightingConfig(draft)"),
-                "Save action must persist draft to MusicDirector");
-        int saveIndex = source.indexOf("MusicDirector.getInstance().saveWeightingConfig(draft)");
-        int showParentIndex = source.indexOf("minecraft.setScreenAndShow(parent)", saveIndex);
-        assertTrue(saveIndex >= 0 && showParentIndex > saveIndex,
-                "Save success must return to parent only after saveWeightingConfig returns");
         assertTrue(source.contains("Could not save cue-my-music.json"),
                 "Save failure must set error component");
+
+        // Save sequencing: verify strictly within saveAndClose's try-block before catch
+        int saveStart = source.indexOf("void saveAndClose()");
+        assertTrue(saveStart >= 0, "Must provide saveAndClose()");
+        int catchIndex = source.indexOf("catch (IOException", saveStart);
+        assertTrue(catchIndex > saveStart, "saveAndClose must catch IOException");
+        String saveSuccessBlock = source.substring(saveStart, catchIndex);
+        int saveIndex = saveSuccessBlock.indexOf("MusicDirector.getInstance().saveWeightingConfig(draft)");
+        int showParentIndex = saveSuccessBlock.indexOf("minecraft.setScreenAndShow(parent)", saveIndex);
+        assertTrue(saveIndex >= 0, "saveAndClose must persist draft to MusicDirector");
+        assertTrue(showParentIndex > saveIndex,
+                "Save success must return to parent only after saveWeightingConfig returns");
+
+        // Discard: verify onClose returns to parent without saving
+        int onCloseStart = source.indexOf("void onClose()");
+        assertTrue(onCloseStart >= 0, "Must provide onClose()");
+        int onCloseEnd = source.indexOf('}', onCloseStart);
+        String onCloseBlock = source.substring(onCloseStart, onCloseEnd);
+        assertTrue(onCloseBlock.contains("minecraft.setScreenAndShow(parent)"),
+                "onClose must return to parent");
+        assertFalse(onCloseBlock.contains("saveWeightingConfig"),
+                "onClose must discard without saving");
     }
 }
