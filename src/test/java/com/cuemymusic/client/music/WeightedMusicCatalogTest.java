@@ -1,13 +1,20 @@
 package com.cuemymusic.client.music;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import com.cuemymusic.client.music.WeightedMusicCatalog.Occurrence;
+import com.cuemymusic.client.music.WeightedMusicCatalog.Pool;
+import com.cuemymusic.client.music.WeightedMusicCatalog.Track;
 
 import net.minecraft.client.resources.sounds.Sound;
 import net.minecraft.client.sounds.WeighedSoundEvents;
@@ -182,6 +189,155 @@ class WeightedMusicCatalogTest {
                 .filter(track -> track.resourceId().endsWith("sweden.ogg")).findFirst().orElseThrow();
         assertEquals("Sweden", sweden.title());
         assertEquals("C418", sweden.composer());
+    }
+
+    private static Occurrence occurrence(String resourceId, double nativeProbability) {
+        Sound sound = file(resourceId, 1.0F, 1.0F, 1, false, false);
+        return new Occurrence(resourceId, sound, nativeProbability);
+    }
+
+    private static Pool pool(Occurrence... occurrences) {
+        return poolWithId("minecraft:music.test", occurrences);
+    }
+
+    private static Pool poolWithId(String id, Occurrence... occurrences) {
+        List<Occurrence> occList = List.of(occurrences);
+        Map<String, List<Occurrence>> byResource = new LinkedHashMap<>();
+        for (Occurrence occ : occList) {
+            byResource.computeIfAbsent(occ.resourceId(), k -> new ArrayList<>()).add(occ);
+        }
+        List<Track> tracks = new ArrayList<>();
+        for (Map.Entry<String, List<Occurrence>> entry : byResource.entrySet()) {
+            double total = entry.getValue().stream().mapToDouble(Occurrence::nativeProbability).sum();
+            tracks.add(new Track(entry.getKey(), entry.getKey(), null, total, List.copyOf(entry.getValue())));
+        }
+        return new Pool(id, List.copyOf(tracks), occList);
+    }
+
+    @Test void chancesMultiplyNativeProbabilityAndNormalizeByResource() {
+        Pool pool = pool(occurrence("a", .75), occurrence("b", .25));
+        TrackWeightConfig config = TrackWeightConfig.defaults().withMultiplier(pool.id(), "b", 3.0);
+        Map<String, Double> chances = WeightedMusicCatalog.chances(pool, config, null);
+        assertEquals(.5, chances.get("a"), 1e-9);
+        assertEquals(.5, chances.get("b"), 1e-9);
+    }
+
+    @Test void nativePreservedAtAllDefaultMultipliers() {
+        Pool pool = pool(occurrence("a", .75), occurrence("b", .25));
+        TrackWeightConfig config = TrackWeightConfig.defaults();
+        Map<String, Double> chances = WeightedMusicCatalog.chances(pool, config, null);
+        assertEquals(.75, chances.get("a"), 1e-9);
+        assertEquals(.25, chances.get("b"), 1e-9);
+    }
+
+    @Test void deterministicRepeatability() {
+        Pool pool = pool(occurrence("a", .6), occurrence("b", .4));
+        TrackWeightConfig config = TrackWeightConfig.defaults();
+        Optional<Occurrence> first = WeightedMusicCatalog.select(pool, config, null, 42L);
+        Optional<Occurrence> second = WeightedMusicCatalog.select(pool, config, null, 42L);
+        assertEquals(first, second);
+        List<Occurrence> proj1 = WeightedMusicCatalog.project(pool, config, null, 42L, 0L, 10);
+        List<Occurrence> proj2 = WeightedMusicCatalog.project(pool, config, null, 42L, 0L, 10);
+        assertEquals(proj1, proj2);
+    }
+
+    @Test void duplicatePathAggregation() {
+        Pool pool = pool(occurrence("a", .25), occurrence("a", .25), occurrence("b", .50));
+        TrackWeightConfig config = TrackWeightConfig.defaults().withMultiplier(pool.id(), "a", 2.0);
+        Map<String, Double> chances = WeightedMusicCatalog.chances(pool, config, null);
+        assertEquals(2.0 / 3.0, chances.get("a"), 1e-9);
+        assertEquals(1.0 / 3.0, chances.get("b"), 1e-9);
+    }
+
+    @Test void immediateAntiRepeatExcludesPreviousTrackWhenAlternativeExists() {
+        Pool pool = pool(occurrence("a", .5), occurrence("b", .5));
+        TrackWeightConfig config = TrackWeightConfig.defaults();
+        Map<String, Double> chances = WeightedMusicCatalog.chances(pool, config, "a");
+        assertEquals(0.0, chances.get("a"), 1e-9);
+        assertEquals(1.0, chances.get("b"), 1e-9);
+
+        for (long seed = 0; seed < 50; seed++) {
+            Occurrence selected = WeightedMusicCatalog.select(pool, config, "a", seed).orElseThrow();
+            assertEquals("b", selected.resourceId());
+        }
+    }
+
+    @Test void antiRepeatDisabledAllowsRepeatingPreviousTrack() {
+        Pool pool = pool(occurrence("a", .99), occurrence("b", .01));
+        TrackWeightConfig config = TrackWeightConfig.defaults().withAntiRepeat(false);
+        Map<String, Double> chances = WeightedMusicCatalog.chances(pool, config, "a");
+        assertEquals(.99, chances.get("a"), 1e-9);
+        assertEquals(.01, chances.get("b"), 1e-9);
+    }
+
+    @Test void antiRepeatUsesSoleEnabledTrackAsFallback() {
+        Pool pool = pool(occurrence("only", 1.0));
+        assertEquals("only", WeightedMusicCatalog.select(pool,
+                TrackWeightConfig.defaults(), "only", 7L).orElseThrow().resourceId());
+    }
+
+    @Test void antiRepeatFallsBackWhenAllAlternativesMuted() {
+        Pool pool = pool(occurrence("a", .5), occurrence("b", .5));
+        TrackWeightConfig config = TrackWeightConfig.defaults().withMultiplier(pool.id(), "b", 0.0);
+        assertEquals("a", WeightedMusicCatalog.select(pool, config, "a", 7L).orElseThrow().resourceId());
+        Map<String, Double> chances = WeightedMusicCatalog.chances(pool, config, "a");
+        assertEquals(1.0, chances.get("a"), 1e-9);
+        assertEquals(0.0, chances.get("b"), 1e-9);
+    }
+
+    @Test void mutedPoolHasNoSelectionOrProjection() {
+        Pool pool = pool(occurrence("a", .5), occurrence("b", .5));
+        TrackWeightConfig muted = TrackWeightConfig.defaults()
+                .withPoolMultipliers(pool.id(), Map.of("a", 0.0, "b", 0.0));
+        assertTrue(WeightedMusicCatalog.select(pool, muted, null, 1L).isEmpty());
+        assertTrue(WeightedMusicCatalog.project(pool, muted, null, 1L, 0L, 5).isEmpty());
+        Map<String, Double> chances = WeightedMusicCatalog.chances(pool, muted, null);
+        assertEquals(0.0, chances.get("a"), 1e-9);
+        assertEquals(0.0, chances.get("b"), 1e-9);
+    }
+
+    @Test void projectAdvancesPreviousResourceWithNoAdjacentRepeats() {
+        Pool pool = pool(occurrence("a", .5), occurrence("b", .5), occurrence("c", .5));
+        TrackWeightConfig config = TrackWeightConfig.defaults();
+        List<Occurrence> projected = WeightedMusicCatalog.project(pool, config, null, 12345L, 0L, 30);
+        assertEquals(30, projected.size());
+        for (int i = 0; i < projected.size() - 1; i++) {
+            assertNotEquals(projected.get(i).resourceId(), projected.get(i + 1).resourceId(),
+                    "adjacent projected tracks must not repeat at index " + i);
+        }
+        List<Occurrence> projectedWithPrev = WeightedMusicCatalog.project(pool, config, "a", 12345L, 0L, 5);
+        assertNotEquals("a", projectedWithPrev.get(0).resourceId());
+    }
+
+    @Test void projectDoesNotMutatePlannerOrConfig() {
+        Pool pool = pool(occurrence("a", .5), occurrence("b", .5));
+        TrackWeightConfig config = TrackWeightConfig.defaults();
+        MusicPlanner planner = new MusicPlanner();
+        long sessionSeedBefore = planner.getSessionSeed();
+        Map<String, Map<String, Double>> weightsBefore = config.weights();
+        boolean antiRepeatBefore = config.antiRepeat();
+
+        List<Occurrence> projected = WeightedMusicCatalog.project(pool, config, null, planner.getSessionSeed(), 0L, 10);
+        assertEquals(10, projected.size());
+        assertEquals(sessionSeedBefore, planner.getSessionSeed());
+        assertEquals(weightsBefore, config.weights());
+        assertEquals(antiRepeatBefore, config.antiRepeat());
+    }
+
+    @Test void projectZeroOrNegativeCountReturnsEmpty() {
+        Pool pool = pool(occurrence("a", 1.0));
+        TrackWeightConfig config = TrackWeightConfig.defaults();
+        assertTrue(WeightedMusicCatalog.project(pool, config, null, 1L, 0L, 0).isEmpty());
+        assertTrue(WeightedMusicCatalog.project(pool, config, null, 1L, 0L, -5).isEmpty());
+    }
+
+    @Test void chancesPreservesTrackListOrder() {
+        Pool pool = pool(occurrence("z", .3), occurrence("a", .3), occurrence("m", .4));
+        TrackWeightConfig config = TrackWeightConfig.defaults();
+        Map<String, Double> chances = WeightedMusicCatalog.chances(pool, config, null);
+        List<String> keys = new ArrayList<>(chances.keySet());
+        List<String> expectedKeys = pool.tracks().stream().map(Track::resourceId).toList();
+        assertEquals(expectedKeys, keys);
     }
 
     @Test void emptyCatalogHasNoPools() {
