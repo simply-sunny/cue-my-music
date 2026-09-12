@@ -43,16 +43,20 @@ Deterministic vanilla background music with a boxed Pause-screen transport: Play
 
 ### Track weighting
 
-Open **Mod Menu → Cue My Music → ⚙ Configure Track Pools…**. Cue My Music discovers loaded music pools and resource-pack tracks dynamically. `1×` preserves native chance, `0×` disables a track, and **Mute 0×** silences the selected pool. **Done** saves to `config/cue-my-music.json`; Esc discards the draft.
+Open **Mod Menu → Cue My Music → ⚙ Configure Track Pools…**. Cue My Music discovers loaded music pools and resource-pack tracks dynamically. `1×` preserves native chance, `0×` disables a track, and muting silences the selected pool. `✓` (Done) saves to `config/cue-my-music.json`; Esc discards the draft.
+
+All settings UI lives in a centered workspace occupying 80% of the GUI width and height; the remaining 10% on each edge is empty background. From top to bottom the workspace holds the pool tab bar, the content area, and the icon action toolbar.
 
 The radial chance wheel is CPU-generated and displayed through Minecraft's ordinary GUI texture path; it has no OpenGL, Vulkan, Metal, shader, or Fabric rendering API dependency.
 
-- **Pool Actions**: Quick actions adjust the active pool: **All 1×** resets weights to vanilla distribution, **C418 2×** doubles original soundtrack weight, and **Mute 0×** disables all tracks in the pool.
+- **Pool Tabs**: One native tab per discovered pool, labeled with clean category names (e.g. `Creative`, `Ender Dragon`, `Main Menu`) in user progression order (Main Menu → Survival → Creative → Overworld alphabetically → Underwater → Nether alphabetically → Ender Dragon → The End → Credits → remaining Minecraft → custom alphabetically). Tabs scroll horizontally with the mouse wheel, have no arrow buttons, and auto-reveal the selected tab. Hovering a tab shows a plain-language contextual tooltip (e.g. where that music plays); unknown custom pools show `Custom music pool: <full-id>` without invented semantics.
+- **Track Browser**: Collapsible left browser with track list and search. `×` hides it and gives the full content width to the main panel; `☰` shows it again. On narrow windows the browser starts collapsed and opens as an overlay covering the wheel/editor/player while tabs and toolbar stay visible.
+- **Below-Wheel Editor**: The main panel stacks selected-track heading and chance, radial wheel, multiplier slider with `0×`/`0.5×`/`1×`/`2×`/`5×` shortcuts, then the preview control/player. There is no side-column editor; list, wheel, Test Roll, pool switching, and search stay synchronized.
+- **Icon Toolbar**: Compact bottom actions — `↺` Reset pool to native weights, `♫` Double C418 tracks, `∅` Mute selected pool, `⟳` Anti-Repeat On/Off (with selected/on highlight), `⚄` Test weighted selection, `{}` View and copy JSON, `✓` Done. Every icon except the self-evident preview `▶` has a hover tooltip and narration. `☰`/`×` toggles the track browser.
 - **Anti-Repeat**: Prevents immediate back-to-back song repeats across world sessions when another eligible track exists in the pool.
 - **Test Roll**: Samples candidate selection using current draft weights without starting playback, highlighting the chosen track in the list and wheel.
-- **Track Preview**: Listen to any highlighted track directly with play/pause preview controls; active music resumes cleanly after previewing.
+- **Track Preview**: Idle `▶` button (narrated, no tooltip) starts audible preview of the highlighted track. While active, a compact preview player in the lower main-panel region shows the track title, elapsed/total time, scrub slider, `⏸`/`▶` pause toggle, and `■` stop. Preview never mutates config, planner, queue, or Anti-Repeat state; background music is paused only if playing and resumed exactly once. Track/pool changes, Done, Esc, screen close, JSON view, and resource reload stop preview.
 - **JSON Copy**: View or copy raw configuration JSON directly to the clipboard.
-- **Responsive Layout**: On wider windows, an interactive radial probability wheel displays relative track chances with hover inspection and click selection; on narrow windows, the wheel automatically collapses into an accessible, fully navigable native list fallback.
 
 ## Build
 
