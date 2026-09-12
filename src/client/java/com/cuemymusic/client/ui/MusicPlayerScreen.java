@@ -4,6 +4,8 @@ import com.terraformersmc.modmenu.api.ModMenuApi;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
@@ -12,6 +14,9 @@ import net.minecraft.network.chat.Component;
 
 /** Centered transport opened through Mod Menu. */
 public final class MusicPlayerScreen extends Screen {
+    static final String CONFIGURE_LABEL = "⚙ Configure Track Pools…";
+    static final String CONFIGURE_NARRATION = "Configure track pools and selection chances";
+
     private final Screen modMenuScreen;
     private final Screen optionsScreen;
 
@@ -39,6 +44,29 @@ public final class MusicPlayerScreen extends Screen {
     static void openFromVanillaScreen(Minecraft client, Screen screen) {
         Screen optionsScreen = optionsTarget(screen, client.options, client.level != null);
         client.setScreenAndShow(new MusicPlayerScreen(ModMenuApi.createModsScreen(optionsScreen), optionsScreen));
+    }
+
+    static TrackWeightScreen.Bounds configureButtonBounds(int width, int height) {
+        int buttonWidth = 200;
+        int buttonHeight = 20;
+        int x = (width - buttonWidth) / 2;
+        int y = height - 6 - buttonHeight;
+        return new TrackWeightScreen.Bounds(x, y, buttonWidth, buttonHeight);
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        TrackWeightScreen.Bounds b = configureButtonBounds(width, height);
+        addRenderableWidget(Button.builder(Component.literal(CONFIGURE_LABEL), button -> openTrackSettings())
+                .bounds(b.x(), b.y(), b.width(), b.height())
+                .tooltip(Tooltip.create(Component.literal(CONFIGURE_NARRATION)))
+                .createNarration(ignored -> Component.literal(CONFIGURE_NARRATION))
+                .build());
+    }
+
+    void openTrackSettings() {
+        minecraft.setScreenAndShow(new TrackWeightScreen(this));
     }
 
     void openOptions() {

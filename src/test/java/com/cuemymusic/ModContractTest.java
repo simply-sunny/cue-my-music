@@ -104,6 +104,7 @@ class ModContractTest {
         // and radial widget assertions arrive in Tasks 2, 5, and 7).
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/TrackWeightConfig.java")));
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/WeightedMusicCatalog.java")));
+        assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/ui/TrackWeightScreen.java")));
         assertTrue(productionFiles <= 24, "expected approved production surface, found " + productionFiles);
     }
 }

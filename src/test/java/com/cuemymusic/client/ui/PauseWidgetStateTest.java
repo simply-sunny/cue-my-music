@@ -161,4 +161,17 @@ class PauseWidgetStateTest {
         assertTrue(source.contains("!widgets.contains(title)"),
                 "addWidgets must check for existing widgets before adding");
     }
+
+    @Test void configureButtonIsLongAndBottomCentered() {
+        TrackWeightScreen.Bounds bounds = MusicPlayerScreen.configureButtonBounds(692, 423);
+        assertEquals(200, bounds.width());
+        assertEquals(20, bounds.height());
+        assertEquals((692 - 200) / 2, bounds.x());
+        assertEquals(423 - 6 - 20, bounds.y());
+    }
+
+    @Test void playerConfigureButtonLabelAndNarrationMatchSpecification() {
+        assertEquals("⚙ Configure Track Pools…", MusicPlayerScreen.CONFIGURE_LABEL);
+        assertEquals("Configure track pools and selection chances", MusicPlayerScreen.CONFIGURE_NARRATION);
+    }
 }
