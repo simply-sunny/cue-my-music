@@ -2,6 +2,7 @@ package com.cuemymusic.client.ui;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -150,6 +151,7 @@ public final class TrackWeightScreen extends Screen {
     private final TabManager tabManager;
     private final Map<Tab, Pool> tabToPool = new LinkedHashMap<>();
     private final BrowserState browserState = new BrowserState();
+    private List<Pool> orderedPools = List.of();
     private ResponsiveLayout layout;
     private ScrollablePoolTabBar tabNavigationBar;
     private PinnedMusicInstance currentPreviewInstance;
@@ -201,6 +203,7 @@ public final class TrackWeightScreen extends Screen {
                 () -> MusicDirector.getInstance().pauseForPreview(),
                 () -> MusicDirector.getInstance().resumeAfterPreview(true));
         this.tabManager = new TabManager(this::addRenderableWidget, this::removeWidget, this::onTabSelected, tab -> {});
+        this.orderedPools = orderPoolTabs(this.model.pools());
     }
 
     public static Bounds workspaceBounds(int width, int height) {
@@ -544,6 +547,101 @@ public final class TrackWeightScreen extends Screen {
         return calculateTabWidth(null, poolId);
     }
 
+    public static int poolCategoryOrder(String poolId) {
+        if (poolId == null || poolId.isEmpty()) {
+            return 10;
+        }
+        String namespace;
+        String path;
+        int colon = poolId.indexOf(':');
+        if (colon >= 0) {
+            namespace = poolId.substring(0, colon);
+            path = poolId.substring(colon + 1);
+        } else {
+            namespace = "minecraft";
+            path = poolId;
+        }
+
+        if (!namespace.equals("minecraft")) {
+            return 10; // custom/non-Minecraft pools
+        }
+
+        if (path.equals("music.menu") || path.equals("menu")) {
+            return 0; // Main Menu
+        }
+        if (path.equals("music.game") || path.equals("game")) {
+            return 1; // Survival
+        }
+        if (path.equals("music.creative") || path.equals("creative")) {
+            return 2; // Creative
+        }
+        if (path.startsWith("music.overworld.") || path.startsWith("overworld.")
+                || path.equals("music.overworld") || path.equals("overworld")) {
+            return 3; // all music.overworld.*
+        }
+        if (path.equals("music.under_water") || path.equals("music.underwater")
+                || path.equals("under_water") || path.equals("underwater")) {
+            return 4; // Underwater
+        }
+        if (path.startsWith("music.nether.") || path.startsWith("nether.")
+                || path.equals("music.nether") || path.equals("nether")) {
+            return 5; // all music.nether.*
+        }
+        if (path.equals("music.dragon") || path.equals("dragon")) {
+            return 6; // Ender Dragon
+        }
+        if (path.equals("music.end") || path.equals("end")) {
+            return 7; // The End
+        }
+        if (path.equals("music.credits") || path.equals("credits")) {
+            return 8; // Credits
+        }
+        return 9; // remaining Minecraft pools
+    }
+
+    public static final Comparator<Pool> POOL_TAB_COMPARATOR = (p1, p2) -> {
+        if (p1 == p2) {
+            return 0;
+        }
+        if (p1 == null) {
+            return 1;
+        }
+        if (p2 == null) {
+            return -1;
+        }
+        String id1 = p1.id() != null ? p1.id() : "";
+        String id2 = p2.id() != null ? p2.id() : "";
+        int cat1 = poolCategoryOrder(id1);
+        int cat2 = poolCategoryOrder(id2);
+        if (cat1 != cat2) {
+            return Integer.compare(cat1, cat2);
+        }
+        String name1 = poolDisplayName(id1);
+        String name2 = poolDisplayName(id2);
+        int nameCmp = String.CASE_INSENSITIVE_ORDER.compare(name1, name2);
+        if (nameCmp != 0) {
+            return nameCmp;
+        }
+        nameCmp = name1.compareTo(name2);
+        if (nameCmp != 0) {
+            return nameCmp;
+        }
+        return id1.compareTo(id2);
+    };
+
+    public static List<Pool> orderPoolTabs(List<Pool> pools) {
+        if (pools == null || pools.isEmpty()) {
+            return List.of();
+        }
+        List<Pool> copy = new ArrayList<>(pools);
+        copy.sort(POOL_TAB_COMPARATOR);
+        return List.copyOf(copy);
+    }
+
+    public List<Pool> orderedPools() {
+        return this.orderedPools != null ? this.orderedPools : List.of();
+    }
+
     public static int calculateRevealOffset(int currentOffset, int tabLeft, int tabWidth, int viewportWidth, int maxScroll) {
         if (maxScroll <= 0) {
             return 0;
@@ -761,9 +859,10 @@ public final class TrackWeightScreen extends Screen {
             tabToPool.clear();
             int navHeight = TAB_HEIGHT;
             int previousOffset = (this.tabNavigationBar != null) ? this.tabNavigationBar.scrollOffset() : 0;
+            this.orderedPools = orderPoolTabs(model.pools());
             this.tabNavigationBar = ScrollablePoolTabBar.create(
                     this.tabManager,
-                    model.pools(),
+                    this.orderedPools,
                     this.tabToPool,
                     this.font,
                     workspace.x(),
@@ -772,7 +871,7 @@ public final class TrackWeightScreen extends Screen {
                     navHeight);
             addRenderableWidget(this.tabNavigationBar);
 
-            int selectedIndex = model.pools().indexOf(model.selectedPool());
+            int selectedIndex = this.orderedPools.indexOf(model.selectedPool());
             int indexToSelect = selectedIndex >= 0 ? selectedIndex : 0;
             this.tabNavigationBar.selectTab(indexToSelect, false);
             if (previousOffset > 0) {
@@ -780,6 +879,7 @@ public final class TrackWeightScreen extends Screen {
             }
             this.tabNavigationBar.revealTab(indexToSelect);
         } else {
+            this.orderedPools = List.of();
             this.tabNavigationBar = null;
         }
 
@@ -1642,9 +1742,10 @@ public final class TrackWeightScreen extends Screen {
                 int y,
                 int width,
                 int height) {
+            List<Pool> ordered = orderPoolTabs(pools);
             ImmutableList.Builder<TabButton> buttonsBuilder = ImmutableList.builder();
             ImmutableList.Builder<Tab> tabsBuilder = ImmutableList.builder();
-            for (Pool pool : pools) {
+            for (Pool pool : ordered) {
                 String displayName = poolDisplayName(pool.id());
                 String tooltipText = poolTooltip(pool.id());
                 GridLayoutTab tab = new GridLayoutTab(Component.literal(displayName)) {
@@ -1661,8 +1762,8 @@ public final class TrackWeightScreen extends Screen {
             }
             ScrollablePoolTabBar bar = new ScrollablePoolTabBar(
                     x, y, width, height, tabManager, buttonsBuilder.build(), tabsBuilder.build(), font);
-            for (int i = 0; i < pools.size(); i++) {
-                bar.setTabTooltip(i, Tooltip.create(Component.literal(poolTooltip(pools.get(i).id()))));
+            for (int i = 0; i < ordered.size(); i++) {
+                bar.setTabTooltip(i, Tooltip.create(Component.literal(poolTooltip(ordered.get(i).id()))));
             }
             return bar;
         }

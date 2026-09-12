@@ -132,9 +132,12 @@ class TrackWeightScreenTest {
         Bounds workspace = TrackWeightScreen.workspaceBounds(1000, 600);
 
         // Clean category titles on tab buttons
+        List<String> expectedTitles = screen.orderedPools().stream()
+                .map(p -> TrackWeightScreen.poolDisplayName(p.id()))
+                .toList();
         for (int i = 0; i < 30; i++) {
             TabButton tabBtn = bar.tabButtons().get(i);
-            assertEquals("Pool " + i, tabBtn.getMessage().getString());
+            assertEquals(expectedTitles.get(i), tabBtn.getMessage().getString());
         }
 
         // Wheel scrolling clamps inside maxScroll()
@@ -1386,10 +1389,10 @@ class TrackWeightScreenTest {
         screen.initForDimensions(1728, 1080);
 
         TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
-        // Select pool 20
+        // Select pool at tab 20
         bar.selectTab(20, false);
         Pool selected = screen.selectedPool();
-        assertEquals("minecraft:music.pool_20", selected.id());
+        assertEquals(screen.orderedPools().get(20), selected);
 
         // Resize to 800 width
         screen.initForDimensions(800, 600);
@@ -1576,5 +1579,185 @@ class TrackWeightScreenTest {
                 TrackWeightScreen.poolTooltip("custom_mod:ambient.cave"));
         assertEquals("Custom music pool: other:pool",
                 TrackWeightScreen.poolTooltip("other:pool"));
+    }
+
+    @Test
+    void poolCategoryOrderMapsAllElevenTiers() {
+        assertEquals(0, TrackWeightScreen.poolCategoryOrder("minecraft:music.menu"));
+        assertEquals(0, TrackWeightScreen.poolCategoryOrder("music.menu"));
+        assertEquals(0, TrackWeightScreen.poolCategoryOrder("menu"));
+
+        assertEquals(1, TrackWeightScreen.poolCategoryOrder("minecraft:music.game"));
+        assertEquals(1, TrackWeightScreen.poolCategoryOrder("music.game"));
+        assertEquals(1, TrackWeightScreen.poolCategoryOrder("game"));
+
+        assertEquals(2, TrackWeightScreen.poolCategoryOrder("minecraft:music.creative"));
+        assertEquals(2, TrackWeightScreen.poolCategoryOrder("music.creative"));
+        assertEquals(2, TrackWeightScreen.poolCategoryOrder("creative"));
+
+        assertEquals(3, TrackWeightScreen.poolCategoryOrder("minecraft:music.overworld.cherry_grove"));
+        assertEquals(3, TrackWeightScreen.poolCategoryOrder("minecraft:music.overworld.deep_dark"));
+        assertEquals(3, TrackWeightScreen.poolCategoryOrder("minecraft:music.overworld"));
+
+        assertEquals(4, TrackWeightScreen.poolCategoryOrder("minecraft:music.under_water"));
+        assertEquals(4, TrackWeightScreen.poolCategoryOrder("minecraft:music.underwater"));
+        assertEquals(4, TrackWeightScreen.poolCategoryOrder("music.under_water"));
+        assertEquals(4, TrackWeightScreen.poolCategoryOrder("underwater"));
+
+        assertEquals(5, TrackWeightScreen.poolCategoryOrder("minecraft:music.nether.crimson_forest"));
+        assertEquals(5, TrackWeightScreen.poolCategoryOrder("minecraft:music.nether.basalt_deltas"));
+        assertEquals(5, TrackWeightScreen.poolCategoryOrder("minecraft:music.nether"));
+
+        assertEquals(6, TrackWeightScreen.poolCategoryOrder("minecraft:music.dragon"));
+        assertEquals(6, TrackWeightScreen.poolCategoryOrder("dragon"));
+
+        assertEquals(7, TrackWeightScreen.poolCategoryOrder("minecraft:music.end"));
+        assertEquals(7, TrackWeightScreen.poolCategoryOrder("end"));
+
+        assertEquals(8, TrackWeightScreen.poolCategoryOrder("minecraft:music.credits"));
+        assertEquals(8, TrackWeightScreen.poolCategoryOrder("credits"));
+
+        assertEquals(9, TrackWeightScreen.poolCategoryOrder("minecraft:music.pool_0"));
+        assertEquals(9, TrackWeightScreen.poolCategoryOrder("minecraft:custom_vanilla"));
+
+        assertEquals(10, TrackWeightScreen.poolCategoryOrder("custom_mod:ambient.cave"));
+        assertEquals(10, TrackWeightScreen.poolCategoryOrder("other_pack:music.theme"));
+    }
+
+    @Test
+    void orderPoolTabsFollowsExactUserApprovedProgression() {
+        Pool creative = new Pool("minecraft:music.creative", List.of(), List.of());
+        Pool custom1 = new Pool("custom_mod:ambient.cave", List.of(), List.of());
+        Pool credits = new Pool("minecraft:music.credits", List.of(), List.of());
+        Pool deepDark = new Pool("minecraft:music.overworld.deep_dark", List.of(), List.of());
+        Pool cherryGrove = new Pool("minecraft:music.overworld.cherry_grove", List.of(), List.of());
+        Pool crimsonForest = new Pool("minecraft:music.nether.crimson_forest", List.of(), List.of());
+        Pool menu = new Pool("minecraft:music.menu", List.of(), List.of());
+        Pool end = new Pool("minecraft:music.end", List.of(), List.of());
+        Pool underwaterLegacy = new Pool("minecraft:music.underwater", List.of(), List.of());
+        Pool pool0 = new Pool("minecraft:music.pool_0", List.of(), List.of());
+        Pool game = new Pool("minecraft:music.game", List.of(), List.of());
+        Pool dragon = new Pool("minecraft:music.dragon", List.of(), List.of());
+        Pool basaltDeltas = new Pool("minecraft:music.nether.basalt_deltas", List.of(), List.of());
+        Pool underwaterModern = new Pool("minecraft:music.under_water", List.of(), List.of());
+        Pool custom2 = new Pool("other_mod:music.theme", List.of(), List.of());
+
+        List<Pool> scrambled = List.of(
+                creative, custom1, credits, deepDark, cherryGrove,
+                crimsonForest, menu, end, underwaterLegacy, pool0,
+                game, dragon, basaltDeltas, underwaterModern, custom2
+        );
+
+        List<Pool> ordered = TrackWeightScreen.orderPoolTabs(scrambled);
+        List<String> orderedIds = ordered.stream().map(Pool::id).toList();
+
+        List<String> expectedIds = List.of(
+                "minecraft:music.menu",
+                "minecraft:music.game",
+                "minecraft:music.creative",
+                "minecraft:music.overworld.cherry_grove",
+                "minecraft:music.overworld.deep_dark",
+                "minecraft:music.under_water",
+                "minecraft:music.underwater",
+                "minecraft:music.nether.basalt_deltas",
+                "minecraft:music.nether.crimson_forest",
+                "minecraft:music.dragon",
+                "minecraft:music.end",
+                "minecraft:music.credits",
+                "minecraft:music.pool_0",
+                "custom_mod:ambient.cave",
+                "other_mod:music.theme"
+        );
+
+        assertEquals(expectedIds, orderedIds);
+    }
+
+    @Test
+    void overworldCategoriesSortAlphabeticallyByCleanDisplayName() {
+        Pool oldGrowthTaiga = new Pool("minecraft:music.overworld.old_growth_taiga", List.of(), List.of());
+        Pool cherryGrove = new Pool("minecraft:music.overworld.cherry_grove", List.of(), List.of());
+        Pool deepDark = new Pool("minecraft:music.overworld.deep_dark", List.of(), List.of());
+        Pool dripstoneCaves = new Pool("minecraft:music.overworld.dripstone_caves", List.of(), List.of());
+        Pool overworld = new Pool("minecraft:music.overworld", List.of(), List.of());
+
+        List<Pool> pools = List.of(oldGrowthTaiga, cherryGrove, deepDark, dripstoneCaves, overworld);
+        List<String> sortedNames = TrackWeightScreen.orderPoolTabs(pools).stream()
+                .map(p -> TrackWeightScreen.poolDisplayName(p.id()))
+                .toList();
+
+        assertEquals(List.of("Cherry Grove", "Deep Dark", "Dripstone Caves", "Old Growth Taiga", "Overworld"), sortedNames);
+    }
+
+    @Test
+    void customAndUnknownPoolsDeterministicTieBreakByFullId() {
+        Pool customB = new Pool("mod_b:ambient.forest", List.of(), List.of());
+        Pool customA = new Pool("mod_a:ambient.forest", List.of(), List.of());
+        Pool customZ = new Pool("mod:z_theme", List.of(), List.of());
+        Pool customAT = new Pool("mod:a_theme", List.of(), List.of());
+
+        List<Pool> pools = List.of(customB, customA, customZ, customAT);
+        List<String> sortedIds = TrackWeightScreen.orderPoolTabs(pools).stream()
+                .map(Pool::id)
+                .toList();
+
+        assertEquals(List.of("mod:a_theme", "mod:z_theme", "mod_a:ambient.forest", "mod_b:ambient.forest"), sortedIds);
+    }
+
+    @Test
+    void screenPoolTabsUIOnlyOrderDoesNotReorderModelPoolsAndPreservesIdentity() throws Exception {
+        Pool creative = new Pool("minecraft:music.creative", List.of(track("c", "C", "A")), List.of());
+        Pool menu = new Pool("minecraft:music.menu", List.of(track("m", "M", "A")), List.of());
+        Pool game = new Pool("minecraft:music.game", List.of(track("g", "G", "A")), List.of());
+        Pool custom = new Pool("custom:pool", List.of(track("x", "X", "A")), List.of());
+
+        List<Pool> scrambled = List.of(custom, creative, menu, game);
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, scrambled);
+        screen.initForDimensions(1000, 600);
+
+        // 1. Model.pools must NOT be reordered
+        assertEquals(scrambled, screen.model().pools(), "Model.pools must retain exact original order");
+
+        // 2. Tab buttons must follow user-approved UI order: Menu, Survival, Creative, Custom
+        List<? extends net.minecraft.client.gui.components.TabButton> tabButtons =
+                screen.tabNavigationBar().tabButtons();
+        assertEquals(4, tabButtons.size());
+        assertEquals("Main Menu", tabButtons.get(0).getMessage().getString());
+        assertEquals("Survival", tabButtons.get(1).getMessage().getString());
+        assertEquals("Creative", tabButtons.get(2).getMessage().getString());
+        assertEquals("custom: Pool", tabButtons.get(3).getMessage().getString());
+
+        // 3. Tab tooltips must match each sorted tab
+        java.lang.reflect.Field tooltipField = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredField("tooltip");
+        tooltipField.setAccessible(true);
+        java.lang.reflect.Field messageField = net.minecraft.client.gui.components.Tooltip.class.getDeclaredField("message");
+        messageField.setAccessible(true);
+
+        String[] expectedTooltips = {
+                "Plays on the main menu",
+                "Plays in Survival mode",
+                "Plays in Creative mode",
+                "Custom music pool: custom:pool"
+        };
+        for (int i = 0; i < 4; i++) {
+            net.minecraft.client.gui.components.AbstractWidget btn =
+                    (net.minecraft.client.gui.components.AbstractWidget) tabButtons.get(i);
+            net.minecraft.client.gui.components.WidgetTooltipHolder holder =
+                    (net.minecraft.client.gui.components.WidgetTooltipHolder) tooltipField.get(btn);
+            assertNotNull(holder);
+            net.minecraft.client.gui.components.Tooltip tooltip = holder.get();
+            assertNotNull(tooltip);
+            net.minecraft.network.chat.Component msg = (net.minecraft.network.chat.Component) messageField.get(tooltip);
+            assertEquals(expectedTooltips[i], msg.getString(), "Tooltip message must match for tab " + i);
+        }
+
+        // 4. Tab selection callback identity: selecting tab 2 (Creative) selects creative pool
+        screen.tabNavigationBar().selectTab(2, false);
+        assertEquals(creative, screen.selectedPool(), "Selecting tab 2 must switch to Creative pool");
+
+        // 5. Selecting tab 0 (Main Menu) selects menu pool
+        screen.tabNavigationBar().selectTab(0, false);
+        assertEquals(menu, screen.selectedPool(), "Selecting tab 0 must switch to Menu pool");
     }
 }
