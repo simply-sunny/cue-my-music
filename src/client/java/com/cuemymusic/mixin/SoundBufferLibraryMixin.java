@@ -25,7 +25,7 @@ public abstract class SoundBufferLibraryMixin {
             CallbackInfoReturnable<CompletableFuture<AudioStream>> cir) {
         MusicDirector director = MusicDirector.getInstance();
         MusicDirector.OffsetRequest request = director.offsetRequestFor(path);
-        if (request == null || !director.isCurrentGeneration(request.generation())) {
+        if (request == null || !director.isCurrentOffsetRequest(request)) {
             return;
         }
         CompletableFuture<AudioStream> base = cir.getReturnValue();

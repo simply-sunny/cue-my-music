@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -15,6 +17,7 @@ import com.google.common.collect.ImmutableList;
 
 import com.cuemymusic.client.music.MusicDirector;
 import com.cuemymusic.client.music.PinnedMusicInstance;
+import com.cuemymusic.client.music.TrackPreviewController;
 import com.cuemymusic.client.music.TrackWeightConfig;
 import com.cuemymusic.client.music.WeightedMusicCatalog;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Occurrence;
@@ -23,6 +26,7 @@ import com.cuemymusic.client.music.WeightedMusicCatalog.Track;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.resources.sounds.Sound;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
@@ -147,6 +151,7 @@ public final class TrackWeightScreen extends Screen {
     private final MusicPlayerScreen parent;
     private final TrackWeightConfig saved;
     private final Model model;
+    private final TrackPreviewController previewController;
     private final PreviewState previewState;
     private final TabManager tabManager;
     private final Map<Tab, Pool> tabToPool = new LinkedHashMap<>();
@@ -154,7 +159,6 @@ public final class TrackWeightScreen extends Screen {
     private List<Pool> orderedPools = List.of();
     private ResponsiveLayout layout;
     private ScrollablePoolTabBar tabNavigationBar;
-    private PinnedMusicInstance currentPreviewInstance;
     private Component errorMessage;
 
     private Button browserToggleButton;
@@ -197,11 +201,8 @@ public final class TrackWeightScreen extends Screen {
         this.parent = parent;
         this.saved = saved != null ? saved : TrackWeightConfig.defaults();
         this.model = new Model(this.saved, pools);
-        this.previewState = new PreviewState(
-                this::playPreviewSound,
-                this::stopPreviewSound,
-                () -> MusicDirector.getInstance().pauseForPreview(),
-                () -> MusicDirector.getInstance().resumeAfterPreview(true));
+        this.previewController = new TrackPreviewController();
+        this.previewState = new PreviewState(this.previewController, () -> this.model.selectedPool());
         this.tabManager = new TabManager(this::addRenderableWidget, this::removeWidget, this::onTabSelected, tab -> {});
         this.orderedPools = orderPoolTabs(this.model.pools());
     }
@@ -705,50 +706,18 @@ public final class TrackWeightScreen extends Screen {
             previewButton.active = track != null
                     && track.occurrences() != null
                     && !track.occurrences().isEmpty();
-            boolean isPlayingSelected = previewState != null
-                    && previewState.isPlaying()
+            boolean isPlayingSelected = previewController != null
+                    && previewController.isPlaying()
                     && track != null
-                    && previewState.playingTrack() != null
-                    && track.resourceId().equals(previewState.playingTrack().resourceId());
+                    && previewController.currentTrack() != null
+                    && track.resourceId().equals(previewController.currentTrack().resourceId());
             previewButton.setMessage(Component.literal(isPlayingSelected ? "Stop Sound" : "Play Sound"));
         }
     }
 
-    private void playPreviewSound(Track track) {
-        if (minecraft == null || model.selectedPool() == null || track == null) {
-            return;
-        }
-        if (track.occurrences() == null || track.occurrences().isEmpty()) {
-            return;
-        }
-        Occurrence occurrence = track.occurrences().getFirst();
-        if (occurrence.sound() == null) {
-            return;
-        }
-        PinnedMusicInstance preview = new PinnedMusicInstance(
-                Identifier.parse(model.selectedPool().id()),
-                occurrence.sound(),
-                RandomSource.create(0x435545L),
-                0L,
-                0.0);
-        this.currentPreviewInstance = preview;
-        if (minecraft.getSoundManager() != null) {
-            minecraft.getSoundManager().play(preview);
-        }
-    }
-
-    private void stopPreviewSound(Track track) {
-        if (currentPreviewInstance != null) {
-            if (minecraft != null && minecraft.getSoundManager() != null) {
-                minecraft.getSoundManager().stop(currentPreviewInstance);
-            }
-            currentPreviewInstance = null;
-        }
-    }
-
     void stopPreview() {
-        if (previewState != null) {
-            previewState.stop();
+        if (previewController != null) {
+            previewController.stop();
         }
         updatePreviewButton();
     }
@@ -834,12 +803,8 @@ public final class TrackWeightScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        boolean active = currentPreviewInstance != null
-                && minecraft != null
-                && minecraft.getSoundManager() != null
-                && minecraft.getSoundManager().isActive(currentPreviewInstance);
-        if (previewState != null) {
-            previewState.tick(active);
+        if (previewController != null) {
+            previewController.tick();
         }
         updatePreviewButton();
     }
@@ -1212,6 +1177,10 @@ public final class TrackWeightScreen extends Screen {
         return tabManager;
     }
 
+    public TrackPreviewController previewController() {
+        return previewController;
+    }
+
     PreviewState previewState() {
         return previewState;
     }
@@ -1256,39 +1225,97 @@ public final class TrackWeightScreen extends Screen {
     }
 
     static final class PreviewState implements AutoCloseable {
-        private final Consumer<Track> onPlay;
-        private final Consumer<Track> onStop;
-        private final BooleanSupplier pauseAction;
-        private final Runnable resumeAction;
+        private final TrackPreviewController controller;
+        private final java.util.function.Supplier<Pool> poolSupplier;
+        private final boolean[] activeHolder;
 
-        private Track playingTrack;
-        private boolean pausedByPreview;
+        PreviewState(TrackPreviewController controller, java.util.function.Supplier<Pool> poolSupplier) {
+            this.controller = controller;
+            this.poolSupplier = poolSupplier;
+            this.activeHolder = null;
+        }
 
         PreviewState(
                 Consumer<Track> onPlay,
                 Consumer<Track> onStop,
                 BooleanSupplier pauseAction,
                 Runnable resumeAction) {
-            this.onPlay = onPlay != null ? onPlay : t -> {};
-            this.onStop = onStop != null ? onStop : t -> {};
-            this.pauseAction = pauseAction != null ? pauseAction : () -> false;
-            this.resumeAction = resumeAction != null ? resumeAction : () -> {};
+            final Consumer<Track> play = onPlay != null ? onPlay : t -> {};
+            final Consumer<Track> stop = onStop != null ? onStop : t -> {};
+            final BooleanSupplier pause = pauseAction != null ? pauseAction : () -> false;
+            final Runnable resume = resumeAction != null ? resumeAction : () -> {};
+
+            final boolean[] activeFlag = new boolean[1];
+            this.activeHolder = activeFlag;
+
+            TrackPreviewController.Backend backend = new TrackPreviewController.Backend() {
+                private Track activeTrack;
+
+                @Override
+                public PinnedMusicInstance play(Pool pool, Track track, long generation, double offsetSeconds) {
+                    this.activeTrack = track;
+                    play.accept(track);
+                    Sound sound = (track != null && track.occurrences() != null && !track.occurrences().isEmpty())
+                            ? track.occurrences().getFirst().sound()
+                            : null;
+                    return new PinnedMusicInstance(
+                            Identifier.parse("cue_my_music:preview"),
+                            sound,
+                            RandomSource.create(generation),
+                            generation,
+                            offsetSeconds);
+                }
+
+                @Override
+                public void stop(PinnedMusicInstance instance) {
+                    if (activeTrack != null) {
+                        stop.accept(activeTrack);
+                        activeTrack = null;
+                    }
+                }
+
+                @Override
+                public boolean isActive(PinnedMusicInstance instance) {
+                    return activeFlag[0];
+                }
+
+                @Override
+                public void setPaused(PinnedMusicInstance instance, boolean paused) {}
+
+                @Override
+                public CompletableFuture<OptionalDouble> duration(Track track, long generation) {
+                    return CompletableFuture.completedFuture(OptionalDouble.empty());
+                }
+
+                @Override
+                public boolean pauseBackground() {
+                    return pause.getAsBoolean();
+                }
+
+                @Override
+                public void resumeBackground() {
+                    resume.run();
+                }
+            };
+
+            this.controller = new TrackPreviewController(backend);
+            this.poolSupplier = () -> null;
         }
 
         public boolean isPlaying() {
-            return playingTrack != null;
+            return controller.isPlaying();
         }
 
         public Track playingTrack() {
-            return playingTrack;
+            return controller.currentTrack();
         }
 
         public boolean ownsPause() {
-            return pausedByPreview;
+            return controller.ownsBackgroundPause();
         }
 
         public boolean pausedByPreview() {
-            return pausedByPreview;
+            return controller.ownsBackgroundPause();
         }
 
         public void toggle(Track track) {
@@ -1296,49 +1323,32 @@ public final class TrackWeightScreen extends Screen {
                 stop();
                 return;
             }
-            if (playingTrack != null && playingTrack.resourceId().equals(track.resourceId())) {
+            if (controller.isPlaying() && controller.currentTrack() != null
+                    && track.resourceId().equals(controller.currentTrack().resourceId())) {
                 stop();
                 return;
             }
-            if (playingTrack != null) {
-                Track prev = playingTrack;
-                playingTrack = null;
-                onStop.accept(prev);
-            } else if (!pausedByPreview) {
-                pausedByPreview = pauseAction.getAsBoolean();
+            Pool pool = poolSupplier != null ? poolSupplier.get() : null;
+            if (pool == null) {
+                pool = new Pool("cue_my_music:preview", List.of(track), track.occurrences());
             }
-            playingTrack = track;
-            onPlay.accept(track);
+            controller.start(pool, track);
         }
 
         public void stop() {
-            if (playingTrack != null) {
-                Track stopped = playingTrack;
-                playingTrack = null;
-                onStop.accept(stopped);
-            }
-            resumeIfNeeded();
+            controller.stop();
         }
 
         public void tick(boolean soundActive) {
-            if (playingTrack != null && !soundActive) {
-                Track stopped = playingTrack;
-                playingTrack = null;
-                onStop.accept(stopped);
-                resumeIfNeeded();
+            if (activeHolder != null) {
+                activeHolder[0] = soundActive;
             }
-        }
-
-        private void resumeIfNeeded() {
-            if (pausedByPreview) {
-                pausedByPreview = false;
-                resumeAction.run();
-            }
+            controller.tick();
         }
 
         @Override
         public void close() {
-            stop();
+            controller.close();
         }
     }
 

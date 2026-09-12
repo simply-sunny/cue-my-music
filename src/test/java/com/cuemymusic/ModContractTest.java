@@ -100,12 +100,13 @@ class ModContractTest {
                     .count();
         }
         // Minimal surface: reduction survivors, transport, two Mod Menu screen adapters,
-        // and the 4 approved track-weighting production files:
+        // and the 5 approved track-weighting production files:
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/TrackWeightConfig.java")));
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/WeightedMusicCatalog.java")));
+        assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/TrackPreviewController.java")));
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/ui/TrackWeightScreen.java")));
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/ui/RadialWeightWidget.java")));
-        assertTrue(productionFiles <= 24, "expected approved production surface, found " + productionFiles);
+        assertTrue(productionFiles <= 25, "expected approved production surface, found " + productionFiles);
     }
 
     @Test void configAndCatalogAllowedOnlyForTrackWeightingSubsystem() throws Exception {

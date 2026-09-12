@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 
+import com.cuemymusic.client.music.MusicDirector;
 import com.cuemymusic.client.music.MusicPlanner;
 import com.cuemymusic.client.music.TrackWeightConfig;
 import com.cuemymusic.client.music.WeightedMusicCatalog;
@@ -993,6 +994,22 @@ class TrackWeightScreenTest {
         assertEquals(initialSeq, planner.peekSequence(pool.id()));
     }
 
+    @Test void screenTickWhileInactiveDoesNotTearDownAsynchronousPreview() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pool);
+        screen.initForDimensions(800, 400);
+
+        screen.previewButton().onPress(null);
+        assertTrue(screen.previewState().isPlaying(), "Preview should be playing immediately after press");
+
+        // Tick occurs before sound engine channel becomes active (asynchronous start)
+        screen.tick();
+
+        // Under root-cause bug, tick(false) immediately tore down the preview, setting isPlaying to false
+        assertTrue(screen.previewState().isPlaying(), "Preview must remain active while starting asynchronously");
+    }
+
     @Test void previewButtonLabelAndLifecycleInScreen() {
         Pool pool = poolWithC418AndUnknown();
         TrackWeightConfig saved = TrackWeightConfig.defaults();
@@ -1040,6 +1057,34 @@ class TrackWeightScreenTest {
         screen.onClose();
         assertFalse(screen.previewState().isPlaying());
         assertEquals("Play Sound", previewBtn.getMessage().getString());
+    }
+
+    @Test void previewStopsOnSaveAndCloseAndResourceReload() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pool);
+        screen.initForDimensions(800, 400);
+
+        Button previewBtn = screen.previewButton();
+        previewBtn.onPress(null);
+        assertTrue(screen.previewState().isPlaying());
+
+        Path tempConfig = Path.of("build/tmp/test-config.json");
+        MusicDirector.getInstance().initializeWeighting(tempConfig);
+        try {
+            screen.saveAndClose();
+            assertFalse(screen.previewState().isPlaying(), "saveAndClose must stop preview");
+
+            previewBtn.onPress(null);
+            assertTrue(screen.previewState().isPlaying());
+
+            MusicDirector.getInstance().onResourcesReloaded();
+            assertFalse(screen.previewState().isPlaying(), "onResourcesReloaded must stop preview");
+        } finally {
+            try {
+                Files.deleteIfExists(tempConfig);
+            } catch (Exception ignored) {}
+        }
     }
 
     @Test

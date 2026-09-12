@@ -258,4 +258,102 @@ class MusicDirectorQueueDelayTest {
         assertEquals(initialGen, director.currentGeneration());
         assertEquals(initialDelay, director.remainingDelayTicks());
     }
+
+    @Test void previewTransportOperationsLeaveNormalPlannerQueueDelayAndTransportGenerationUnchanged() {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(42L);
+
+        Sound sweden = file("music/game/sweden", 1.0F, 1.0F, 1, false, false);
+        Sound clark = file("music/game/clark", 1.0F, 1.0F, 1, false, false);
+        WeighedSoundEvents fallback = event("minecraft:music.game", List.of(sweden, clark));
+        WeightedMusicCatalog catalog = catalogOf(Map.of(Identifier.parse("minecraft:music.game"), fallback));
+        director.setWeightedCatalog(catalog);
+
+        String poolId = "minecraft:music.game";
+        WeightedMusicCatalog.Pool pool = catalog.pool(poolId).orElseThrow();
+        WeightedMusicCatalog.Track track = pool.tracks().getFirst();
+
+        long initialSeq = director.planner().peekSequence(poolId);
+        int initialHistorySize = director.planner().historySnapshot().size();
+        long initialTransportGen = director.currentGeneration();
+        int initialDelay = director.remainingDelayTicks();
+        List<WeightedMusicCatalog.Occurrence> initialQueue = director.projectFresh(Identifier.parse(poolId), null, initialSeq, 3);
+
+        // Preview operations: play, pause, probe duration, stop
+        TrackPreviewController.Backend backend = director.previewBackend();
+        PinnedMusicInstance pin = backend.play(pool, track, 1L, 0.0);
+        assertNotNull(pin);
+        backend.setPaused(pin, true);
+        backend.duration(track, 1L);
+        backend.stop(pin);
+
+        // Normal state must be strictly unchanged
+        assertEquals(initialSeq, director.planner().peekSequence(poolId),
+                "Preview operations must not advance planner sequence");
+        assertEquals(initialHistorySize, director.planner().historySnapshot().size(),
+                "Preview operations must not append to planner history");
+        assertEquals(initialTransportGen, director.currentGeneration(),
+                "Preview operations must not bump normal transport generation");
+        assertEquals(initialDelay, director.remainingDelayTicks(),
+                "Preview operations must not alter music delay ticks");
+        assertEquals(initialQueue, director.projectFresh(Identifier.parse(poolId), null, initialSeq, 3),
+                "Preview operations must not alter queue projections");
+    }
+
+    @Test void separateOffsetOwnershipValidatesIndependentGenerationsAndPreventsCollisions() {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(42L);
+
+        long transportGen = director.currentGeneration();
+        Sound sound = file("music/game/sweden", 1.0F, 1.0F, 1, false, false);
+        Identifier soundPath = sound.getPath();
+        MusicDirector.OffsetRequest transportReq = new MusicDirector.OffsetRequest(
+                MusicDirector.StreamOwner.TRANSPORT, transportGen, 0.0);
+        director.registerOffsetRequest(soundPath, transportReq);
+        assertEquals(transportReq, director.offsetRequestFor(soundPath));
+        assertTrue(director.isCurrentOffsetRequest(transportReq));
+        assertFalse(director.isCurrentOffsetRequest(new MusicDirector.OffsetRequest(
+                MusicDirector.StreamOwner.TRANSPORT, transportGen - 1, 0.0)));
+
+        // Preview starts on the exact same sound path (registers PREVIEW request)
+        PinnedMusicInstance previewPin = director.playPreview(
+                Identifier.parse("minecraft:music.game"), sound, 99L, 25.0);
+        assertEquals(99L, director.previewGeneration());
+
+        MusicDirector.OffsetRequest previewReq = director.offsetRequestFor(soundPath);
+        assertNotNull(previewReq);
+        assertEquals(MusicDirector.StreamOwner.PREVIEW, previewReq.owner());
+        assertEquals(99L, previewReq.generation());
+        assertEquals(25.0, previewReq.seconds());
+
+        // Independent generation validation
+        assertTrue(director.isCurrentOffsetRequest(previewReq));
+        assertFalse(director.isCurrentOffsetRequest(new MusicDirector.OffsetRequest(
+                MusicDirector.StreamOwner.PREVIEW, 98L, 25.0)));
+        assertTrue(director.isCurrentOffsetRequest(transportReq));
+
+        // Stopping preview clears PREVIEW request without clobbering matching path state
+        director.stopPreview(previewPin);
+        // TRANSPORT request on the same path was preserved and not clobbered
+        MusicDirector.OffsetRequest remainingReq = director.offsetRequestFor(soundPath);
+        assertNotNull(remainingReq);
+        assertEquals(MusicDirector.StreamOwner.TRANSPORT, remainingReq.owner());
+        assertEquals(transportGen, remainingReq.generation());
+    }
+
+    @Test void resourceReloadCleansUpActivePreviewAndClearsPreviewOffsetRequests() {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(42L);
+
+        Sound sound = file("music/game/sweden", 1.0F, 1.0F, 1, false, false);
+        PinnedMusicInstance pin = director.playPreview(
+                Identifier.parse("minecraft:music.game"), sound, 5L, 10.0);
+        assertNotNull(director.offsetRequestFor(sound.getPath()));
+
+        director.onResourcesReloaded();
+
+        // Preview offset requests cleared, preview generation bumped
+        assertNull(director.offsetRequestFor(sound.getPath()));
+        assertTrue(director.previewGeneration() > 5L);
+    }
 }

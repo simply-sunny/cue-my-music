@@ -31,6 +31,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.Music;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.util.RandomSource;
+import net.minecraft.util.Util;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,11 +62,14 @@ public final class MusicDirector {
 
     /** Transport generation: every start/seek/skip bumps it; stale native work is closed. */
     private final AtomicLong transportGeneration = new AtomicLong(0L);
+    private final AtomicLong previewGeneration = new AtomicLong(0L);
     private volatile PinnedMusicInstance transportInstance;
+    private volatile PinnedMusicInstance previewInstance;
+    private volatile TrackPreviewController activePreviewController;
     private final TransportClock clock = new TransportClock();
     private volatile double durationSeconds = Double.NaN;
     private volatile boolean transportPaused;
-    private final Map<Identifier, OffsetRequest> offsetRequests = new ConcurrentHashMap<>();
+    private final Map<Identifier, List<OffsetRequest>> offsetRequests = new ConcurrentHashMap<>();
     /** Hard ceiling on decoded bytes dropped for one seek (far past any music track). */
     static final long SKIP_BUDGET_BYTES = 256L << 20;
     static final int SKIP_CHUNK_BYTES = 1 << 16;
@@ -74,8 +78,16 @@ public final class MusicDirector {
     private volatile WeightedMusicCatalog weightedCatalog = WeightedMusicCatalog.empty();
     private Path weightingPath;
 
+    public enum StreamOwner {
+        TRANSPORT,
+        PREVIEW
+    }
+
     /** Pending offset reopen, captured by the play redirect at stream-open time. */
-    public record OffsetRequest(long generation, double startSeconds) {
+    public record OffsetRequest(StreamOwner owner, long generation, double seconds) {
+        public double startSeconds() {
+            return seconds;
+        }
     }
 
     /**
@@ -238,8 +250,8 @@ public final class MusicDirector {
         transportPaused = false;
         durationSeconds = Double.NaN;
         clock.reset();
-        offsetRequests.clear();
-        offsetRequests.put(chosen.getPath(), new OffsetRequest(generation, 0.0));
+        clearOffsetRequests(StreamOwner.TRANSPORT);
+        registerOffsetRequest(chosen.getPath(), new OffsetRequest(StreamOwner.TRANSPORT, generation, 0.0));
         launchDurationScan(generation, chosen.getPath());
         return pin;
     }
@@ -284,6 +296,14 @@ public final class MusicDirector {
     public void onResourcesReloaded() {
         pendingPreviousFile = null;
         resetTransport();
+        if (activePreviewController != null) {
+            activePreviewController.stop();
+        }
+        if (previewInstance != null) {
+            stopPreview(previewInstance);
+        }
+        previewGeneration.incrementAndGet();
+        clearOffsetRequests(StreamOwner.PREVIEW);
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft != null && minecraft.getSoundManager() != null) {
             pruneStaleReferences(minecraft.getSoundManager());
@@ -417,8 +437,8 @@ public final class MusicDirector {
         long generation = transportGeneration.incrementAndGet();
         PinnedMusicInstance next = new PinnedMusicInstance(current.getIdentifier(), current.pinnedSound(),
                 RandomSource.create(generation), generation, target);
-        offsetRequests.clear();
-        offsetRequests.put(current.pinnedSound().getPath(), new OffsetRequest(generation, target));
+        clearOffsetRequests(StreamOwner.TRANSPORT);
+        registerOffsetRequest(current.pinnedSound().getPath(), new OffsetRequest(StreamOwner.TRANSPORT, generation, target));
         minecraft.getSoundManager().stop(current);
         minecraft.getSoundManager().play(next);
         MusicManager manager = minecraft.getMusicManager();
@@ -637,7 +657,28 @@ public final class MusicDirector {
         transportPaused = false;
         durationSeconds = Double.NaN;
         clock.reset();
-        offsetRequests.clear();
+        clearOffsetRequests(StreamOwner.TRANSPORT);
+    }
+
+    void registerOffsetRequest(Identifier path, OffsetRequest request) {
+        offsetRequests.compute(path, (k, list) -> {
+            List<OffsetRequest> next = (list == null) ? new java.util.concurrent.CopyOnWriteArrayList<>() : list;
+            next.removeIf(existing -> existing.owner() == request.owner());
+            next.add(request);
+            return next;
+        });
+    }
+
+    private void clearOffsetRequests(StreamOwner owner) {
+        for (var entry : offsetRequests.entrySet()) {
+            entry.getValue().removeIf(req -> req.owner() == owner);
+        }
+    }
+
+    private void clearOffsetRequest(StreamOwner owner, long generation) {
+        for (var entry : offsetRequests.entrySet()) {
+            entry.getValue().removeIf(req -> req.owner() == owner && req.generation() == generation);
+        }
     }
 
     public long currentGeneration() {
@@ -648,9 +689,37 @@ public final class MusicDirector {
         return generation == transportGeneration.get();
     }
 
+    public long previewGeneration() {
+        return previewGeneration.get();
+    }
+
+    public boolean isCurrentOffsetRequest(OffsetRequest request) {
+        if (request == null) {
+            return false;
+        }
+        if (request.owner() == StreamOwner.PREVIEW) {
+            return request.generation() == previewGeneration.get();
+        }
+        return request.generation() == transportGeneration.get();
+    }
+
     /** Pending offset for a sound path, captured by the play redirect. No consumption. */
     public OffsetRequest offsetRequestFor(Identifier path) {
-        return offsetRequests.get(path);
+        List<OffsetRequest> list = offsetRequests.get(path);
+        if (list == null || list.isEmpty()) {
+            return null;
+        }
+        for (OffsetRequest req : list) {
+            if (req.owner() == StreamOwner.PREVIEW && isCurrentOffsetRequest(req)) {
+                return req;
+            }
+        }
+        for (OffsetRequest req : list) {
+            if (req.owner() == StreamOwner.TRANSPORT && isCurrentOffsetRequest(req)) {
+                return req;
+            }
+        }
+        return null;
     }
 
     /**
@@ -660,7 +729,7 @@ public final class MusicDirector {
      * without attaching, so a superseded song can never start late.
      */
     public AudioStream applyOffset(AudioStream stream, OffsetRequest request) {
-        if (!isCurrentGeneration(request.generation())) {
+        if (!isCurrentOffsetRequest(request)) {
             closeQuietly(stream);
             throw new CancellationException("stale transport generation");
         }
@@ -669,7 +738,7 @@ public final class MusicDirector {
             double bytesPerSecond =
                     format.getSampleRate() * (format.getSampleSizeInBits() / 8.0) * format.getChannels();
             long targetBytes =
-                    bytesPerSecond <= 0.0 ? 0L : (long) (request.startSeconds() * bytesPerSecond);
+                    bytesPerSecond <= 0.0 ? 0L : (long) (request.seconds() * bytesPerSecond);
             StreamSkipper.ByteSource source = new StreamSkipper.ByteSource() {
                 @Override
                 public ByteBuffer read(int size) throws java.io.IOException {
@@ -682,7 +751,7 @@ public final class MusicDirector {
                 }
             };
             StreamSkipper.discard(source, targetBytes, SKIP_CHUNK_BYTES, SKIP_BUDGET_BYTES);
-            if (!isCurrentGeneration(request.generation())) {
+            if (!isCurrentOffsetRequest(request)) {
                 closeQuietly(stream);
                 throw new CancellationException("superseded during discard");
             }
@@ -691,6 +760,162 @@ public final class MusicDirector {
             closeQuietly(stream);
             throw new CompletionException(failure);
         }
+    }
+
+    public void registerActivePreviewController(TrackPreviewController controller) {
+        this.activePreviewController = controller;
+    }
+
+    public void unregisterActivePreviewController(TrackPreviewController controller) {
+        if (this.activePreviewController == controller) {
+            this.activePreviewController = null;
+        }
+    }
+
+    public PinnedMusicInstance playPreview(Identifier eventId, Sound sound, long generation, double offsetSeconds) {
+        if (eventId == null || sound == null) {
+            return null;
+        }
+        PinnedMusicInstance old = this.previewInstance;
+        if (old != null) {
+            stopPreview(old);
+        }
+        previewGeneration.set(generation);
+        registerOffsetRequest(sound.getPath(), new OffsetRequest(StreamOwner.PREVIEW, generation, offsetSeconds));
+        PinnedMusicInstance pin = new PinnedMusicInstance(
+                eventId,
+                sound,
+                RandomSource.create(generation),
+                generation,
+                offsetSeconds);
+        this.previewInstance = pin;
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft != null && minecraft.getSoundManager() != null) {
+            minecraft.getSoundManager().play(pin);
+        }
+        return pin;
+    }
+
+    public void stopPreview(PinnedMusicInstance instance) {
+        if (instance != null) {
+            clearOffsetRequest(StreamOwner.PREVIEW, instance.generation());
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft != null && minecraft.getSoundManager() != null) {
+                minecraft.getSoundManager().stop(instance);
+            }
+            if (this.previewInstance == instance) {
+                this.previewInstance = null;
+            }
+        }
+    }
+
+    public boolean previewActive(PinnedMusicInstance instance) {
+        if (instance == null) {
+            return false;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.getSoundManager() == null) {
+            return false;
+        }
+        return minecraft.getSoundManager().isActive(instance);
+    }
+
+    public boolean setPreviewPaused(PinnedMusicInstance instance, boolean paused) {
+        if (instance == null) {
+            return false;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return false;
+        }
+        SoundEngine engine = engineOf(minecraft);
+        if (engine == null) {
+            return false;
+        }
+        ((EngineTransport) engine).cueMyMusic$setInstancePaused(instance, paused);
+        return true;
+    }
+
+    public CompletableFuture<OptionalDouble> probeDuration(Sound sound, long generation, StreamOwner owner) {
+        if (sound == null || sound.getPath() == null) {
+            return CompletableFuture.completedFuture(OptionalDouble.empty());
+        }
+        Identifier path = sound.getPath();
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.getResourceManager() == null) {
+            return CompletableFuture.completedFuture(OptionalDouble.empty());
+        }
+        var resources = minecraft.getResourceManager();
+        return CompletableFuture.supplyAsync(() -> {
+            try (InputStream open = resources.open(path)) {
+                return OggDuration.scan(open);
+            } catch (Exception failure) {
+                LOGGER.debug("[Cue My Music] duration probe failed for {}", path, failure);
+                return OptionalDouble.empty();
+            }
+        }, Util.nonCriticalIoPool()).thenApply(opt -> {
+            long currentGen = (owner == StreamOwner.PREVIEW) ? previewGeneration.get() : transportGeneration.get();
+            if (generation != currentGen) {
+                return OptionalDouble.empty();
+            }
+            return opt;
+        });
+    }
+
+    public TrackPreviewController.Backend previewBackend() {
+        return new TrackPreviewController.Backend() {
+            @Override
+            public PinnedMusicInstance play(WeightedMusicCatalog.Pool pool, WeightedMusicCatalog.Track track,
+                    long generation, double offsetSeconds) {
+                if (pool == null || track == null) {
+                    return null;
+                }
+                WeightedMusicCatalog.Occurrence occ = (track.occurrences() != null && !track.occurrences().isEmpty())
+                        ? track.occurrences().getFirst()
+                        : null;
+                if (occ == null || occ.sound() == null) {
+                    return null;
+                }
+                return playPreview(Identifier.parse(pool.id()), occ.sound(), generation, offsetSeconds);
+            }
+
+            @Override
+            public void stop(PinnedMusicInstance instance) {
+                stopPreview(instance);
+            }
+
+            @Override
+            public boolean isActive(PinnedMusicInstance instance) {
+                return previewActive(instance);
+            }
+
+            @Override
+            public void setPaused(PinnedMusicInstance instance, boolean paused) {
+                setPreviewPaused(instance, paused);
+            }
+
+            @Override
+            public CompletableFuture<OptionalDouble> duration(WeightedMusicCatalog.Track track, long generation) {
+                if (track == null || track.occurrences() == null || track.occurrences().isEmpty()) {
+                    return CompletableFuture.completedFuture(OptionalDouble.empty());
+                }
+                WeightedMusicCatalog.Occurrence occ = track.occurrences().getFirst();
+                if (occ == null || occ.sound() == null) {
+                    return CompletableFuture.completedFuture(OptionalDouble.empty());
+                }
+                return probeDuration(occ.sound(), generation, StreamOwner.PREVIEW);
+            }
+
+            @Override
+            public boolean pauseBackground() {
+                return pauseForPreview();
+            }
+
+            @Override
+            public void resumeBackground() {
+                resumeAfterPreview(true);
+            }
+        };
     }
 
     private static void closeQuietly(AudioStream stream) {
