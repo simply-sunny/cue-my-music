@@ -25,14 +25,17 @@ import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.ObjectSelectionList;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.tabs.GridLayoutTab;
 import net.minecraft.client.gui.components.tabs.MenuTabBar;
 import net.minecraft.client.gui.components.tabs.Tab;
 import net.minecraft.client.gui.components.tabs.TabManager;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -155,9 +158,9 @@ public final class TrackWeightScreen extends Screen {
         int margin = 10;
         int w = width - (margin * 2);
 
-        Bounds poolSearch = new Bounds(margin, 16, w, 18);
-        int listH = Math.max(36, height - 173);
-        Bounds list = new Bounds(margin, 36, w, listH);
+        Bounds poolSearch = new Bounds(margin, 26, w, 18);
+        int listH = Math.max(36, height - 183);
+        Bounds list = new Bounds(margin, 46, w, listH);
         int editorY = list.bottom() + 2;
         Bounds editorInfo = new Bounds(margin, editorY, w, 19);
         int sliderY = editorInfo.bottom() + 2;
@@ -456,6 +459,10 @@ public final class TrackWeightScreen extends Screen {
                 builder.addTab(tab);
             }
             this.tabNavigationBar = builder.build();
+            List<Pool> pools = model.pools();
+            for (int i = 0; i < pools.size(); i++) {
+                this.tabNavigationBar.setTabTooltip(i, Tooltip.create(Component.literal(pools.get(i).id())));
+            }
             addRenderableWidget(this.tabNavigationBar);
 
             int selectedIndex = model.pools().indexOf(model.selectedPool());
@@ -711,16 +718,22 @@ public final class TrackWeightScreen extends Screen {
     }
 
     @Override
-    public void repositionElements() {
-        super.repositionElements();
-    }
-
-    @Override
     public boolean keyPressed(KeyEvent event) {
         if (this.tabNavigationBar != null && this.tabNavigationBar.keyPressed(event)) {
             return true;
         }
         return super.keyPressed(event);
+    }
+
+    @Override
+    protected void extractMenuBackground(GuiGraphicsExtractor extractor) {
+        if (this.tabNavigationBar != null) {
+            int headerHeight = this.tabNavigationBar.getRectangle().bottom();
+            extractor.blit(RenderPipelines.GUI_TEXTURED, CreateWorldScreen.TAB_HEADER_BACKGROUND, 0, 0, 0.0F, 0.0F, this.width, headerHeight, 16, 16);
+            this.extractMenuBackground(extractor, 0, headerHeight, this.width, this.height);
+        } else {
+            super.extractMenuBackground(extractor);
+        }
     }
 
     @Override

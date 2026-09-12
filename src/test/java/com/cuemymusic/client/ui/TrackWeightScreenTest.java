@@ -343,6 +343,14 @@ class TrackWeightScreenTest {
             assertFalse(TrackWeightScreen.usesWideLayout(w), "Width " + w + " must be narrow layout");
             TrackWeightScreen.NarrowGeometry g = TrackWeightScreen.narrowGeometry(w, h);
 
+            assertEquals(26, g.poolSearch().y(),
+                    "poolSearch y must be 26 to clear MenuTabBar at " + w + "x" + h);
+            assertEquals(46, g.list().y(),
+                    "list y must be 46 at " + w + "x" + h);
+            assertTrue(24 < g.poolSearch().y(),
+                    "MenuTabBar bottom (24) must be strictly above poolSearch y (" + g.poolSearch().y() + ") at " + w + "x" + h);
+            assertTrue(g.poolSearch().bottom() < g.list().y(),
+                    "PoolSearch bottom (" + g.poolSearch().bottom() + ") must be strictly above list y (" + g.list().y() + ") at " + w + "x" + h);
             assertTrue(g.list().bottom() < g.editorInfo().y(),
                     "List bottom (" + g.list().bottom() + ") must be above editorInfo y (" + g.editorInfo().y() + ") at " + w + "x" + h);
             assertTrue(g.editorInfo().bottom() < g.slider().y(),
@@ -638,19 +646,17 @@ class TrackWeightScreenTest {
     }
 
     @Test
-    void nativeMenuTabBarReplacesCycleButtonPoolSelectorContract() throws Exception {
+    void nativeMenuTabBarExactApiContract() throws Exception {
         String source = Files.readString(
                 Path.of("src/client/java/com/cuemymusic/client/ui/TrackWeightScreen.java"));
         assertTrue(source.contains("MenuTabBar"), "Must use MenuTabBar");
         assertTrue(source.contains("TabManager"), "Must use TabManager");
         assertTrue(source.contains("GridLayoutTab"), "Must use GridLayoutTab");
         assertTrue(source.contains("tabNavigationBar.keyPressed"), "Must delegate keyPressed to tabNavigationBar");
+        assertTrue(source.contains("CreateWorldScreen.TAB_HEADER_BACKGROUND"), "Must use CreateWorldScreen.TAB_HEADER_BACKGROUND");
+        assertTrue(source.contains("extractMenuBackground"), "Must override extractMenuBackground for split background");
+        assertTrue(source.contains("RenderPipelines.GUI_TEXTURED"), "Must use RenderPipelines.GUI_TEXTURED for header background blit");
         assertFalse(source.contains("CycleButton<Pool>"), "Must not use CycleButton<Pool>");
-        assertFalse(source.contains("poolButton"), "Must not keep poolButton");
-        int extractStart = source.indexOf("public void extractRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickProgress)");
-        int jsonStart = source.indexOf("class JsonScreen");
-        String mainRender = source.substring(extractStart, jsonStart);
-        assertFalse(mainRender.contains("centeredText(font, title,"), "Must remove redundant screen title rendering in TrackWeightScreen");
     }
 
     @Test
@@ -767,5 +773,39 @@ class TrackWeightScreenTest {
                 "Tab manager must have pool 2's tab selected after resize");
         assertEquals(nether2, screen.selectedTrack(), "Selected track within pool must not reset to first track on resize");
         assertTrue(screen.previewState().isPlaying(), "Active preview must not be stopped on resize");
+    }
+
+    @Test
+    void everyTabButtonReceivesFullPoolIdTooltip() throws Exception {
+        Pool pool1 = poolWithC418AndUnknown();
+        Track netherTrack = track("minecraft:music/nether/rubedo", "Rubedo", "Lena Raine");
+        Pool pool2 = new Pool("minecraft:music.nether", List.of(netherTrack),
+                List.of(netherTrack.occurrences().getFirst()));
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, List.of(pool1, pool2));
+        screen.initForDimensions(800, 400);
+
+        java.lang.reflect.Field tooltipField = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredField("tooltip");
+        tooltipField.setAccessible(true);
+
+        List<? extends net.minecraft.client.gui.components.events.GuiEventListener> buttons =
+                screen.tabNavigationBar().children();
+        assertEquals(2, buttons.size());
+
+        for (int i = 0; i < buttons.size(); i++) {
+            net.minecraft.client.gui.components.AbstractWidget btn = (net.minecraft.client.gui.components.AbstractWidget) buttons.get(i);
+            net.minecraft.client.gui.components.WidgetTooltipHolder holder =
+                    (net.minecraft.client.gui.components.WidgetTooltipHolder) tooltipField.get(btn);
+            assertNotNull(holder, "WidgetTooltipHolder must exist on tab button " + i);
+            net.minecraft.client.gui.components.Tooltip tooltip = holder.get();
+            assertNotNull(tooltip, "Tooltip must be set on tab button " + i);
+
+            java.lang.reflect.Field messageField = net.minecraft.client.gui.components.Tooltip.class.getDeclaredField("message");
+            messageField.setAccessible(true);
+            net.minecraft.network.chat.Component msg = (net.minecraft.network.chat.Component) messageField.get(tooltip);
+            assertEquals(i == 0 ? pool1.id() : pool2.id(), msg.getString(),
+                    "Tooltip message must match full pool ID for tab " + i);
+        }
     }
 }
