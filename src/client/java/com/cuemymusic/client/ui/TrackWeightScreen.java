@@ -171,6 +171,7 @@ public final class TrackWeightScreen extends Screen {
     private Button btn2x;
     private Button btn5x;
     private Button previewButton;
+    private TrackPreviewPlayer previewPlayer;
     private Button allButton;
     private Button c418Button;
     private Button muteButton;
@@ -262,16 +263,16 @@ public final class TrackWeightScreen extends Screen {
         int gapWheelEditor = 4;
         int gapEditorPreview = 3;
         int editorHeight = 60;
-        int previewHeight = 18;
-        int totalBelowWheel = gapWheelEditor + editorHeight + gapEditorPreview + previewHeight;
+        int minPreviewHeight = 44;
+        int reservedBelowWheel = gapWheelEditor + editorHeight + gapEditorPreview + minPreviewHeight;
 
-        int availableWheel = main.height() - totalBelowWheel;
+        int availableWheel = main.height() - reservedBelowWheel;
         int maxWheel = Math.min(main.width() - 20, 180);
         int wheelSize = Math.clamp(Math.min(availableWheel, maxWheel), 16, 180);
 
         int wheelX = main.x() + Math.max(0, (main.width() - wheelSize) / 2);
-        int totalHeight = wheelSize + totalBelowWheel;
-        int extraY = Math.max(0, main.height() - totalHeight);
+        int totalMinHeight = wheelSize + reservedBelowWheel;
+        int extraY = Math.max(0, main.height() - totalMinHeight);
         int wheelY = main.y() + extraY / 4;
 
         int editorY = wheelY + wheelSize + gapWheelEditor;
@@ -279,12 +280,10 @@ public final class TrackWeightScreen extends Screen {
         int editorX = main.x() + Math.max(0, (main.width() - editorWidth) / 2);
 
         int previewY = editorY + editorHeight + gapEditorPreview;
-        int previewWidth = Math.min(main.width(), 120);
-        int previewX = main.x() + Math.max(0, (main.width() - previewWidth) / 2);
-
+        int previewHeight = Math.max(0, main.bottom() - previewY);
         Bounds wheel = new Bounds(wheelX, wheelY, wheelSize, wheelSize);
         Bounds editor = new Bounds(editorX, editorY, editorWidth, editorHeight);
-        Bounds preview = new Bounds(previewX, previewY, previewWidth, previewHeight);
+        Bounds preview = new Bounds(main.x(), previewY, main.width(), previewHeight);
 
         return new MainBounds(wheel, editor, preview);
     }
@@ -701,17 +700,99 @@ public final class TrackWeightScreen extends Screen {
     }
 
     private void updatePreviewButton() {
-        if (previewButton != null) {
+        syncPreviewWidgets();
+    }
+
+    private boolean wantsActivePlayer() {
+        return layout != null
+                && layout.main() != null
+                && previewController != null
+                && previewController.state() != TrackPreviewController.State.IDLE;
+    }
+
+    private void syncPreviewWidgets() {
+        if (layout == null || layout.main() == null) {
+            removePreviewWidgets();
+            previewButton = null;
+            previewPlayer = null;
+            return;
+        }
+        if (wantsActivePlayer()) {
+            if (previewPlayer == null) {
+                removePreviewWidgets();
+                previewButton = null;
+                previewPlayer = new TrackPreviewPlayer(font,
+                        () -> previewController.snapshot(),
+                        () -> {
+                            previewController.togglePause();
+                            syncPreviewWidgets();
+                        },
+                        seconds -> previewController.seek(seconds),
+                        () -> stopPreview());
+                previewPlayer.setBounds(layout.preview());
+                previewPlayer.tick();
+                for (var widget : previewPlayer.widgets()) {
+                    addRenderableWidget(widget);
+                }
+            } else {
+                previewPlayer.setBounds(layout.preview());
+                previewPlayer.tick();
+            }
+        } else {
+            boolean hadPlayer = previewPlayer != null;
+            removePreviewWidgets();
+            previewPlayer = null;
+            if (previewButton == null) {
+                previewButton = createIdlePreviewButton();
+                addRenderableWidget(previewButton);
+            }
+            refreshIdlePreviewButton();
+            if (hadPlayer) {
+                refreshIdlePreviewButton();
+            }
+        }
+    }
+
+    private Button createIdlePreviewButton() {
+        Bounds preview = layout != null ? layout.preview() : null;
+        int x = preview != null ? preview.x() : 0;
+        int y = preview != null ? preview.y() : 0;
+        int w = preview != null ? Math.min(20, preview.width()) : 20;
+        int h = preview != null ? Math.min(20, Math.max(18, preview.height())) : 20;
+        net.minecraft.network.chat.MutableComponent narration = Component.literal("Preview selected track");
+        Button button = Button.builder(Component.literal("▶"), b -> {
             Track track = model.selectedTrack();
-            previewButton.active = track != null
-                    && track.occurrences() != null
-                    && !track.occurrences().isEmpty();
-            boolean isPlayingSelected = previewController != null
-                    && previewController.isPlaying()
-                    && track != null
-                    && previewController.currentTrack() != null
-                    && track.resourceId().equals(previewController.currentTrack().resourceId());
-            previewButton.setMessage(Component.literal(isPlayingSelected ? "Stop Sound" : "Play Sound"));
+            if (track != null) {
+                previewState.toggle(track);
+                syncPreviewWidgets();
+            }
+        }).bounds(x, y, w, h)
+                .createNarration(supplier -> narration)
+                .build();
+        return button;
+    }
+
+    private void refreshIdlePreviewButton() {
+        if (previewButton == null) {
+            return;
+        }
+        Track track = model.selectedTrack();
+        previewButton.active = track != null
+                && track.occurrences() != null
+                && !track.occurrences().isEmpty();
+        if (!previewButton.getMessage().getString().equals("▶")) {
+            previewButton.setMessage(Component.literal("▶"));
+        }
+    }
+
+    private void removePreviewWidgets() {
+        if (previewButton != null) {
+            removeWidget(previewButton);
+        }
+        if (previewPlayer != null) {
+            for (var widget : previewPlayer.widgets()) {
+                removeWidget(widget);
+            }
         }
     }
 
@@ -719,7 +800,7 @@ public final class TrackWeightScreen extends Screen {
         if (previewController != null) {
             previewController.stop();
         }
-        updatePreviewButton();
+        syncPreviewWidgets();
     }
 
     private void updateWheelModel() {
@@ -806,7 +887,7 @@ public final class TrackWeightScreen extends Screen {
         if (previewController != null) {
             previewController.tick();
         }
-        updatePreviewButton();
+        syncPreviewWidgets();
     }
 
     @Override
@@ -941,18 +1022,10 @@ public final class TrackWeightScreen extends Screen {
             addRenderableWidget(btn2x);
             addRenderableWidget(btn5x);
 
-            Bounds preview = layout.preview();
-            previewButton = Button.builder(Component.literal("Play Sound"), b -> {
-                Track track = model.selectedTrack();
-                if (track != null) {
-                    previewState.toggle(track);
-                    updatePreviewButton();
-                }
-            }).bounds(preview.x(), preview.y(), preview.width(), preview.height()).build();
-            previewButton.active = model.selectedTrack() != null
-                    && model.selectedTrack().occurrences() != null
-                    && !model.selectedTrack().occurrences().isEmpty();
-            addRenderableWidget(previewButton);
+            previewButton = null;
+            previewPlayer = null;
+            syncPreviewWidgets();
+            // Preview widgets (idle or active) are managed by syncPreviewWidgets.
         } else {
             radialWheel = null;
             weightSlider = null;
@@ -962,6 +1035,7 @@ public final class TrackWeightScreen extends Screen {
             btn2x = null;
             btn5x = null;
             previewButton = null;
+            previewPlayer = null;
         }
 
         Bounds tb = layout.bottomToolbar();
@@ -1187,6 +1261,10 @@ public final class TrackWeightScreen extends Screen {
 
     Button previewButton() {
         return previewButton;
+    }
+
+    TrackPreviewPlayer previewPlayer() {
+        return previewPlayer;
     }
 
     public Button allButton() {

@@ -299,28 +299,70 @@ class TrackWeightScreenTest {
         TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
         screen.initForDimensions(640, 360);
 
-        // Initially collapsed in narrow mode: wheel and preview button exist
+        // Initially collapsed in narrow mode: wheel and idle preview exist
         assertNotNull(screen.radialWheel(), "Wheel should exist in narrow collapsed mode");
-        assertNotNull(screen.previewButton(), "Preview button should exist in narrow collapsed mode");
+        assertNotNull(screen.previewButton(), "Idle preview should exist in narrow collapsed mode");
+        assertNull(screen.previewPlayer(), "No active player while idle");
 
-        // Start preview
-        screen.previewState().toggle(pool.tracks().getFirst());
+        // Start preview -> compact player replaces idle control
+        screen.previewButton().onPress(null);
+        screen.tick();
         assertTrue(screen.previewState().isPlaying(), "Preview must be playing");
+        assertNull(screen.previewButton(), "Idle control must be replaced while preview is active");
+        assertNotNull(screen.previewPlayer(), "Compact player must appear while preview is active");
 
         // Open browser in narrow mode
         screen.toggleBrowser();
         assertTrue(screen.browserState().isOpen());
         assertNull(screen.radialWheel(), "Radial wheel must be hidden (null) in narrow open browser overlay");
-        assertNull(screen.previewButton(), "Preview button must be hidden (null) in narrow open browser overlay");
+        assertNull(screen.previewButton(), "Idle preview must be hidden (null) in narrow open browser overlay");
+        assertNull(screen.previewPlayer(), "Active player must be hidden (null) in narrow open browser overlay");
         assertTrue(screen.previewState().isPlaying(), "Audio preview must continue playing while browser overlay is open");
 
         // Close browser in narrow mode: restores main widgets and same preview playing state
         screen.toggleBrowser();
         assertFalse(screen.browserState().isOpen());
         assertNotNull(screen.radialWheel(), "Radial wheel must be restored when browser is closed");
-        assertNotNull(screen.previewButton(), "Preview button must be restored when browser is closed");
+        assertNotNull(screen.previewPlayer(), "Active player must be restored when browser is closed");
+        assertNull(screen.previewButton(), "Idle control must stay replaced while preview is active");
         assertTrue(screen.previewState().isPlaying(), "Preview must still be playing after closing browser");
-        assertEquals("Stop Sound", screen.previewButton().getMessage().getString(), "Preview button must show Stop Sound");
+    }
+
+    @Test
+    void activePreviewConsumesLowerMainPanelRegionInsideWorkspace() {
+        int[][] dims = {
+                {427, 254},
+                {800, 600},
+                {1200, 800},
+                {1920, 1080}
+        };
+        for (int[] dim : dims) {
+            int w = dim[0];
+            int h = dim[1];
+            Pool pool = poolWithC418AndUnknown();
+            TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+            screen.initForDimensions(w, h);
+            screen.previewButton().onPress(null);
+            screen.tick();
+            assertNotNull(screen.previewPlayer(), "Player must appear at " + w + "x" + h);
+            ResponsiveLayout layout = screen.responsiveLayout();
+            assertNotNull(layout.main(), "Main panel must exist at " + w + "x" + h);
+            assertNotNull(layout.preview(), "Preview bounds must exist at " + w + "x" + h);
+            assertTrue(layout.main().contains(layout.preview()),
+                    "Main must contain preview at " + w + "x" + h);
+            assertTrue(layout.workspace().contains(layout.preview()),
+                    "Workspace must contain preview at " + w + "x" + h);
+            assertTrue(layout.wheel().bottom() <= layout.editor().y(),
+                    "Wheel must stay above editor at " + w + "x" + h);
+            assertTrue(layout.editor().bottom() <= layout.preview().y(),
+                    "Editor must stay above preview at " + w + "x" + h);
+            assertTrue(layout.preview().bottom() <= layout.main().bottom(),
+                    "Preview must stay inside main at " + w + "x" + h);
+            assertTrue(layout.preview().width() >= layout.main().width() / 2,
+                    "Active preview must consume available lower main-panel width at " + w + "x" + h);
+            assertEquals(layout.main().bottom(), layout.preview().bottom(),
+                    "Active preview must extend to main-panel bottom at " + w + "x" + h);
+        }
     }
 
     @Test void configureButtonIsLongAndBottomCentered() {
@@ -1019,44 +1061,53 @@ class TrackWeightScreenTest {
         Button previewBtn = screen.previewButton();
         assertNotNull(previewBtn);
         assertTrue(previewBtn.active);
-        assertEquals("Play Sound", previewBtn.getMessage().getString());
+        assertEquals("▶", previewBtn.getMessage().getString());
 
-        // Pressing preview button starts preview and updates label to "Stop Sound"
+        // Pressing idle preview starts preview and swaps it for the compact player
         previewBtn.onPress(null);
+        screen.tick();
         assertTrue(screen.previewState().isPlaying());
-        assertEquals("Stop Sound", previewBtn.getMessage().getString());
+        assertNull(screen.previewButton(), "Idle control must be replaced while active");
+        assertNotNull(screen.previewPlayer(), "Compact player must appear while active");
 
-        // Second press stops preview and resets label to "Play Sound"
-        previewBtn.onPress(null);
+        // Stop via player stop returns to idle
+        screen.previewPlayer().stopButton().onPress(null);
+        screen.tick();
         assertFalse(screen.previewState().isPlaying());
-        assertEquals("Play Sound", previewBtn.getMessage().getString());
+        assertNotNull(screen.previewButton(), "Idle control must return after stop");
+        assertNull(screen.previewPlayer(), "Player must be removed after stop");
+        assertEquals("▶", screen.previewButton().getMessage().getString());
 
         // Start preview again
-        previewBtn.onPress(null);
+        screen.previewButton().onPress(null);
+        screen.tick();
         assertTrue(screen.previewState().isPlaying());
 
-        // Selecting a different track stops preview and resets button label
+        // Selecting a different track stops preview and returns idle control
         screen.selectTrack("minecraft:music/game/unknown");
+        screen.tick();
         assertFalse(screen.previewState().isPlaying());
-        assertEquals("Play Sound", previewBtn.getMessage().getString());
+        assertNotNull(screen.previewButton());
+        assertEquals("▶", screen.previewButton().getMessage().getString());
 
         // Start preview again
-        previewBtn.onPress(null);
+        screen.previewButton().onPress(null);
+        screen.tick();
         assertTrue(screen.previewState().isPlaying());
 
         // Screen removal stops preview
         screen.removed();
         assertFalse(screen.previewState().isPlaying());
-        assertEquals("Play Sound", previewBtn.getMessage().getString());
 
         // Start preview again
-        previewBtn.onPress(null);
+        screen.initForDimensions(800, 400);
+        screen.previewButton().onPress(null);
+        screen.tick();
         assertTrue(screen.previewState().isPlaying());
 
         // Screen onClose (Escape) stops preview
         screen.onClose();
         assertFalse(screen.previewState().isPlaying());
-        assertEquals("Play Sound", previewBtn.getMessage().getString());
     }
 
     @Test void previewStopsOnSaveAndCloseAndResourceReload() {
@@ -1067,6 +1118,7 @@ class TrackWeightScreenTest {
 
         Button previewBtn = screen.previewButton();
         previewBtn.onPress(null);
+        screen.tick();
         assertTrue(screen.previewState().isPlaying());
 
         Path tempConfig = Path.of("build/tmp/test-config.json");
@@ -1075,7 +1127,9 @@ class TrackWeightScreenTest {
             screen.saveAndClose();
             assertFalse(screen.previewState().isPlaying(), "saveAndClose must stop preview");
 
-            previewBtn.onPress(null);
+            screen.initForDimensions(800, 400);
+            screen.previewButton().onPress(null);
+            screen.tick();
             assertTrue(screen.previewState().isPlaying());
 
             MusicDirector.getInstance().onResourcesReloaded();
