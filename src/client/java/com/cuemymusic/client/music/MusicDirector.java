@@ -755,7 +755,10 @@ public final class MusicDirector {
                 closeQuietly(stream);
                 throw new CancellationException("superseded during discard");
             }
-            return new TaggedStream(stream, request.generation());
+            if (request.owner() == StreamOwner.TRANSPORT) {
+                return new TaggedStream(stream, request.generation());
+            }
+            return stream;
         } catch (java.io.IOException failure) {
             closeQuietly(stream);
             throw new CompletionException(failure);

@@ -356,4 +356,62 @@ class MusicDirectorQueueDelayTest {
         assertNull(director.offsetRequestFor(sound.getPath()));
         assertTrue(director.previewGeneration() > 5L);
     }
+
+    private static class FakeAudioStream implements net.minecraft.client.sounds.AudioStream {
+        private final javax.sound.sampled.AudioFormat format =
+                new javax.sound.sampled.AudioFormat(44100.0f, 16, 2, true, false);
+
+        @Override
+        public javax.sound.sampled.AudioFormat getFormat() {
+            return format;
+        }
+
+        @Override
+        public java.nio.ByteBuffer read(int size) {
+            return java.nio.ByteBuffer.allocate(0);
+        }
+
+        @Override
+        public void close() {}
+    }
+
+    @Test void previewApplyOffsetDoesNotWrapInTaggedStreamEvenWhenGenerationsCoincide() throws Exception {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(42L);
+
+        // Align transport and preview generations to the exact same value
+        long commonGen = director.currentGeneration();
+        Field previewGenField = MusicDirector.class.getDeclaredField("previewGeneration");
+        previewGenField.setAccessible(true);
+        ((java.util.concurrent.atomic.AtomicLong) previewGenField.get(director)).set(commonGen);
+        assertEquals(commonGen, director.currentGeneration());
+        assertEquals(commonGen, director.previewGeneration());
+
+        // Simulate normal transport paused (e.g. paused background music)
+        Field pausedField = MusicDirector.class.getDeclaredField("transportPaused");
+        pausedField.setAccessible(true);
+        pausedField.set(director, true);
+        assertTrue(director.shouldStickyPause(commonGen));
+
+        // When PREVIEW offset is applied on the coincident generation:
+        MusicDirector.OffsetRequest previewReq = new MusicDirector.OffsetRequest(
+                MusicDirector.StreamOwner.PREVIEW, commonGen, 0.0);
+        FakeAudioStream previewStream = new FakeAudioStream();
+        net.minecraft.client.sounds.AudioStream previewResult = director.applyOffset(previewStream, previewReq);
+
+        // PREVIEW must NOT be wrapped in TaggedStream, preventing ChannelAudibleMixin from sticky-pausing it
+        assertFalse(previewResult instanceof MusicDirector.TaggedStream,
+                "PREVIEW stream must return untagged base stream so ChannelAudibleMixin does not sticky-pause it or corrupt transport clock");
+        assertSame(previewStream, previewResult);
+
+        // TRANSPORT on the same generation DOES wrap in TaggedStream for ChannelAudibleMixin
+        MusicDirector.OffsetRequest transportReq = new MusicDirector.OffsetRequest(
+                MusicDirector.StreamOwner.TRANSPORT, commonGen, 0.0);
+        FakeAudioStream transportStream = new FakeAudioStream();
+        net.minecraft.client.sounds.AudioStream transportResult = director.applyOffset(transportStream, transportReq);
+
+        assertTrue(transportResult instanceof MusicDirector.TaggedStream,
+                "TRANSPORT stream must be wrapped in TaggedStream for audible clock and sticky pause");
+        assertEquals(commonGen, ((MusicDirector.TaggedStream) transportResult).generation());
+    }
 }
