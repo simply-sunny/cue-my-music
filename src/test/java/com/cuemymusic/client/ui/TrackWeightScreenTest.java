@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 
@@ -215,71 +217,170 @@ class TrackWeightScreenTest {
         assertEquals(4.0, weights.getAsJsonObject("custom:pool").get("custom:track").getAsDouble());
     }
 
-    @Test void screenAccessorsExposeSelectedPoolTrackAndDraft() throws Exception {
-        String source = Files.readString(
-                Path.of("src/client/java/com/cuemymusic/client/ui/TrackWeightScreen.java"));
-        assertTrue(source.contains("Pool selectedPool()"), "Must provide selectedPool accessor");
-        assertTrue(source.contains("Track selectedTrack()"), "Must provide selectedTrack accessor");
-        assertTrue(source.contains("TrackWeightConfig draft()"), "Must provide draft accessor");
-        assertTrue(source.contains("TrackWeightConfig saved()"), "Must provide saved accessor");
-        assertTrue(source.contains("this.selectedPool = this.pools.getFirst()"),
-                "Must initialize selectedPool from first catalog pool");
-        assertTrue(source.contains("this.selectedTrack = this.selectedPool.tracks().getFirst()"),
-                "Must initialize selectedTrack from first track");
+    @Test void narrationFormattingBehavior() {
+        assertEquals("Sweden, C418, 2×, 50%",
+                TrackWeightScreen.formatNarration("Sweden", "C418", 2.0, 0.50));
+        assertEquals("Unknown Song, Unknown composer, 1×, 25%",
+                TrackWeightScreen.formatNarration("Unknown Song", null, 1.0, 0.25));
+        assertEquals("Relic, Lena Raine, 0.5×, 10%",
+                TrackWeightScreen.formatNarration("Relic", "Lena Raine", 0.5, 0.10));
     }
 
-    @Test void jsonScreenContractAndSourceStructure() throws Exception {
-        String source = Files.readString(
-                Path.of("src/client/java/com/cuemymusic/client/ui/TrackWeightScreen.java"));
-        assertTrue(source.contains("class JsonScreen extends Screen"),
-                "Must declare static nested JsonScreen extending Screen");
-        assertTrue(source.contains("MultiLineEditBox.builder()"),
-                "JsonScreen must use MultiLineEditBox.builder()");
-        assertTrue(source.contains(".setShowBackground(true)"),
-                "JsonScreen must enable background on MultiLineEditBox");
-        assertTrue(source.contains("setClipboard"),
-                "JsonScreen Copy button must set clipboard");
-        assertTrue(source.contains("CommonComponents.GUI_BACK"),
-                "JsonScreen must include native Back button");
-        assertTrue(source.contains("setValueListener"),
-                "JsonScreen must enforce read-only draft JSON content");
+    @Test void modelInitialStateAndAccessors() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightConfig saved = TrackWeightConfig.defaults()
+                .withMultiplier(pool.id(), "minecraft:music/game/sweden", 2.0);
+        TrackWeightScreen.Model model = new TrackWeightScreen.Model(saved, List.of(pool));
+
+        assertEquals(pool, model.selectedPool());
+        assertEquals(pool.tracks().getFirst(), model.selectedTrack());
+        assertEquals(saved, model.draft());
+        assertEquals("", model.searchQuery());
+        assertTrue(model.currentChances().containsKey("minecraft:music/game/sweden"));
+
+        TrackWeightScreen.Model emptyModel = new TrackWeightScreen.Model(saved, List.of());
+        assertNull(emptyModel.selectedPool());
+        assertNull(emptyModel.selectedTrack());
+        assertTrue(emptyModel.currentChances().isEmpty());
     }
 
-    @Test void trackListAndNativeControlsContractAndNarration() throws Exception {
-        String source = Files.readString(
-                Path.of("src/client/java/com/cuemymusic/client/ui/TrackWeightScreen.java"));
-        assertTrue(source.contains("class TrackList extends ObjectSelectionList<TrackEntry>"),
-                "Must declare TrackList extending ObjectSelectionList<TrackEntry>");
-        assertTrue(source.contains("class TrackEntry extends ObjectSelectionList.Entry<TrackEntry>"),
-                "Must declare TrackEntry extending ObjectSelectionList.Entry");
-        assertTrue(source.contains("class WeightSlider extends AbstractSliderButton"),
-                "Must declare WeightSlider extending AbstractSliderButton");
+    @Test void filteredSelectionBehavior() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen.Model model = new TrackWeightScreen.Model(saved, List.of(pool));
 
-        // Approved quick weight buttons: 0×, 0.5×, 1×, 2×, 5×
-        assertTrue(source.contains("\"0×\""), "Must include 0× quick button");
-        assertTrue(source.contains("\"0.5×\""), "Must include 0.5× quick button");
-        assertTrue(source.contains("\"1×\""), "Must include 1× quick button");
-        assertTrue(source.contains("\"2×\""), "Must include 2× quick button");
-        assertTrue(source.contains("\"5×\""), "Must include 5× quick button");
+        model.setSearchQuery("unknown");
+        assertNotNull(model.selectedTrack());
+        assertEquals("Unknown Song", model.selectedTrack().title());
+        assertEquals(1, model.filteredTracks().size());
 
-        // Pool actions: All 1×, C418 2×, Mute 0×
-        assertTrue(source.contains("\"All 1×\""), "Must include All 1× action button");
-        assertTrue(source.contains("\"C418 2×\""), "Must include C418 2× action button");
-        assertTrue(source.contains("\"Mute 0×\""), "Must include Mute 0× action button");
+        model.setSearchQuery("nonexistent");
+        assertNull(model.selectedTrack());
+        assertTrue(model.filteredTracks().isEmpty());
 
-        // Other controls: Anti-Repeat, Test Roll, JSON, Play Sound
-        assertTrue(source.contains("\"Anti-Repeat\""), "Must include Anti-Repeat control");
-        assertTrue(source.contains("\"Test Roll\""), "Must include Test Roll button");
-        assertTrue(source.contains("\"JSON\""), "Must include JSON button");
-        assertTrue(source.contains("\"Play Sound\""), "Must include Play Sound button");
-        assertTrue(source.contains("\"Search track or composer…\""),
-                "Search edit box must have hint 'Search track or composer…'");
+        model.setSearchQuery("");
+        assertNotNull(model.selectedTrack());
+        assertEquals("Sweden", model.selectedTrack().title());
+        assertEquals(3, model.filteredTracks().size());
+    }
 
-        // Narration includes title, composer, multiplier, and chance
-        assertTrue(source.contains("getNarration()"), "TrackEntry must implement getNarration()");
+    @Test void poolSwitchClearsSearchAndSynchronizesEditorWithList() {
+        Pool pool1 = poolWithC418AndUnknown();
+        Track netherTrack = track("minecraft:music/nether/rubedo", "Rubedo", "Lena Raine");
+        Pool pool2 = new Pool("minecraft:music.nether", List.of(netherTrack),
+                List.of(netherTrack.occurrences().getFirst()));
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen.Model model = new TrackWeightScreen.Model(saved, List.of(pool1, pool2));
 
-        // Forbidden presets check
-        assertFalse(source.contains("namedPreset"), "Named presets are forbidden");
-        assertFalse(source.contains("applyPreset"), "Preset methods are forbidden");
+        model.setSearchQuery("relic");
+        assertEquals("Relic", model.selectedTrack().title());
+        assertEquals(1, model.filteredTracks().size());
+
+        model.switchPool(pool2);
+        assertEquals("", model.searchQuery());
+        assertEquals(pool2, model.selectedPool());
+        assertEquals(netherTrack, model.selectedTrack());
+        assertEquals(List.of(netherTrack), model.filteredTracks());
+        assertEquals(model.selectedTrack(), model.filteredTracks().getFirst());
+    }
+
+    @Test void sliderSynchronizationGuardPreventsReentrantCallbacks() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen.Model model = new TrackWeightScreen.Model(saved, List.of(pool));
+        AtomicInteger callbacks = new AtomicInteger(0);
+
+        TrackWeightScreen.WeightSlider slider =
+                new TrackWeightScreen.WeightSlider(0, 0, 200, 20, model, callbacks::incrementAndGet);
+
+        // User changes slider value directly
+        slider.applyValue();
+        assertEquals(1, callbacks.get(), "User slider update must trigger exactly one draft callback");
+
+        // External model update syncing to slider must not re-trigger applyValue / callback
+        model.setMultiplier(5.0);
+        slider.syncFromModel(5.0);
+        assertEquals(1, callbacks.get(), "syncFromModel must not cause re-entrant draft callbacks");
+        assertEquals(TrackWeightScreen.multiplierToSlider(5.0), slider.sliderValue(), 1e-6);
+    }
+
+    @Test void jsonScreenValueAndClipboardSemantics() {
+        String original = "{\"version\":1,\"antiRepeat\":true}";
+        assertEquals(original, TrackWeightScreen.JsonScreen.enforceReadOnly(original, "mutated string"));
+        assertEquals("", TrackWeightScreen.JsonScreen.enforceReadOnly(null, "incoming"));
+
+        AtomicReference<String> clipboard = new AtomicReference<>();
+        TrackWeightScreen.JsonScreen.copyToClipboard(original, clipboard::set);
+        assertEquals(original, clipboard.get());
+    }
+
+    @Test void wideLayoutBoundsGuaranteeFitAcrossBoundaryWidths() {
+        int[] widths = {640, 679, 680, 800, 1920};
+        for (int w : widths) {
+            assertTrue(TrackWeightScreen.usesWideLayout(w), "Width " + w + " must use wide layout");
+            TrackWeightScreen.Bounds editor = TrackWeightScreen.wideEditorBounds(w, 400);
+            TrackWeightScreen.Bounds bottomBar = TrackWeightScreen.wideBottomBarBounds(w, 400);
+
+            assertTrue(editor.x() >= 0, "Editor x must be non-negative at width " + w);
+            assertTrue(editor.right() <= w, "Editor right (" + editor.right() + ") must fit within width " + w);
+            assertTrue(bottomBar.x() >= 0, "Bottom bar x must be non-negative at width " + w);
+            assertTrue(bottomBar.right() <= w, "Bottom bar right (" + bottomBar.right() + ") must fit within width " + w);
+        }
+    }
+
+    @Test void narrowLayoutGeometryGuaranteesNoOverlapAtSmallDimensions() {
+        int[][] dims = {{300, 209}, {427, 254}};
+        for (int[] dim : dims) {
+            int w = dim[0];
+            int h = dim[1];
+            assertFalse(TrackWeightScreen.usesWideLayout(w), "Width " + w + " must be narrow layout");
+            TrackWeightScreen.NarrowGeometry g = TrackWeightScreen.narrowGeometry(w, h);
+
+            assertTrue(g.list().bottom() < g.editorInfo().y(),
+                    "List bottom (" + g.list().bottom() + ") must be above editorInfo y (" + g.editorInfo().y() + ") at " + w + "x" + h);
+            assertTrue(g.editorInfo().bottom() < g.slider().y(),
+                    "EditorInfo bottom (" + g.editorInfo().bottom() + ") must be above slider y (" + g.slider().y() + ") at " + w + "x" + h);
+            assertTrue(g.slider().bottom() < g.quickButtons().y(),
+                    "Slider bottom (" + g.slider().bottom() + ") must be above quickButtons y (" + g.quickButtons().y() + ") at " + w + "x" + h);
+            assertTrue(g.quickButtons().bottom() < g.errorY(),
+                    "Quick buttons bottom (" + g.quickButtons().bottom() + ") must be strictly above error message y (" + g.errorY() + ") at " + w + "x" + h);
+            assertTrue(g.errorY() + 9 < g.bottomRow1().y(),
+                    "Error message bottom (" + (g.errorY() + 9) + ") must be strictly above bottom row 1 y (" + g.bottomRow1().y() + ") at " + w + "x" + h);
+            assertTrue(g.bottomRow1().bottom() < g.bottomRow2().y(),
+                    "Bottom row 1 bottom (" + g.bottomRow1().bottom() + ") must be above bottom row 2 y (" + g.bottomRow2().y() + ") at " + w + "x" + h);
+            assertTrue(g.bottomRow2().bottom() <= h,
+                    "Bottom row 2 bottom (" + g.bottomRow2().bottom() + ") must fit within screen height " + h);
+        }
+    }
+
+    @Test void listNavigationUpdatesSelectedTrackWithoutRecursion() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen.Model model = new TrackWeightScreen.Model(saved, List.of(pool));
+        AtomicInteger selectionCallbacks = new AtomicInteger(0);
+
+        TrackWeightScreen.TrackList list =
+                new TrackWeightScreen.TrackList(null, 200, 200, 0, 20, model, selectionCallbacks::incrementAndGet);
+        list.populate(pool.tracks());
+
+        Track firstTrack = pool.tracks().getFirst();
+        assertEquals(firstTrack, model.selectedTrack());
+
+        Track secondTrack = pool.tracks().get(1);
+        list.selectTrackEntry(secondTrack.resourceId());
+
+        assertEquals(secondTrack, model.selectedTrack(), "selectTrackEntry must update model selected track");
+        assertEquals(1, selectionCallbacks.get(), "Updating track selection must invoke callback once without recursion");
+
+        Track thirdTrack = pool.tracks().get(2);
+        TrackWeightScreen.TrackEntry thirdEntry = list.children().get(2);
+        // Simulate native keyboard/controller arrow navigation directly calling setSelected
+        list.setSelected(thirdEntry);
+        assertEquals(thirdTrack, model.selectedTrack(), "Native keyboard navigation via setSelected must update model selected track");
+        assertEquals(2, selectionCallbacks.get(), "Keyboard navigation must trigger exactly one additional callback");
+
+        // Selecting already selected track should not trigger recursive callbacks
+        list.selectTrackEntry(thirdTrack.resourceId());
+        assertEquals(2, selectionCallbacks.get(), "Selecting already selected track must be a no-op");
     }
 }
