@@ -23,6 +23,7 @@ import com.cuemymusic.client.ui.TrackWeightScreen.PreviewState;
 import com.cuemymusic.client.ui.TrackWeightScreen.ResponsiveLayout;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.TabButton;
 
@@ -66,6 +67,39 @@ class TrackWeightScreenTest {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static String getTooltipText(net.minecraft.client.gui.components.AbstractWidget widget) {
+        net.minecraft.client.gui.components.Tooltip tooltip = getWidgetTooltip(widget);
+        if (tooltip == null) {
+            return null;
+        }
+        try {
+            java.lang.reflect.Field messageField = net.minecraft.client.gui.components.Tooltip.class.getDeclaredField("message");
+            messageField.setAccessible(true);
+            net.minecraft.network.chat.Component msg = (net.minecraft.network.chat.Component) messageField.get(tooltip);
+            return msg != null ? msg.getString() : null;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static String getWidgetNarration(net.minecraft.client.gui.components.AbstractWidget widget) {
+        try {
+            java.lang.reflect.Method method = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredMethod("createNarrationMessage");
+            method.setAccessible(true);
+            net.minecraft.network.chat.Component comp = (net.minecraft.network.chat.Component) method.invoke(widget);
+            return comp != null ? comp.getString() : null;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static void assertIcon(net.minecraft.client.gui.components.AbstractWidget widget, String expectedMessage, String expectedTooltip) {
+        assertNotNull(widget, "Widget must not be null");
+        assertEquals(expectedMessage, widget.getMessage().getString(), "Icon message must match");
+        assertEquals(expectedTooltip, getTooltipText(widget), "Tooltip must match");
+        assertEquals(expectedTooltip, getWidgetNarration(widget), "Narration must match");
     }
 
     @Test
@@ -232,12 +266,15 @@ class TrackWeightScreenTest {
         Button toggleBtn = screen.browserToggleButton();
         assertNotNull(toggleBtn, "Toggle button must exist");
         assertEquals("×", toggleBtn.getMessage().getString(), "Open browser toggle message must be ×");
-        assertNotNull(getWidgetTooltip(toggleBtn), "Toggle button must have tooltip");
+        assertEquals("Hide track list", getTooltipText(toggleBtn), "Open toggle button tooltip must be Hide track list");
+        assertEquals("Hide track list", getWidgetNarration(toggleBtn), "Open toggle button narration must be Hide track list");
 
         // Toggle closes browser
         screen.toggleBrowser();
         assertNull(screen.responsiveLayout().browser(), "Closing browser must collapse it");
         assertEquals("☰", screen.browserToggleButton().getMessage().getString(), "Collapsed browser toggle message must be ☰");
+        assertEquals("Show track list", getTooltipText(screen.browserToggleButton()), "Collapsed toggle button tooltip must be Show track list");
+        assertEquals("Show track list", getWidgetNarration(screen.browserToggleButton()), "Collapsed toggle button narration must be Show track list");
     }
 
     @Test
@@ -297,10 +334,137 @@ class TrackWeightScreenTest {
         assertEquals(5.0, draft.multiplier("p", "t"));
     }
 
-    @Test void wideLayoutThresholdFollowsResponsiveBreakpoint() {
-        assertFalse(TrackWeightScreen.usesWideLayout(639));
-        assertTrue(TrackWeightScreen.usesWideLayout(640));
-        assertTrue(TrackWeightScreen.usesWideLayout(1920));
+    @Test
+    void toolbarActionButtonsUseIconOnlyLabelsTooltipsAndNarration() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+        screen.initForDimensions(1200, 800);
+
+        assertIcon(screen.allButton(), "↺", "Reset pool to native weights");
+        assertIcon(screen.c418Button(), "♫", "Double C418 tracks");
+        assertIcon(screen.muteButton(), "∅", "Mute selected pool");
+        assertIcon(screen.testRollButton(), "⚄", "Test weighted selection");
+        assertIcon(screen.jsonButton(), "{}", "View and copy JSON");
+        assertIcon(screen.doneButton(), "✓", "Done");
+    }
+
+    @Test
+    void antiRepeatButtonUsesIconOnlyAndTogglesStateWithNarration() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+        screen.initForDimensions(1200, 800);
+
+        // Initial state is true (on)
+        assertTrue(screen.draft().antiRepeat());
+        assertEquals("⟳", screen.antiRepeatButton().getMessage().getString());
+        assertEquals("Anti-Repeat: On", getTooltipText(screen.antiRepeatButton()));
+        assertEquals("Anti-Repeat: On", getWidgetNarration(screen.antiRepeatButton()));
+
+        // Press to toggle off
+        screen.antiRepeatButton().onPress(null);
+        assertFalse(screen.draft().antiRepeat());
+        assertEquals("⟳", screen.antiRepeatButton().getMessage().getString());
+        assertEquals("Anti-Repeat: Off", getTooltipText(screen.antiRepeatButton()));
+        assertEquals("Anti-Repeat: Off", getWidgetNarration(screen.antiRepeatButton()));
+
+        // Press to toggle on
+        screen.antiRepeatButton().onPress(null);
+        assertTrue(screen.draft().antiRepeat());
+        assertEquals("⟳", screen.antiRepeatButton().getMessage().getString());
+        assertEquals("Anti-Repeat: On", getTooltipText(screen.antiRepeatButton()));
+        assertEquals("Anti-Repeat: On", getWidgetNarration(screen.antiRepeatButton()));
+    }
+
+    @Test
+    void toolbarActionButtonsPreserveExistingBehavior() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+        screen.initForDimensions(1200, 800);
+
+        // Mute: sets 0x
+        screen.muteButton().onPress(null);
+        assertEquals(0.0, screen.draft().multiplier(pool.id(), "minecraft:music/game/sweden"));
+        assertEquals(0.0, screen.draft().multiplier(pool.id(), "minecraft:music/game/unknown"));
+
+        // All: sets 1x
+        screen.allButton().onPress(null);
+        assertEquals(1.0, screen.draft().multiplier(pool.id(), "minecraft:music/game/sweden"));
+        assertEquals(1.0, screen.draft().multiplier(pool.id(), "minecraft:music/game/unknown"));
+
+        // C418: sets C418 to 2x, other tracks 1x
+        screen.c418Button().onPress(null);
+        assertEquals(2.0, screen.draft().multiplier(pool.id(), "minecraft:music/game/sweden"));
+        assertEquals(1.0, screen.draft().multiplier(pool.id(), "minecraft:music/game/unknown"));
+
+        // Test Roll: selects a track in the pool
+        screen.testRollButton().onPress(null);
+        assertNotNull(screen.selectedTrack());
+    }
+
+    @Test
+    void toolbarButtonsContainedInBottomToolbarAndDoNotOverlapAcrossResolutions() {
+        int[][] dims = {
+                {300, 209},
+                {427, 254},
+                {640, 360},
+                {800, 600},
+                {1920, 1080}
+        };
+        Pool pool = poolWithC418AndUnknown();
+        for (int[] dim : dims) {
+            int w = dim[0];
+            int h = dim[1];
+            TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+            screen.initForDimensions(w, h);
+
+            Bounds tb = screen.responsiveLayout().bottomToolbar();
+            List<AbstractWidget> buttons = List.of(
+                    screen.allButton(),
+                    screen.c418Button(),
+                    screen.muteButton(),
+                    screen.antiRepeatButton(),
+                    screen.testRollButton(),
+                    screen.jsonButton(),
+                    screen.doneButton()
+            );
+
+            for (int i = 0; i < buttons.size(); i++) {
+                AbstractWidget b1 = buttons.get(i);
+                assertNotNull(b1, "Button " + i + " must exist at " + w + "x" + h);
+                Bounds r1 = new Bounds(b1.getX(), b1.getY(), b1.getWidth(), b1.getHeight());
+                assertTrue(tb.contains(r1),
+                        "Button " + b1.getMessage().getString() + " bounds " + r1 + " must be inside toolbar " + tb + " at " + w + "x" + h);
+
+                for (int j = i + 1; j < buttons.size(); j++) {
+                    AbstractWidget b2 = buttons.get(j);
+                    Bounds r2 = new Bounds(b2.getX(), b2.getY(), b2.getWidth(), b2.getHeight());
+                    assertFalse(r1.overlaps(r2),
+                            "Button " + b1.getMessage().getString() + " and " + b2.getMessage().getString() + " must not overlap at " + w + "x" + h);
+                }
+            }
+        }
+    }
+
+    @Test
+    void saveErrorRowDoesNotOverlapPreviewAtShortestWindow() {
+        int[][] dims = {
+                {300, 209},
+                {427, 254},
+                {640, 360},
+                {800, 600},
+                {1920, 1080}
+        };
+        for (int[] dim : dims) {
+            int w = dim[0];
+            int h = dim[1];
+            ResponsiveLayout layout = TrackWeightScreen.responsiveLayout(w, h, false);
+            assertNotNull(layout.preview(), "Preview must exist at " + w + "x" + h);
+            int errorY = layout.bottomToolbar().y() - 12;
+            assertTrue(layout.preview().bottom() <= errorY,
+                    "Preview bottom (" + layout.preview().bottom() + ") must be <= save error Y (" + errorY + ") at " + w + "x" + h);
+            assertTrue(errorY + 9 <= layout.bottomToolbar().y(),
+                    "Save error text bottom (" + (errorY + 9) + ") must be <= bottom toolbar Y (" + layout.bottomToolbar().y() + ") at " + w + "x" + h);
+        }
     }
 
     @Test void playerScreenConfiguresButtonAndOpensSettingsScreen() throws Exception {

@@ -25,7 +25,6 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.ObjectSelectionList;
@@ -56,6 +55,7 @@ public final class TrackWeightScreen extends Screen {
 
     public static final int TAB_HEIGHT = 24;
     public static final int TOOLBAR_HEIGHT = 20;
+    public static final int ERROR_ROW_HEIGHT = 14;
     public static final int GAP = 8;
     public static final int BROWSER_MIN_WIDTH = 220;
     public static final int MAIN_MIN_WIDTH = 340;
@@ -77,6 +77,16 @@ public final class TrackWeightScreen extends Screen {
                     && other.y >= this.y
                     && other.right() <= this.right()
                     && other.bottom() <= this.bottom();
+        }
+
+        public boolean overlaps(Bounds other) {
+            if (other == null) {
+                return false;
+            }
+            return this.x < other.right()
+                    && this.right() > other.x
+                    && this.y < other.bottom()
+                    && this.bottom() > other.y;
         }
     }
 
@@ -158,7 +168,7 @@ public final class TrackWeightScreen extends Screen {
     private Button allButton;
     private Button c418Button;
     private Button muteButton;
-    private CycleButton<Boolean> antiRepeatButton;
+    private Button antiRepeatButton;
     private Button testRollButton;
     private Button jsonButton;
     private Button doneButton;
@@ -206,7 +216,7 @@ public final class TrackWeightScreen extends Screen {
         Bounds bottomToolbar = new Bounds(workspace.x(), workspace.bottom() - TOOLBAR_HEIGHT, workspace.width(), TOOLBAR_HEIGHT);
 
         int contentY = tabs.bottom() + GAP;
-        int contentBottom = bottomToolbar.y() - GAP;
+        int contentBottom = bottomToolbar.y() - ERROR_ROW_HEIGHT;
         int contentHeight = Math.max(0, contentBottom - contentY);
         Bounds content = new Bounds(workspace.x(), contentY, workspace.width(), contentHeight);
 
@@ -273,10 +283,6 @@ public final class TrackWeightScreen extends Screen {
         Bounds preview = new Bounds(previewX, previewY, previewWidth, previewHeight);
 
         return new MainBounds(wheel, editor, preview);
-    }
-
-    static boolean usesWideLayout(int width) {
-        return width >= 640;
     }
 
     static TrackWeightConfig updateWeight(TrackWeightConfig base, String poolId, String resourceId, double multiplier) {
@@ -572,6 +578,14 @@ public final class TrackWeightScreen extends Screen {
             trackList.refreshEntries();
         }
         updateSelectedTrackWidgets();
+        updateAntiRepeatButton();
+    }
+
+    private void updateAntiRepeatButton() {
+        if (antiRepeatButton != null) {
+            String text = "Anti-Repeat: " + (model.draft().antiRepeat() ? "On" : "Off");
+            antiRepeatButton.setTooltip(Tooltip.create(Component.literal(text)));
+        }
     }
 
     private void updateSelectedTrackWidgets() {
@@ -887,113 +901,86 @@ public final class TrackWeightScreen extends Screen {
 
         Bounds tb = layout.bottomToolbar();
         int bottomY = tb.y();
-        int totalW = 506;
-        if (tb.width() >= totalW) {
-            int bx = tb.x() + (tb.width() - totalW) / 2;
+        int buttonWidth = 20;
+        int buttonHeight = 20;
+        int gap = 4;
+        int totalButtons = 7;
+        int totalW = totalButtons * buttonWidth + (totalButtons - 1) * gap;
+        int bx = tb.x() + (tb.width() - totalW) / 2;
 
-            allButton = Button.builder(Component.literal("All 1×"), b -> {
-                model.applyAll();
-                onDraftChanged();
-            }).bounds(bx, bottomY, 58, 20).build();
-            bx += 64;
+        allButton = Button.builder(Component.literal("↺"), b -> {
+            model.applyAll();
+            onDraftChanged();
+        })
+        .bounds(bx, bottomY, buttonWidth, buttonHeight)
+        .tooltip(Tooltip.create(Component.literal("Reset pool to native weights")))
+        .createNarration(supplier -> Component.literal("Reset pool to native weights"))
+        .build();
+        bx += buttonWidth + gap;
 
-            c418Button = Button.builder(Component.literal("C418 2×"), b -> {
-                model.applyC418();
-                onDraftChanged();
-            }).bounds(bx, bottomY, 62, 20).build();
-            bx += 68;
+        c418Button = Button.builder(Component.literal("♫"), b -> {
+            model.applyC418();
+            onDraftChanged();
+        })
+        .bounds(bx, bottomY, buttonWidth, buttonHeight)
+        .tooltip(Tooltip.create(Component.literal("Double C418 tracks")))
+        .createNarration(supplier -> Component.literal("Double C418 tracks"))
+        .build();
+        bx += buttonWidth + gap;
 
-            muteButton = Button.builder(Component.literal("Mute 0×"), b -> {
-                model.mute();
-                onDraftChanged();
-            }).bounds(bx, bottomY, 62, 20).build();
-            bx += 68;
+        muteButton = Button.builder(Component.literal("∅"), b -> {
+            model.mute();
+            onDraftChanged();
+        })
+        .bounds(bx, bottomY, buttonWidth, buttonHeight)
+        .tooltip(Tooltip.create(Component.literal("Mute selected pool")))
+        .createNarration(supplier -> Component.literal("Mute selected pool"))
+        .build();
+        bx += buttonWidth + gap;
 
-            antiRepeatButton = CycleButton.onOffBuilder(model.draft().antiRepeat())
-                    .create(bx, bottomY, 110, 20, Component.literal("Anti-Repeat"), (btn, val) -> {
-                        model.setAntiRepeat(val);
-                        onDraftChanged();
-                    });
-            bx += 116;
+        String antiRepeatText = "Anti-Repeat: " + (model.draft().antiRepeat() ? "On" : "Off");
+        antiRepeatButton = Button.builder(Component.literal("⟳"), b -> {
+            model.setAntiRepeat(!model.draft().antiRepeat());
+            updateAntiRepeatButton();
+            onDraftChanged();
+        })
+        .bounds(bx, bottomY, buttonWidth, buttonHeight)
+        .tooltip(Tooltip.create(Component.literal(antiRepeatText)))
+        .createNarration(supplier -> Component.literal("Anti-Repeat: " + (model.draft().antiRepeat() ? "On" : "Off")))
+        .build();
+        antiRepeatButton.setOverrideRenderHighlightedSprite(() -> model.draft().antiRepeat() || antiRepeatButton.isHoveredOrFocused());
+        bx += buttonWidth + gap;
 
-            testRollButton = Button.builder(Component.literal("Test Roll"), b -> {
-                if (model.selectedPool() != null) {
-                    long seed = RandomSource.create().nextLong();
-                    Optional<Occurrence> roll = testRoll(model.selectedPool(), model.draft(), seed);
-                    roll.ifPresent(occ -> selectTrack(occ.resourceId()));
-                }
-            }).bounds(bx, bottomY, 70, 20).build();
-            bx += 76;
+        testRollButton = Button.builder(Component.literal("⚄"), b -> {
+            if (model.selectedPool() != null) {
+                long seed = RandomSource.create().nextLong();
+                Optional<Occurrence> roll = testRoll(model.selectedPool(), model.draft(), seed);
+                roll.ifPresent(occ -> selectTrack(occ.resourceId()));
+            }
+        })
+        .bounds(bx, bottomY, buttonWidth, buttonHeight)
+        .tooltip(Tooltip.create(Component.literal("Test weighted selection")))
+        .createNarration(supplier -> Component.literal("Test weighted selection"))
+        .build();
+        bx += buttonWidth + gap;
 
-            jsonButton = Button.builder(Component.literal("JSON"), b -> {
-                stopPreview();
-                if (minecraft != null) {
-                    minecraft.setScreenAndShow(new JsonScreen(this, model.draft()));
-                }
-            }).bounds(bx, bottomY, 46, 20).build();
-            bx += 52;
+        jsonButton = Button.builder(Component.literal("{}"), b -> {
+            stopPreview();
+            if (minecraft != null) {
+                minecraft.setScreenAndShow(new JsonScreen(this, model.draft()));
+            }
+        })
+        .bounds(bx, bottomY, buttonWidth, buttonHeight)
+        .tooltip(Tooltip.create(Component.literal("View and copy JSON")))
+        .createNarration(supplier -> Component.literal("View and copy JSON"))
+        .build();
+        bx += buttonWidth + gap;
 
-            doneButton = Button.builder(CommonComponents.GUI_DONE, b -> saveAndClose())
-                    .bounds(bx, bottomY, 62, 20)
-                    .build();
-        } else {
-            int gap = 2;
-            int avail = tb.width() - gap * 6;
-            int w1 = avail * 58 / 506;
-            int w2 = avail * 62 / 506;
-            int w3 = avail * 62 / 506;
-            int w4 = avail * 110 / 506;
-            int w5 = avail * 70 / 506;
-            int w6 = avail * 46 / 506;
-            int w7 = avail - (w1 + w2 + w3 + w4 + w5 + w6);
-
-            int bx = tb.x();
-            allButton = Button.builder(Component.literal("All 1×"), b -> {
-                model.applyAll();
-                onDraftChanged();
-            }).bounds(bx, bottomY, w1, 20).build();
-            bx += w1 + gap;
-
-            c418Button = Button.builder(Component.literal("C418 2×"), b -> {
-                model.applyC418();
-                onDraftChanged();
-            }).bounds(bx, bottomY, w2, 20).build();
-            bx += w2 + gap;
-
-            muteButton = Button.builder(Component.literal("Mute 0×"), b -> {
-                model.mute();
-                onDraftChanged();
-            }).bounds(bx, bottomY, w3, 20).build();
-            bx += w3 + gap;
-
-            antiRepeatButton = CycleButton.onOffBuilder(model.draft().antiRepeat())
-                    .create(bx, bottomY, w4, 20, Component.literal("Anti-Repeat"), (btn, val) -> {
-                        model.setAntiRepeat(val);
-                        onDraftChanged();
-                    });
-            bx += w4 + gap;
-
-            testRollButton = Button.builder(Component.literal("Test Roll"), b -> {
-                if (model.selectedPool() != null) {
-                    long seed = RandomSource.create().nextLong();
-                    Optional<Occurrence> roll = testRoll(model.selectedPool(), model.draft(), seed);
-                    roll.ifPresent(occ -> selectTrack(occ.resourceId()));
-                }
-            }).bounds(bx, bottomY, w5, 20).build();
-            bx += w5 + gap;
-
-            jsonButton = Button.builder(Component.literal("JSON"), b -> {
-                stopPreview();
-                if (minecraft != null) {
-                    minecraft.setScreenAndShow(new JsonScreen(this, model.draft()));
-                }
-            }).bounds(bx, bottomY, w6, 20).build();
-            bx += w6 + gap;
-
-            doneButton = Button.builder(CommonComponents.GUI_DONE, b -> saveAndClose())
-                    .bounds(bx, bottomY, w7, 20)
-                    .build();
-        }
+        doneButton = Button.builder(Component.literal("✓"), b -> saveAndClose())
+                .bounds(bx, bottomY, buttonWidth, buttonHeight)
+                .tooltip(Tooltip.create(Component.literal("Done")))
+                .createNarration(supplier -> Component.literal("Done"))
+                .build();
 
         addRenderableWidget(allButton);
         addRenderableWidget(c418Button);
@@ -1145,7 +1132,7 @@ public final class TrackWeightScreen extends Screen {
         return muteButton;
     }
 
-    public CycleButton<Boolean> antiRepeatButton() {
+    public Button antiRepeatButton() {
         return antiRepeatButton;
     }
 
@@ -1789,8 +1776,8 @@ public final class TrackWeightScreen extends Screen {
 
         @Override
         public boolean isMouseOver(double mouseX, double mouseY) {
-            return mouseX >= getX() && mouseX <= (getX() + getWidth())
-                    && mouseY >= getY() && mouseY <= (getY() + getHeight());
+            return mouseX >= getX() && mouseX < (getX() + getWidth())
+                    && mouseY >= getY() && mouseY < (getY() + getHeight());
         }
 
         @Override
@@ -1835,17 +1822,7 @@ public final class TrackWeightScreen extends Screen {
 
         @Override
         protected void extractWidgetRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickProgress) {
-            int contentRight = this.viewportX + this.contentWidth - this.scrollOffset;
             int viewportRight = this.viewportX + this.viewportWidth;
-            if (contentRight < viewportRight) {
-                int separatorX = Math.max(this.viewportX, contentRight);
-                int separatorW = viewportRight - separatorX;
-                if (separatorW > 0) {
-                    extractor.blit(RenderPipelines.GUI_TEXTURED, Screen.HEADER_SEPARATOR,
-                            separatorX, getY() + getHeight() - 2, 0.0F, 0.0F, separatorW, 2, 32, 2);
-                }
-            }
-
             boolean insideViewport = isInsideViewport(mouseX, mouseY);
             int tabMouseX = insideViewport ? mouseX : -1;
             int tabMouseY = insideViewport ? mouseY : -1;
