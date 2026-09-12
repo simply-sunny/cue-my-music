@@ -18,7 +18,9 @@ import com.cuemymusic.client.music.WeightedMusicCatalog.Occurrence;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Pool;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Track;
 import com.cuemymusic.client.ui.TrackWeightScreen.Bounds;
+import com.cuemymusic.client.ui.TrackWeightScreen.BrowserState;
 import com.cuemymusic.client.ui.TrackWeightScreen.PreviewState;
+import com.cuemymusic.client.ui.TrackWeightScreen.ResponsiveLayout;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.client.gui.components.Button;
@@ -52,6 +54,18 @@ class TrackWeightScreenTest {
             pools.add(new Pool("minecraft:music.pool_" + i, List.of(t), List.of(t.occurrences().getFirst())));
         }
         return new TrackWeightScreen(null, TrackWeightConfig.defaults(), pools);
+    }
+
+    private static net.minecraft.client.gui.components.Tooltip getWidgetTooltip(net.minecraft.client.gui.components.AbstractWidget widget) {
+        try {
+            java.lang.reflect.Field tooltipField = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredField("tooltip");
+            tooltipField.setAccessible(true);
+            net.minecraft.client.gui.components.WidgetTooltipHolder holder =
+                    (net.minecraft.client.gui.components.WidgetTooltipHolder) tooltipField.get(widget);
+            return holder != null ? holder.get() : null;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Test
@@ -120,6 +134,152 @@ class TrackWeightScreenTest {
 
         bar.revealTab(0);
         assertEquals(0, bar.scrollOffset(), "Reveal first tab must clamp to 0");
+    }
+
+    @Test
+    void wideLayoutPlacesBrowserBesideMainAndEditorBelowWheel() {
+        ResponsiveLayout layout = TrackWeightScreen.responsiveLayout(1200, 800, true);
+        assertTrue(layout.browserFits());
+        assertTrue(layout.browser().right() < layout.main().x());
+        assertTrue(layout.wheel().bottom() <= layout.editor().y());
+        assertTrue(layout.workspace().contains(layout.bottomToolbar()));
+    }
+
+    @Test
+    void narrowOpenBrowserFillsContentAndHidesMain() {
+        ResponsiveLayout layout = TrackWeightScreen.responsiveLayout(640, 360, true);
+        assertFalse(layout.browserFits());
+        assertEquals(layout.content(), layout.browser());
+        assertNull(layout.wheel());
+        assertNull(layout.editor());
+    }
+
+    @Test
+    void browserStateTransitionsAndPreservation() {
+        BrowserState state = new BrowserState();
+        // First wide init opens
+        state.updateForFit(true);
+        assertTrue(state.isOpen(), "First wide init must open browser");
+
+        // Wide -> narrow auto-closes
+        state.updateForFit(false);
+        assertFalse(state.isOpen(), "Wide -> narrow resize must auto-close browser");
+
+        // Manual narrow open persists through same-size rebuild
+        state.setOpen(true);
+        state.updateForFit(false);
+        assertTrue(state.isOpen(), "Manual narrow open must persist through same-size rebuild");
+
+        // Narrow -> wide restores side-by-side
+        state.updateForFit(true);
+        assertTrue(state.isOpen(), "Narrow -> wide resize must restore open browser");
+    }
+
+    @Test
+    void screenBrowserStateTogglesPreserveDraftAndSelection() {
+        Pool pool1 = poolWithC418AndUnknown();
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pool1);
+
+        // First wide init opens
+        screen.initForDimensions(1200, 800);
+        assertTrue(screen.browserState().isOpen(), "Wide screen must initialize browser open");
+
+        // Wide -> narrow auto-closes
+        screen.initForDimensions(640, 360);
+        assertFalse(screen.browserState().isOpen(), "Resizing to narrow must auto-close browser");
+
+        // Manual narrow open persists through same-size rebuild
+        screen.toggleBrowser();
+        assertTrue(screen.browserState().isOpen(), "Toggling browser must open it in narrow overlay");
+        screen.initForDimensions(640, 360);
+        assertTrue(screen.browserState().isOpen(), "Manual narrow open must persist through rebuild at same size");
+
+        // Narrow -> wide restores side-by-side
+        screen.initForDimensions(1200, 800);
+        assertTrue(screen.browserState().isOpen(), "Resizing to wide must restore open browser");
+
+        // Toggling does not alter draft or selection
+        TrackWeightConfig draftBefore = screen.draft();
+        Track selectedBefore = screen.selectedTrack();
+        screen.toggleBrowser();
+        assertEquals(draftBefore, screen.draft(), "Toggling browser must not mutate draft");
+        assertEquals(selectedBefore, screen.selectedTrack(), "Toggling browser must not mutate selected track");
+    }
+
+    @Test
+    void runtimeAcceptanceNoTabOverlapAndTogglePresent() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+        screen.initForDimensions(1200, 800);
+
+        ResponsiveLayout layout = screen.responsiveLayout();
+        assertNotNull(layout.browser());
+
+        // Browser, search box, and track list start strictly below tab header within workspace
+        assertTrue(layout.browser().y() >= layout.tabs().bottom(),
+                "Browser top must start below tab header bottom");
+        assertNotNull(screen.searchBox());
+        assertNotNull(screen.trackList());
+        assertTrue(screen.searchBox().getY() >= layout.tabs().bottom(),
+                "Search box Y must be below tab header bottom");
+        assertTrue(screen.trackList().getY() >= screen.searchBox().getBottom(),
+                "Track list Y must be below search box bottom");
+        assertTrue(layout.workspace().contains(layout.browser()),
+                "Workspace must contain browser bounds");
+
+        // Toggle button exists with ☰/× toggle, tooltip, and narration
+        Button toggleBtn = screen.browserToggleButton();
+        assertNotNull(toggleBtn, "Toggle button must exist");
+        assertEquals("×", toggleBtn.getMessage().getString(), "Open browser toggle message must be ×");
+        assertNotNull(getWidgetTooltip(toggleBtn), "Toggle button must have tooltip");
+
+        // Toggle closes browser
+        screen.toggleBrowser();
+        assertNull(screen.responsiveLayout().browser(), "Closing browser must collapse it");
+        assertEquals("☰", screen.browserToggleButton().getMessage().getString(), "Collapsed browser toggle message must be ☰");
+    }
+
+    @Test
+    void wheelShrinksTo16pxAtShortestSupportedWindow() {
+        ResponsiveLayout layout = TrackWeightScreen.responsiveLayout(300, 209, false);
+        assertNotNull(layout.wheel(), "Wheel must exist in collapsed mode even at 300x209");
+        assertTrue(layout.wheel().width() >= 16, "Wheel width must be at least 16px");
+        assertTrue(layout.wheel().height() >= 16, "Wheel height must be at least 16px");
+        assertTrue(layout.wheel().bottom() <= layout.editor().y(), "Wheel bottom must not overlap editor y");
+        assertTrue(layout.editor().bottom() <= layout.preview().y(), "Editor bottom must not overlap preview y");
+        assertTrue(layout.preview().bottom() <= layout.main().bottom(), "Preview bottom must stay inside main panel");
+        assertTrue(layout.workspace().contains(layout.main()), "Workspace must contain main panel");
+    }
+
+    @Test
+    void narrowOpenedBrowserHidesMainWidgetsWhilePreviewAudioContinues() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightScreen screen = new TrackWeightScreen(null, TrackWeightConfig.defaults(), pool);
+        screen.initForDimensions(640, 360);
+
+        // Initially collapsed in narrow mode: wheel and preview button exist
+        assertNotNull(screen.radialWheel(), "Wheel should exist in narrow collapsed mode");
+        assertNotNull(screen.previewButton(), "Preview button should exist in narrow collapsed mode");
+
+        // Start preview
+        screen.previewState().toggle(pool.tracks().getFirst());
+        assertTrue(screen.previewState().isPlaying(), "Preview must be playing");
+
+        // Open browser in narrow mode
+        screen.toggleBrowser();
+        assertTrue(screen.browserState().isOpen());
+        assertNull(screen.radialWheel(), "Radial wheel must be hidden (null) in narrow open browser overlay");
+        assertNull(screen.previewButton(), "Preview button must be hidden (null) in narrow open browser overlay");
+        assertTrue(screen.previewState().isPlaying(), "Audio preview must continue playing while browser overlay is open");
+
+        // Close browser in narrow mode: restores main widgets and same preview playing state
+        screen.toggleBrowser();
+        assertFalse(screen.browserState().isOpen());
+        assertNotNull(screen.radialWheel(), "Radial wheel must be restored when browser is closed");
+        assertNotNull(screen.previewButton(), "Preview button must be restored when browser is closed");
+        assertTrue(screen.previewState().isPlaying(), "Preview must still be playing after closing browser");
+        assertEquals("Stop Sound", screen.previewButton().getMessage().getString(), "Preview button must show Stop Sound");
     }
 
     @Test void configureButtonIsLongAndBottomCentered() {
@@ -400,50 +560,63 @@ class TrackWeightScreenTest {
         assertEquals(original, clipboard.get());
     }
 
-    @Test void wideLayoutBoundsGuaranteeFitAcrossBoundaryWidths() {
+    @Test void responsiveLayoutBoundsGuaranteeFitAcrossBoundaryWidths() {
         int[] widths = {640, 679, 680, 800, 1920};
         for (int w : widths) {
-            assertTrue(TrackWeightScreen.usesWideLayout(w), "Width " + w + " must use wide layout");
-            TrackWeightScreen.Bounds editor = TrackWeightScreen.wideEditorBounds(w, 400);
-            TrackWeightScreen.Bounds bottomBar = TrackWeightScreen.wideBottomBarBounds(w, 400);
-
-            assertTrue(editor.x() >= 0, "Editor x must be non-negative at width " + w);
-            assertTrue(editor.right() <= w, "Editor right (" + editor.right() + ") must fit within width " + w);
-            assertTrue(bottomBar.x() >= 0, "Bottom bar x must be non-negative at width " + w);
-            assertTrue(bottomBar.right() <= w, "Bottom bar right (" + bottomBar.right() + ") must fit within width " + w);
+            ResponsiveLayout layout = TrackWeightScreen.responsiveLayout(w, 400, true);
+            assertTrue(layout.workspace().x() >= 0, "Workspace x must be >= 0 at width " + w);
+            assertTrue(layout.workspace().right() <= w, "Workspace right must fit width " + w);
+            assertTrue(layout.workspace().contains(layout.tabs()));
+            assertTrue(layout.workspace().contains(layout.content()));
+            assertTrue(layout.workspace().contains(layout.bottomToolbar()));
+            if (layout.main() != null) {
+                assertTrue(layout.main().right() <= layout.content().right());
+                assertTrue(layout.main().contains(layout.wheel()));
+                assertTrue(layout.main().contains(layout.editor()));
+                assertTrue(layout.main().contains(layout.preview()));
+            }
         }
     }
 
-    @Test void narrowLayoutGeometryGuaranteesNoOverlapAtSmallDimensions() {
-        int[][] dims = {{300, 209}, {427, 254}};
+    @Test void responsiveLayoutGeometryGuaranteesNoOverlapAcrossAllSupportedResolutions() {
+        int[][] dims = {
+                {300, 209},
+                {427, 254},
+                {640, 360},
+                {800, 600},
+                {1920, 1080}
+        };
         for (int[] dim : dims) {
             int w = dim[0];
             int h = dim[1];
-            assertFalse(TrackWeightScreen.usesWideLayout(w), "Width " + w + " must be narrow layout");
-            TrackWeightScreen.NarrowGeometry g = TrackWeightScreen.narrowGeometry(w, h);
+            for (boolean open : List.of(true, false)) {
+                ResponsiveLayout l = TrackWeightScreen.responsiveLayout(w, h, open);
+                assertTrue(l.workspace().contains(l.tabs()), "Workspace must contain tabs at " + w + "x" + h);
+                assertTrue(l.workspace().contains(l.content()), "Workspace must contain content at " + w + "x" + h);
+                assertTrue(l.workspace().contains(l.bottomToolbar()), "Workspace must contain bottomToolbar at " + w + "x" + h);
 
-            assertEquals(26, g.poolSearch().y(),
-                    "poolSearch y must be 26 to clear MenuTabBar at " + w + "x" + h);
-            assertEquals(46, g.list().y(),
-                    "list y must be 46 at " + w + "x" + h);
-            assertTrue(24 < g.poolSearch().y(),
-                    "MenuTabBar bottom (24) must be strictly above poolSearch y (" + g.poolSearch().y() + ") at " + w + "x" + h);
-            assertTrue(g.poolSearch().bottom() < g.list().y(),
-                    "PoolSearch bottom (" + g.poolSearch().bottom() + ") must be strictly above list y (" + g.list().y() + ") at " + w + "x" + h);
-            assertTrue(g.list().bottom() < g.editorInfo().y(),
-                    "List bottom (" + g.list().bottom() + ") must be above editorInfo y (" + g.editorInfo().y() + ") at " + w + "x" + h);
-            assertTrue(g.editorInfo().bottom() < g.slider().y(),
-                    "EditorInfo bottom (" + g.editorInfo().bottom() + ") must be above slider y (" + g.slider().y() + ") at " + w + "x" + h);
-            assertTrue(g.slider().bottom() < g.quickButtons().y(),
-                    "Slider bottom (" + g.slider().bottom() + ") must be above quickButtons y (" + g.quickButtons().y() + ") at " + w + "x" + h);
-            assertTrue(g.quickButtons().bottom() < g.errorY(),
-                    "Quick buttons bottom (" + g.quickButtons().bottom() + ") must be strictly above error message y (" + g.errorY() + ") at " + w + "x" + h);
-            assertTrue(g.errorY() + 9 < g.bottomRow1().y(),
-                    "Error message bottom (" + (g.errorY() + 9) + ") must be strictly above bottom row 1 y (" + g.bottomRow1().y() + ") at " + w + "x" + h);
-            assertTrue(g.bottomRow1().bottom() < g.bottomRow2().y(),
-                    "Bottom row 1 bottom (" + g.bottomRow1().bottom() + ") must be above bottom row 2 y (" + g.bottomRow2().y() + ") at " + w + "x" + h);
-            assertTrue(g.bottomRow2().bottom() <= h,
-                    "Bottom row 2 bottom (" + g.bottomRow2().bottom() + ") must fit within screen height " + h);
+                assertTrue(l.tabs().bottom() <= l.content().y(), "Tabs must be above content at " + w + "x" + h);
+                assertTrue(l.content().bottom() <= l.bottomToolbar().y(), "Content must be above bottomToolbar at " + w + "x" + h);
+
+                if (l.browser() != null) {
+                    assertTrue(l.content().contains(l.browser()), "Content must contain browser at " + w + "x" + h);
+                }
+                if (l.main() != null) {
+                    assertTrue(l.content().contains(l.main()), "Content must contain main at " + w + "x" + h);
+                    if (l.browser() != null) {
+                        assertTrue(l.browser().right() < l.main().x(), "Browser right must be strictly < main x at " + w + "x" + h);
+                    }
+                    assertNotNull(l.wheel());
+                    assertNotNull(l.editor());
+                    assertNotNull(l.preview());
+                    assertTrue(l.main().contains(l.wheel()), "Main must contain wheel at " + w + "x" + h);
+                    assertTrue(l.main().contains(l.editor()), "Main must contain editor at " + w + "x" + h);
+                    assertTrue(l.main().contains(l.preview()), "Main must contain preview at " + w + "x" + h);
+
+                    assertTrue(l.wheel().bottom() <= l.editor().y(), "Wheel bottom must be <= editor y at " + w + "x" + h);
+                    assertTrue(l.editor().bottom() <= l.preview().y(), "Editor bottom must be <= preview y at " + w + "x" + h);
+                }
+            }
         }
     }
 
@@ -478,7 +651,7 @@ class TrackWeightScreenTest {
         assertEquals(2, selectionCallbacks.get(), "Selecting already selected track must be a no-op");
     }
 
-    @Test void radialWheelAppearsOnlyInWideLayout() {
+    @Test void radialWheelAppearsInWideAndCollapsedNarrowLayouts() {
         Pool pool = poolWithC418AndUnknown();
         TrackWeightConfig saved = TrackWeightConfig.defaults();
 
@@ -489,29 +662,13 @@ class TrackWeightScreenTest {
 
         TrackWeightScreen narrowScreen = new TrackWeightScreen(null, saved, pool);
         narrowScreen.initForDimensions(400, 300);
-        assertNull(narrowScreen.radialWheel(), "Wheel must not appear in narrow layout");
-    }
+        assertNotNull(narrowScreen.radialWheel(), "Wheel must appear in collapsed narrow layout");
 
-    @Test void wideWheelBoundsGuaranteesNoOverlapAcrossBoundaryWidths() {
-        int[] widths = {640, 679, 680, 800, 1920};
-        int[] heights = {100, 114, 150, 250, 400, 1080};
-        for (int w : widths) {
-            for (int h : heights) {
-                TrackWeightScreen.Bounds list = TrackWeightScreen.wideListBounds(w, h);
-                TrackWeightScreen.Bounds editor = TrackWeightScreen.wideEditorBounds(w, h);
-                TrackWeightScreen.Bounds bottomBar = TrackWeightScreen.wideBottomBarBounds(w, h);
-                TrackWeightScreen.Bounds wheel = TrackWeightScreen.wideWheelBounds(w, h);
+        narrowScreen.toggleBrowser();
+        assertNull(narrowScreen.radialWheel(), "Wheel must not appear in narrow open browser overlay");
 
-                assertTrue(wheel.x() >= list.right(),
-                        "Wheel left (" + wheel.x() + ") must be >= list right (" + list.right() + ") at " + w + "x" + h);
-                assertTrue(wheel.right() <= editor.x(),
-                        "Wheel right (" + wheel.right() + ") must be <= editor left (" + editor.x() + ") at " + w + "x" + h);
-                assertTrue(wheel.y() >= 50,
-                        "Wheel top (" + wheel.y() + ") must be >= top boundary 50 at " + w + "x" + h);
-                assertTrue(wheel.bottom() <= bottomBar.y(),
-                        "Wheel bottom (" + wheel.bottom() + ") must be <= bottom bar y (" + bottomBar.y() + ") at " + w + "x" + h);
-            }
-        }
+        narrowScreen.toggleBrowser();
+        assertNotNull(narrowScreen.radialWheel(), "Wheel must be restored when closing browser in narrow layout");
     }
 
     @Test void wheelModelSynchronizesWithCatalogChancesAndPreservesOrder() {

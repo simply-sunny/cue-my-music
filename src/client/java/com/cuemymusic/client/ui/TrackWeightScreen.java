@@ -54,6 +54,12 @@ import net.minecraft.util.RandomSource;
  */
 public final class TrackWeightScreen extends Screen {
 
+    public static final int TAB_HEIGHT = 24;
+    public static final int TOOLBAR_HEIGHT = 20;
+    public static final int GAP = 8;
+    public static final int BROWSER_MIN_WIDTH = 220;
+    public static final int MAIN_MIN_WIDTH = 340;
+
     public record Bounds(int x, int y, int width, int height) {
         public int right() {
             return x + width;
@@ -62,17 +68,70 @@ public final class TrackWeightScreen extends Screen {
         public int bottom() {
             return y + height;
         }
+
+        public boolean contains(Bounds other) {
+            if (other == null) {
+                return false;
+            }
+            return other.x >= this.x
+                    && other.y >= this.y
+                    && other.right() <= this.right()
+                    && other.bottom() <= this.bottom();
+        }
     }
 
-    public record NarrowGeometry(
-            Bounds poolSearch,
-            Bounds list,
-            Bounds editorInfo,
-            Bounds slider,
-            Bounds quickButtons,
-            int errorY,
-            Bounds bottomRow1,
-            Bounds bottomRow2) {}
+    public record ResponsiveLayout(
+            Bounds workspace,
+            Bounds tabs,
+            Bounds content,
+            Bounds browser,
+            Bounds main,
+            Bounds wheel,
+            Bounds editor,
+            Bounds preview,
+            Bounds bottomToolbar,
+            boolean browserFits,
+            boolean browserOpen) {}
+
+    public static final class BrowserState {
+        private boolean open;
+        private Boolean lastFits;
+
+        public BrowserState() {
+            this.open = true;
+            this.lastFits = null;
+        }
+
+        public BrowserState(boolean open) {
+            this.open = open;
+            this.lastFits = null;
+        }
+
+        public boolean isOpen() {
+            return open;
+        }
+
+        public void setOpen(boolean open) {
+            this.open = open;
+        }
+
+        public void toggle() {
+            this.open = !this.open;
+        }
+
+        public void updateForFit(boolean browserFits) {
+            if (lastFits == null) {
+                this.open = browserFits;
+            } else if (lastFits && !browserFits) {
+                this.open = false;
+            } else if (!lastFits && browserFits) {
+                this.open = true;
+            }
+            this.lastFits = browserFits;
+        }
+    }
+
+    private record MainBounds(Bounds wheel, Bounds editor, Bounds preview) {}
 
     private final MusicPlayerScreen parent;
     private final TrackWeightConfig saved;
@@ -80,10 +139,13 @@ public final class TrackWeightScreen extends Screen {
     private final PreviewState previewState;
     private final TabManager tabManager;
     private final Map<Tab, Pool> tabToPool = new LinkedHashMap<>();
+    private final BrowserState browserState = new BrowserState();
+    private ResponsiveLayout layout;
     private ScrollablePoolTabBar tabNavigationBar;
     private PinnedMusicInstance currentPreviewInstance;
     private Component errorMessage;
 
+    private Button browserToggleButton;
     private EditBox searchBox;
     private TrackList trackList;
     private WeightSlider weightSlider;
@@ -138,58 +200,83 @@ public final class TrackWeightScreen extends Screen {
                 workspaceWidth, workspaceHeight);
     }
 
+    public static ResponsiveLayout responsiveLayout(int width, int height, boolean browserOpen) {
+        Bounds workspace = workspaceBounds(width, height);
+        Bounds tabs = new Bounds(workspace.x(), workspace.y(), workspace.width(), TAB_HEIGHT);
+        Bounds bottomToolbar = new Bounds(workspace.x(), workspace.bottom() - TOOLBAR_HEIGHT, workspace.width(), TOOLBAR_HEIGHT);
+
+        int contentY = tabs.bottom() + GAP;
+        int contentBottom = bottomToolbar.y() - GAP;
+        int contentHeight = Math.max(0, contentBottom - contentY);
+        Bounds content = new Bounds(workspace.x(), contentY, workspace.width(), contentHeight);
+
+        boolean browserFits = content.width() >= BROWSER_MIN_WIDTH + GAP + MAIN_MIN_WIDTH;
+
+        Bounds browser = null;
+        Bounds main = null;
+        Bounds wheel = null;
+        Bounds editor = null;
+        Bounds preview = null;
+
+        if (browserOpen) {
+            if (browserFits) {
+                int browserWidth = Math.clamp(Math.round(content.width() * 0.3f), BROWSER_MIN_WIDTH, 300);
+                browser = new Bounds(content.x(), content.y(), browserWidth, content.height());
+                int mainX = browser.right() + GAP;
+                int mainWidth = content.right() - mainX;
+                main = new Bounds(mainX, content.y(), mainWidth, content.height());
+
+                MainBounds mb = computeMainBounds(main);
+                wheel = mb.wheel();
+                editor = mb.editor();
+                preview = mb.preview();
+            } else {
+                browser = content;
+            }
+        } else {
+            main = content;
+            MainBounds mb = computeMainBounds(main);
+            wheel = mb.wheel();
+            editor = mb.editor();
+            preview = mb.preview();
+        }
+
+        return new ResponsiveLayout(workspace, tabs, content, browser, main, wheel, editor, preview, bottomToolbar, browserFits, browserOpen);
+    }
+
+    private static MainBounds computeMainBounds(Bounds main) {
+        int gapWheelEditor = 4;
+        int gapEditorPreview = 3;
+        int editorHeight = 60;
+        int previewHeight = 18;
+        int totalBelowWheel = gapWheelEditor + editorHeight + gapEditorPreview + previewHeight;
+
+        int availableWheel = main.height() - totalBelowWheel;
+        int maxWheel = Math.min(main.width() - 20, 180);
+        int wheelSize = Math.clamp(Math.min(availableWheel, maxWheel), 16, 180);
+
+        int wheelX = main.x() + Math.max(0, (main.width() - wheelSize) / 2);
+        int totalHeight = wheelSize + totalBelowWheel;
+        int extraY = Math.max(0, main.height() - totalHeight);
+        int wheelY = main.y() + extraY / 4;
+
+        int editorY = wheelY + wheelSize + gapWheelEditor;
+        int editorWidth = Math.min(main.width(), 200);
+        int editorX = main.x() + Math.max(0, (main.width() - editorWidth) / 2);
+
+        int previewY = editorY + editorHeight + gapEditorPreview;
+        int previewWidth = Math.min(main.width(), 120);
+        int previewX = main.x() + Math.max(0, (main.width() - previewWidth) / 2);
+
+        Bounds wheel = new Bounds(wheelX, wheelY, wheelSize, wheelSize);
+        Bounds editor = new Bounds(editorX, editorY, editorWidth, editorHeight);
+        Bounds preview = new Bounds(previewX, previewY, previewWidth, previewHeight);
+
+        return new MainBounds(wheel, editor, preview);
+    }
+
     static boolean usesWideLayout(int width) {
         return width >= 640;
-    }
-
-    public static Bounds wideEditorBounds(int screenWidth, int screenHeight) {
-        return new Bounds(screenWidth - 220, 50, 200, 130);
-    }
-
-    public static Bounds wideListBounds(int screenWidth, int screenHeight) {
-        return new Bounds(20, 50, 220, screenHeight - 50 - 60);
-    }
-
-    public static Bounds wideBottomBarBounds(int screenWidth, int screenHeight) {
-        int totalW = 506;
-        return new Bounds((screenWidth - totalW) / 2, screenHeight - 28, totalW, 20);
-    }
-
-    public static Bounds wideWheelBounds(int screenWidth, int screenHeight) {
-        int left = 240;
-        int right = screenWidth - 220;
-        int availableWidth = Math.max(0, right - left);
-        int top = 50;
-        int bottom = screenHeight - 28;
-        int availableHeight = Math.max(0, bottom - top);
-        int size = Math.clamp(Math.min(availableWidth - 20, availableHeight - 20), 16, 180);
-        int x = left + Math.max(0, (availableWidth - size) / 2);
-        int y = top + Math.max(0, (availableHeight - size) / 2);
-        return new Bounds(x, y, size, size);
-    }
-
-    public static NarrowGeometry narrowGeometry(int width, int height) {
-        int margin = 10;
-        int w = width - (margin * 2);
-
-        Bounds poolSearch = new Bounds(margin, 26, w, 18);
-        int listH = Math.max(36, height - 183);
-        Bounds list = new Bounds(margin, 46, w, listH);
-        int editorY = list.bottom() + 2;
-        Bounds editorInfo = new Bounds(margin, editorY, w, 19);
-        int sliderY = editorInfo.bottom() + 2;
-        Bounds slider = new Bounds(margin, sliderY, Math.min(200, w), 18);
-        int qbY = slider.bottom() + 2;
-        Bounds quickButtons = new Bounds(margin, qbY, w, 18);
-
-        int row2Y = height - 22;
-        Bounds bottomRow2 = new Bounds(margin, row2Y, w, 18);
-        int row1Y = row2Y - 22;
-        Bounds bottomRow1 = new Bounds(margin, row1Y, w, 18);
-
-        int errorY = row1Y - 14;
-
-        return new NarrowGeometry(poolSearch, list, editorInfo, slider, quickButtons, errorY, bottomRow1, bottomRow2);
     }
 
     static TrackWeightConfig updateWeight(TrackWeightConfig base, String poolId, String resourceId, double multiplier) {
@@ -493,10 +580,11 @@ public final class TrackWeightScreen extends Screen {
             radialWheel = null;
         }
 
+        Bounds workspace = workspaceBounds(this.width, this.height);
+
         if (!model.pools().isEmpty()) {
             tabToPool.clear();
-            int navHeight = 24;
-            Bounds workspace = workspaceBounds(this.width, this.height);
+            int navHeight = TAB_HEIGHT;
             int previousOffset = (this.tabNavigationBar != null) ? this.tabNavigationBar.scrollOffset() : 0;
             this.tabNavigationBar = ScrollablePoolTabBar.create(
                     this.tabManager,
@@ -516,251 +604,240 @@ public final class TrackWeightScreen extends Screen {
                 this.tabNavigationBar.setScrollOffset(previousOffset);
             }
             this.tabNavigationBar.revealTab(indexToSelect);
-
-            int bottom = this.tabNavigationBar.getRectangle().bottom();
-            ScreenRectangle tabArea = new ScreenRectangle(workspace.x(), bottom, workspace.width(), Math.max(0, workspace.bottom() - bottom));
-            this.tabManager.setTabArea(tabArea);
         } else {
             this.tabNavigationBar = null;
         }
 
-        boolean wide = usesWideLayout(width);
+        boolean fits = responsiveLayout(this.width, this.height, true).browserFits();
+        this.browserState.updateForFit(fits);
 
-        if (wide) {
-            initWideLayout();
-        } else {
-            initNarrowLayout();
+        this.layout = responsiveLayout(this.width, this.height, this.browserState.isOpen());
+
+        if (this.tabNavigationBar != null) {
+            ScreenRectangle tabArea = new ScreenRectangle(
+                    layout.content().x(),
+                    layout.content().y(),
+                    layout.content().width(),
+                    layout.content().height());
+            this.tabManager.setTabArea(tabArea);
         }
+
+        initLayoutWidgets();
 
         refreshTrackList();
         updateSelectedTrackWidgets();
     }
 
-    private void initWideLayout() {
-        int topY = 24;
-        searchBox = new EditBox(font, 20, topY, 220, 20, Component.literal("Search"));
-        searchBox.setHint(Component.literal("Search track or composer…"));
-        searchBox.setValue(model.searchQuery());
-        searchBox.setResponder(query -> {
-            Track prev = model.selectedTrack();
-            model.setSearchQuery(query);
-            Track current = model.selectedTrack();
-            if (prev != current && (prev == null || current == null || !prev.resourceId().equals(current.resourceId()))) {
+    private void initLayoutWidgets() {
+        if (layout.browser() != null) {
+            Bounds b = layout.browser();
+            int toggleX = b.right() - 20;
+            int toggleY = b.y();
+            Component toggleMsg = Component.literal("×");
+            net.minecraft.network.chat.MutableComponent toggleNarration = Component.literal("Hide track list");
+            browserToggleButton = Button.builder(toggleMsg, btn -> toggleBrowser())
+                    .bounds(toggleX, toggleY, 20, 20)
+                    .tooltip(Tooltip.create(toggleNarration))
+                    .createNarration(supplier -> toggleNarration)
+                    .build();
+            addRenderableWidget(browserToggleButton);
+
+            int searchW = Math.max(40, b.width() - 24);
+            searchBox = new EditBox(font, b.x(), b.y(), searchW, 20, Component.literal("Search"));
+            searchBox.setHint(Component.literal("Search track or composer…"));
+            searchBox.setValue(model.searchQuery());
+            searchBox.setResponder(query -> {
+                Track prev = model.selectedTrack();
+                model.setSearchQuery(query);
+                Track current = model.selectedTrack();
+                if (prev != current && (prev == null || current == null || !prev.resourceId().equals(current.resourceId()))) {
+                    stopPreview();
+                }
+                refreshTrackList();
+                updateSelectedTrackWidgets();
+            });
+            addRenderableWidget(searchBox);
+
+            int listY = b.y() + 24;
+            int listH = Math.max(20, b.bottom() - listY);
+            trackList = new TrackList(minecraft, b.width(), listH, listY, 20, model, this::onTrackSelectionChanged);
+            trackList.setX(b.x());
+            addRenderableWidget(trackList);
+        } else {
+            searchBox = null;
+            trackList = null;
+
+            int toggleX = layout.content().x();
+            int toggleY = layout.content().y();
+            Component toggleMsg = Component.literal("☰");
+            net.minecraft.network.chat.MutableComponent toggleNarration = Component.literal("Show track list");
+            browserToggleButton = Button.builder(toggleMsg, btn -> toggleBrowser())
+                    .bounds(toggleX, toggleY, 20, 20)
+                    .tooltip(Tooltip.create(toggleNarration))
+                    .createNarration(supplier -> toggleNarration)
+                    .build();
+            addRenderableWidget(browserToggleButton);
+        }
+
+        if (layout.main() != null) {
+            Bounds wheel = layout.wheel();
+            radialWheel = new RadialWeightWidget(wheel.x(), wheel.y(), wheel.width(), this::selectTrack);
+            addRenderableWidget(radialWheel);
+
+            Bounds editor = layout.editor();
+            weightSlider = new WeightSlider(editor.x(), editor.y() + 22, editor.width(), 18, model, this::onDraftChanged);
+            addRenderableWidget(weightSlider);
+
+            int qbY = editor.y() + 42;
+            int qbW = (editor.width() - 16) / 5;
+            btn0x = Button.builder(Component.literal("0×"), b -> setQuickMultiplier(0.0)).bounds(editor.x(), qbY, qbW, 18).build();
+            btn05x = Button.builder(Component.literal("0.5×"), b -> setQuickMultiplier(0.5)).bounds(editor.x() + (qbW + 4), qbY, qbW, 18).build();
+            btn1x = Button.builder(Component.literal("1×"), b -> setQuickMultiplier(1.0)).bounds(editor.x() + (qbW + 4) * 2, qbY, qbW, 18).build();
+            btn2x = Button.builder(Component.literal("2×"), b -> setQuickMultiplier(2.0)).bounds(editor.x() + (qbW + 4) * 3, qbY, qbW, 18).build();
+            btn5x = Button.builder(Component.literal("5×"), b -> setQuickMultiplier(5.0)).bounds(editor.x() + (qbW + 4) * 4, qbY, qbW, 18).build();
+            addRenderableWidget(btn0x);
+            addRenderableWidget(btn05x);
+            addRenderableWidget(btn1x);
+            addRenderableWidget(btn2x);
+            addRenderableWidget(btn5x);
+
+            Bounds preview = layout.preview();
+            previewButton = Button.builder(Component.literal("Play Sound"), b -> {
+                Track track = model.selectedTrack();
+                if (track != null) {
+                    previewState.toggle(track);
+                    updatePreviewButton();
+                }
+            }).bounds(preview.x(), preview.y(), preview.width(), preview.height()).build();
+            previewButton.active = model.selectedTrack() != null
+                    && model.selectedTrack().occurrences() != null
+                    && !model.selectedTrack().occurrences().isEmpty();
+            addRenderableWidget(previewButton);
+        } else {
+            radialWheel = null;
+            weightSlider = null;
+            btn0x = null;
+            btn05x = null;
+            btn1x = null;
+            btn2x = null;
+            btn5x = null;
+            previewButton = null;
+        }
+
+        Bounds tb = layout.bottomToolbar();
+        int bottomY = tb.y();
+        int totalW = 506;
+        if (tb.width() >= totalW) {
+            int bx = tb.x() + (tb.width() - totalW) / 2;
+
+            allButton = Button.builder(Component.literal("All 1×"), b -> {
+                model.applyAll();
+                onDraftChanged();
+            }).bounds(bx, bottomY, 58, 20).build();
+            bx += 64;
+
+            c418Button = Button.builder(Component.literal("C418 2×"), b -> {
+                model.applyC418();
+                onDraftChanged();
+            }).bounds(bx, bottomY, 62, 20).build();
+            bx += 68;
+
+            muteButton = Button.builder(Component.literal("Mute 0×"), b -> {
+                model.mute();
+                onDraftChanged();
+            }).bounds(bx, bottomY, 62, 20).build();
+            bx += 68;
+
+            antiRepeatButton = CycleButton.onOffBuilder(model.draft().antiRepeat())
+                    .create(bx, bottomY, 110, 20, Component.literal("Anti-Repeat"), (btn, val) -> {
+                        model.setAntiRepeat(val);
+                        onDraftChanged();
+                    });
+            bx += 116;
+
+            testRollButton = Button.builder(Component.literal("Test Roll"), b -> {
+                if (model.selectedPool() != null) {
+                    long seed = RandomSource.create().nextLong();
+                    Optional<Occurrence> roll = testRoll(model.selectedPool(), model.draft(), seed);
+                    roll.ifPresent(occ -> selectTrack(occ.resourceId()));
+                }
+            }).bounds(bx, bottomY, 70, 20).build();
+            bx += 76;
+
+            jsonButton = Button.builder(Component.literal("JSON"), b -> {
                 stopPreview();
-            }
-            refreshTrackList();
-            updateSelectedTrackWidgets();
-        });
-        addRenderableWidget(searchBox);
+                if (minecraft != null) {
+                    minecraft.setScreenAndShow(new JsonScreen(this, model.draft()));
+                }
+            }).bounds(bx, bottomY, 46, 20).build();
+            bx += 52;
 
-        Bounds listBounds = wideListBounds(width, height);
-        trackList = new TrackList(minecraft, listBounds.width(), listBounds.height(), listBounds.y(), 20, model, this::onTrackSelectionChanged);
-        trackList.setX(listBounds.x());
-        addRenderableWidget(trackList);
+            doneButton = Button.builder(CommonComponents.GUI_DONE, b -> saveAndClose())
+                    .bounds(bx, bottomY, 62, 20)
+                    .build();
+        } else {
+            int gap = 2;
+            int avail = tb.width() - gap * 6;
+            int w1 = avail * 58 / 506;
+            int w2 = avail * 62 / 506;
+            int w3 = avail * 62 / 506;
+            int w4 = avail * 110 / 506;
+            int w5 = avail * 70 / 506;
+            int w6 = avail * 46 / 506;
+            int w7 = avail - (w1 + w2 + w3 + w4 + w5 + w6);
 
-        Bounds wheelBounds = wideWheelBounds(width, height);
-        radialWheel = new RadialWeightWidget(wheelBounds.x(), wheelBounds.y(), wheelBounds.width(), this::selectTrack);
-        addRenderableWidget(radialWheel);
+            int bx = tb.x();
+            allButton = Button.builder(Component.literal("All 1×"), b -> {
+                model.applyAll();
+                onDraftChanged();
+            }).bounds(bx, bottomY, w1, 20).build();
+            bx += w1 + gap;
 
-        Bounds editorBounds = wideEditorBounds(width, height);
-        int rightX = editorBounds.x();
-        int editorY = editorBounds.y();
+            c418Button = Button.builder(Component.literal("C418 2×"), b -> {
+                model.applyC418();
+                onDraftChanged();
+            }).bounds(bx, bottomY, w2, 20).build();
+            bx += w2 + gap;
 
-        weightSlider = new WeightSlider(rightX, editorY + 54, 200, 20, model, this::onDraftChanged);
-        addRenderableWidget(weightSlider);
+            muteButton = Button.builder(Component.literal("Mute 0×"), b -> {
+                model.mute();
+                onDraftChanged();
+            }).bounds(bx, bottomY, w3, 20).build();
+            bx += w3 + gap;
 
-        int qbY = editorY + 78;
-        btn0x = Button.builder(Component.literal("0×"), b -> setQuickMultiplier(0.0)).bounds(rightX, qbY, 36, 20).build();
-        btn05x = Button.builder(Component.literal("0.5×"), b -> setQuickMultiplier(0.5)).bounds(rightX + 41, qbY, 36, 20).build();
-        btn1x = Button.builder(Component.literal("1×"), b -> setQuickMultiplier(1.0)).bounds(rightX + 82, qbY, 36, 20).build();
-        btn2x = Button.builder(Component.literal("2×"), b -> setQuickMultiplier(2.0)).bounds(rightX + 123, qbY, 36, 20).build();
-        btn5x = Button.builder(Component.literal("5×"), b -> setQuickMultiplier(5.0)).bounds(rightX + 164, qbY, 36, 20).build();
-        addRenderableWidget(btn0x);
-        addRenderableWidget(btn05x);
-        addRenderableWidget(btn1x);
-        addRenderableWidget(btn2x);
-        addRenderableWidget(btn5x);
+            antiRepeatButton = CycleButton.onOffBuilder(model.draft().antiRepeat())
+                    .create(bx, bottomY, w4, 20, Component.literal("Anti-Repeat"), (btn, val) -> {
+                        model.setAntiRepeat(val);
+                        onDraftChanged();
+                    });
+            bx += w4 + gap;
 
-        previewButton = Button.builder(Component.literal("Play Sound"), b -> {
-            Track track = model.selectedTrack();
-            if (track != null) {
-                previewState.toggle(track);
-                updatePreviewButton();
-            }
-        }).bounds(rightX, qbY + 24, 120, 20).build();
-        previewButton.active = model.selectedTrack() != null
-                && model.selectedTrack().occurrences() != null
-                && !model.selectedTrack().occurrences().isEmpty();
-        addRenderableWidget(previewButton);
+            testRollButton = Button.builder(Component.literal("Test Roll"), b -> {
+                if (model.selectedPool() != null) {
+                    long seed = RandomSource.create().nextLong();
+                    Optional<Occurrence> roll = testRoll(model.selectedPool(), model.draft(), seed);
+                    roll.ifPresent(occ -> selectTrack(occ.resourceId()));
+                }
+            }).bounds(bx, bottomY, w5, 20).build();
+            bx += w5 + gap;
 
-        Bounds bottomBar = wideBottomBarBounds(width, height);
-        int bottomY = bottomBar.y();
-        int bx = bottomBar.x();
+            jsonButton = Button.builder(Component.literal("JSON"), b -> {
+                stopPreview();
+                if (minecraft != null) {
+                    minecraft.setScreenAndShow(new JsonScreen(this, model.draft()));
+                }
+            }).bounds(bx, bottomY, w6, 20).build();
+            bx += w6 + gap;
 
-        allButton = Button.builder(Component.literal("All 1×"), b -> {
-            model.applyAll();
-            onDraftChanged();
-        }).bounds(bx, bottomY, 58, 20).build();
-        bx += 64;
-
-        c418Button = Button.builder(Component.literal("C418 2×"), b -> {
-            model.applyC418();
-            onDraftChanged();
-        }).bounds(bx, bottomY, 62, 20).build();
-        bx += 68;
-
-        muteButton = Button.builder(Component.literal("Mute 0×"), b -> {
-            model.mute();
-            onDraftChanged();
-        }).bounds(bx, bottomY, 62, 20).build();
-        bx += 68;
-
-        antiRepeatButton = CycleButton.onOffBuilder(model.draft().antiRepeat())
-                .create(bx, bottomY, 110, 20, Component.literal("Anti-Repeat"), (btn, val) -> {
-                    model.setAntiRepeat(val);
-                    onDraftChanged();
-                });
-        bx += 116;
-
-        testRollButton = Button.builder(Component.literal("Test Roll"), b -> {
-            if (model.selectedPool() != null) {
-                long seed = RandomSource.create().nextLong();
-                Optional<Occurrence> roll = testRoll(model.selectedPool(), model.draft(), seed);
-                roll.ifPresent(occ -> selectTrack(occ.resourceId()));
-            }
-        }).bounds(bx, bottomY, 70, 20).build();
-        bx += 76;
-
-        jsonButton = Button.builder(Component.literal("JSON"), b -> {
-            stopPreview();
-            if (minecraft != null) {
-                minecraft.setScreenAndShow(new JsonScreen(this, model.draft()));
-            }
-        }).bounds(bx, bottomY, 46, 20).build();
-        bx += 52;
-
-        doneButton = Button.builder(CommonComponents.GUI_DONE, b -> saveAndClose())
-                .bounds(bx, bottomY, 62, 20)
-                .build();
+            doneButton = Button.builder(CommonComponents.GUI_DONE, b -> saveAndClose())
+                    .bounds(bx, bottomY, w7, 20)
+                    .build();
+        }
 
         addRenderableWidget(allButton);
         addRenderableWidget(c418Button);
         addRenderableWidget(muteButton);
         addRenderableWidget(antiRepeatButton);
-        addRenderableWidget(testRollButton);
-        addRenderableWidget(jsonButton);
-        addRenderableWidget(doneButton);
-    }
-
-    private void initNarrowLayout() {
-        NarrowGeometry geom = narrowGeometry(width, height);
-
-        searchBox = new EditBox(font, geom.poolSearch().x(), geom.poolSearch().y(),
-                geom.poolSearch().width(), geom.poolSearch().height(), Component.literal("Search"));
-        searchBox.setHint(Component.literal("Search track or composer…"));
-        searchBox.setValue(model.searchQuery());
-        searchBox.setResponder(query -> {
-            Track prev = model.selectedTrack();
-            model.setSearchQuery(query);
-            Track current = model.selectedTrack();
-            if (prev != current && (prev == null || current == null || !prev.resourceId().equals(current.resourceId()))) {
-                stopPreview();
-            }
-            refreshTrackList();
-            updateSelectedTrackWidgets();
-        });
-        addRenderableWidget(searchBox);
-
-        trackList = new TrackList(minecraft, geom.list().width(), geom.list().height(), geom.list().y(),
-                20, model, this::onTrackSelectionChanged);
-        trackList.setX(geom.list().x());
-        addRenderableWidget(trackList);
-
-        weightSlider = new WeightSlider(geom.slider().x(), geom.slider().y(), geom.slider().width(),
-                geom.slider().height(), model, this::onDraftChanged);
-        addRenderableWidget(weightSlider);
-
-        int qbX = geom.quickButtons().x();
-        int qbY = geom.quickButtons().y();
-        int qbW = (Math.min(200, geom.quickButtons().width()) - 16) / 5;
-        btn0x = Button.builder(Component.literal("0×"), b -> setQuickMultiplier(0.0)).bounds(qbX, qbY, qbW, 18).build();
-        btn05x = Button.builder(Component.literal("0.5×"), b -> setQuickMultiplier(0.5)).bounds(qbX + (qbW + 4), qbY, qbW, 18).build();
-        btn1x = Button.builder(Component.literal("1×"), b -> setQuickMultiplier(1.0)).bounds(qbX + (qbW + 4) * 2, qbY, qbW, 18).build();
-        btn2x = Button.builder(Component.literal("2×"), b -> setQuickMultiplier(2.0)).bounds(qbX + (qbW + 4) * 3, qbY, qbW, 18).build();
-        btn5x = Button.builder(Component.literal("5×"), b -> setQuickMultiplier(5.0)).bounds(qbX + (qbW + 4) * 4, qbY, qbW, 18).build();
-        addRenderableWidget(btn0x);
-        addRenderableWidget(btn05x);
-        addRenderableWidget(btn1x);
-        addRenderableWidget(btn2x);
-        addRenderableWidget(btn5x);
-
-        int previewX = qbX + (qbW + 4) * 5 + 4;
-        int previewW = Math.max(60, geom.quickButtons().right() - previewX);
-        previewButton = Button.builder(Component.literal("Play Sound"), b -> {
-            Track track = model.selectedTrack();
-            if (track != null) {
-                previewState.toggle(track);
-                updatePreviewButton();
-            }
-        }).bounds(previewX, qbY, previewW, 18).build();
-        previewButton.active = model.selectedTrack() != null
-                && model.selectedTrack().occurrences() != null
-                && !model.selectedTrack().occurrences().isEmpty();
-        addRenderableWidget(previewButton);
-
-        int row1BtnW = (geom.bottomRow1().width() - 9) / 4;
-        int r1X = geom.bottomRow1().x();
-        int r1Y = geom.bottomRow1().y();
-
-        allButton = Button.builder(Component.literal("All 1×"), b -> {
-            model.applyAll();
-            onDraftChanged();
-        }).bounds(r1X, r1Y, row1BtnW, 18).build();
-
-        c418Button = Button.builder(Component.literal("C418 2×"), b -> {
-            model.applyC418();
-            onDraftChanged();
-        }).bounds(r1X + (row1BtnW + 3), r1Y, row1BtnW, 18).build();
-
-        muteButton = Button.builder(Component.literal("Mute 0×"), b -> {
-            model.mute();
-            onDraftChanged();
-        }).bounds(r1X + (row1BtnW + 3) * 2, r1Y, row1BtnW, 18).build();
-
-        antiRepeatButton = CycleButton.onOffBuilder(model.draft().antiRepeat())
-                .create(r1X + (row1BtnW + 3) * 3, r1Y, row1BtnW, 18, Component.literal("Anti-Repeat"), (btn, val) -> {
-                    model.setAntiRepeat(val);
-                    onDraftChanged();
-                });
-
-        addRenderableWidget(allButton);
-        addRenderableWidget(c418Button);
-        addRenderableWidget(muteButton);
-        addRenderableWidget(antiRepeatButton);
-
-        int row2BtnW = (geom.bottomRow2().width() - 6) / 3;
-        int r2X = geom.bottomRow2().x();
-        int r2Y = geom.bottomRow2().y();
-
-        testRollButton = Button.builder(Component.literal("Test Roll"), b -> {
-            if (model.selectedPool() != null) {
-                long seed = RandomSource.create().nextLong();
-                Optional<Occurrence> roll = testRoll(model.selectedPool(), model.draft(), seed);
-                roll.ifPresent(occ -> selectTrack(occ.resourceId()));
-            }
-        }).bounds(r2X, r2Y, row2BtnW, 18).build();
-
-        jsonButton = Button.builder(Component.literal("JSON"), b -> {
-            stopPreview();
-            if (minecraft != null) {
-                minecraft.setScreenAndShow(new JsonScreen(this, model.draft()));
-            }
-        }).bounds(r2X + (row2BtnW + 3), r2Y, row2BtnW, 18).build();
-
-        doneButton = Button.builder(CommonComponents.GUI_DONE, b -> saveAndClose())
-                .bounds(r2X + (row2BtnW + 3) * 2, r2Y, row2BtnW, 18)
-                .build();
-
         addRenderableWidget(testRollButton);
         addRenderableWidget(jsonButton);
         addRenderableWidget(doneButton);
@@ -799,33 +876,51 @@ public final class TrackWeightScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickProgress) {
         super.extractRenderState(extractor, mouseX, mouseY, tickProgress);
 
-        boolean wide = usesWideLayout(width);
-
-        Track track = model.selectedTrack();
-        if (track != null) {
-            double chance = model.currentChances().getOrDefault(track.resourceId(), 0.0);
-            if (wide) {
-                Bounds editorBounds = wideEditorBounds(width, height);
-                int rightX = editorBounds.x();
-                int editorY = editorBounds.y();
-                extractor.text(font, track.title(), rightX, editorY, 0xFFFFFF);
-                String comp = track.composer() != null ? "Composer: " + track.composer() : "No Composer";
-                extractor.text(font, comp, rightX, editorY + 12, 0xAAAAAA);
-                extractor.text(font, track.resourceId(), rightX, editorY + 24, 0x888888);
-                extractor.text(font, "Chance: " + formatPercent(chance) + "%", rightX, editorY + 38, 0x55FF55);
-            } else {
-                NarrowGeometry geom = narrowGeometry(width, height);
-                int editorY = geom.editorInfo().y();
+        if (layout != null && layout.editor() != null) {
+            Track track = model.selectedTrack();
+            if (track != null) {
+                double chance = model.currentChances().getOrDefault(track.resourceId(), 0.0);
+                Bounds editor = layout.editor();
                 String line1 = track.title() + " (" + formatPercent(chance) + "%)";
-                extractor.text(font, line1, geom.editorInfo().x(), editorY, 0xFFFFFF);
+                extractor.text(font, line1, editor.x(), editor.y(), 0xFFFFFF);
                 String comp = track.composer() != null ? track.composer() : track.resourceId();
-                extractor.text(font, comp, geom.editorInfo().x(), editorY + 10, 0xAAAAAA);
+                extractor.text(font, comp, editor.x(), editor.y() + 10, 0xAAAAAA);
             }
         }
 
-        if (errorMessage != null) {
-            int errorY = wide ? height - 42 : narrowGeometry(width, height).errorY();
+        if (errorMessage != null && layout != null) {
+            int errorY = layout.bottomToolbar().y() - 12;
             extractor.centeredText(font, errorMessage, width / 2, errorY, 0xFF5555);
+        }
+    }
+
+    public ResponsiveLayout responsiveLayout() {
+        return layout;
+    }
+
+    public BrowserState browserState() {
+        return browserState;
+    }
+
+    public EditBox searchBox() {
+        return searchBox;
+    }
+
+    public TrackList trackList() {
+        return trackList;
+    }
+
+    public Button browserToggleButton() {
+        return browserToggleButton;
+    }
+
+    public void toggleBrowser() {
+        this.browserState.toggle();
+        if (this.minecraft != null) {
+            rebuildWidgets();
+        } else {
+            clearWidgets();
+            init();
         }
     }
 
@@ -877,9 +972,38 @@ public final class TrackWeightScreen extends Screen {
         return previewButton;
     }
 
+    public Button allButton() {
+        return allButton;
+    }
+
+    public Button c418Button() {
+        return c418Button;
+    }
+
+    public Button muteButton() {
+        return muteButton;
+    }
+
+    public CycleButton<Boolean> antiRepeatButton() {
+        return antiRepeatButton;
+    }
+
+    public Button testRollButton() {
+        return testRollButton;
+    }
+
+    public Button jsonButton() {
+        return jsonButton;
+    }
+
+    public Button doneButton() {
+        return doneButton;
+    }
+
     void initForDimensions(int width, int height) {
         this.width = width;
         this.height = height;
+        clearWidgets();
         init();
     }
 
