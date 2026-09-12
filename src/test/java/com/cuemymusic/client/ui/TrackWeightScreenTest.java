@@ -649,11 +649,13 @@ class TrackWeightScreenTest {
     void nativeMenuTabBarExactApiContract() throws Exception {
         String source = Files.readString(
                 Path.of("src/client/java/com/cuemymusic/client/ui/TrackWeightScreen.java"));
-        assertTrue(source.contains("MenuTabBar"), "Must use MenuTabBar");
+        assertTrue(source.contains("TabNavigationBar"), "Must use TabNavigationBar");
+        assertTrue(source.contains("MenuTabBar.MenuTabButton"), "Must use native MenuTabBar.MenuTabButton");
         assertTrue(source.contains("TabManager"), "Must use TabManager");
         assertTrue(source.contains("GridLayoutTab"), "Must use GridLayoutTab");
         assertTrue(source.contains("tabNavigationBar.keyPressed"), "Must delegate keyPressed to tabNavigationBar");
         assertTrue(source.contains("CreateWorldScreen.TAB_HEADER_BACKGROUND"), "Must use CreateWorldScreen.TAB_HEADER_BACKGROUND");
+        assertTrue(source.contains("HEADER_SEPARATOR"), "Must draw HEADER_SEPARATOR");
         assertTrue(source.contains("extractMenuBackground"), "Must override extractMenuBackground for split background");
         assertTrue(source.contains("RenderPipelines.GUI_TEXTURED"), "Must use RenderPipelines.GUI_TEXTURED for header background blit");
         assertFalse(source.contains("CycleButton<Pool>"), "Must not use CycleButton<Pool>");
@@ -672,8 +674,8 @@ class TrackWeightScreenTest {
 
         assertNotNull(wideScreen.tabNavigationBar(), "Tab bar must exist in wide layout");
         assertEquals(2, wideScreen.tabNavigationBar().getTabs().size(), "Tab bar must have one tab per pool");
-        assertEquals(pool1.id(), wideScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
-        assertEquals(pool2.id(), wideScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
+        assertEquals("game", wideScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
+        assertEquals("nether", wideScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
         assertEquals(pool1, wideScreen.selectedPool(), "First pool must be selected initially");
 
         // Verify no CycleButton for Pool exists in wide layout
@@ -688,6 +690,8 @@ class TrackWeightScreenTest {
 
         assertNotNull(narrowScreen.tabNavigationBar(), "Tab bar must exist in narrow layout");
         assertEquals(2, narrowScreen.tabNavigationBar().getTabs().size(), "Tab bar must have one tab per pool");
+        assertEquals("game", narrowScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
+        assertEquals("nether", narrowScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
 
         // Verify no CycleButton for Pool exists in narrow layout
         boolean hasPoolCycleButtonNarrow = narrowScreen.children().stream()
@@ -769,10 +773,134 @@ class TrackWeightScreenTest {
 
         assertEquals(pool2, screen.selectedPool(), "Selected pool must be preserved across resize");
         assertNotNull(screen.tabNavigationBar());
-        assertEquals(pool2.id(), screen.tabManager().getCurrentTab().getTabTitle().getString(),
+        assertEquals("nether", screen.tabManager().getCurrentTab().getTabTitle().getString(),
                 "Tab manager must have pool 2's tab selected after resize");
         assertEquals(nether2, screen.selectedTrack(), "Selected track within pool must not reset to first track on resize");
         assertTrue(screen.previewState().isPlaying(), "Active preview must not be stopped on resize");
+    }
+
+    @Test
+    void concisePoolLabelRemovesMinecraftNamespaceAndMusicPrefix() {
+        assertEquals("credits", TrackWeightScreen.concisePoolLabel("minecraft:music.credits"));
+        assertEquals("nether.basalt_deltas", TrackWeightScreen.concisePoolLabel("minecraft:music.nether.basalt_deltas"));
+        assertEquals("game", TrackWeightScreen.concisePoolLabel("minecraft:music.game"));
+        assertEquals("overworld.day", TrackWeightScreen.concisePoolLabel("minecraft:music.overworld.day"));
+        assertEquals("custom_sound", TrackWeightScreen.concisePoolLabel("minecraft:custom_sound"));
+    }
+
+    @Test
+    void concisePoolLabelRetainsNonMinecraftNamespace() {
+        assertEquals("modid:credits", TrackWeightScreen.concisePoolLabel("modid:music.credits"));
+        assertEquals("modid:boss_fight", TrackWeightScreen.concisePoolLabel("modid:music.boss_fight"));
+        assertEquals("custom_mod:ambient", TrackWeightScreen.concisePoolLabel("custom_mod:ambient"));
+    }
+
+    @Test
+    void concisePoolLabelHandlesNoNamespaceAndEdgeCases() {
+        assertEquals("credits", TrackWeightScreen.concisePoolLabel("music.credits"));
+        assertEquals("menu", TrackWeightScreen.concisePoolLabel("menu"));
+        assertEquals("", TrackWeightScreen.concisePoolLabel(""));
+        assertEquals("", TrackWeightScreen.concisePoolLabel(null));
+    }
+
+    @Test
+    void calculateTabWidthDistributesAcrossFullWidthMinusMargins() {
+        // available = 1728 - 28 = 1700. 1700 / 30 = 56.
+        assertEquals(56, TrackWeightScreen.calculateTabWidth(1728, 30));
+
+        // available = 800 - 28 = 772. 772 / 30 = 25.
+        assertEquals(25, TrackWeightScreen.calculateTabWidth(800, 30));
+
+        // available = 400 - 28 = 372. 372 / 2 = 186.
+        assertEquals(186, TrackWeightScreen.calculateTabWidth(400, 2));
+
+        // Minimum 2 clamped width for extreme pool counts
+        assertEquals(2, TrackWeightScreen.calculateTabWidth(40, 30));
+        assertEquals(2, TrackWeightScreen.calculateTabWidth(10, 10));
+
+        // Non-positive tab count
+        assertEquals(0, TrackWeightScreen.calculateTabWidth(800, 0));
+        assertEquals(0, TrackWeightScreen.calculateTabWidth(800, -1));
+    }
+
+    @Test
+    void thirtyPoolTabsUseFullWidthWithConciseLabelsAndFullIdTooltips() throws Exception {
+        List<Pool> pools = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            Track t = track("minecraft:music/test" + i, "Test " + i, "Composer " + i);
+            pools.add(new Pool("minecraft:music.pool_" + i, List.of(t), List.of(t.occurrences().getFirst())));
+        }
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pools);
+        int screenWidth = 1728;
+        screen.initForDimensions(screenWidth, 1080);
+
+        net.minecraft.client.gui.components.tabs.TabNavigationBar nav = screen.tabNavigationBar();
+        assertNotNull(nav, "TabNavigationBar must be present");
+        assertEquals(30, nav.getTabs().size());
+
+        List<? extends net.minecraft.client.gui.components.events.GuiEventListener> buttons = nav.children();
+        assertEquals(30, buttons.size());
+
+        java.lang.reflect.Field tooltipField = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredField("tooltip");
+        tooltipField.setAccessible(true);
+        java.lang.reflect.Field messageField = net.minecraft.client.gui.components.Tooltip.class.getDeclaredField("message");
+        messageField.setAccessible(true);
+
+        int expectedWidth = TrackWeightScreen.calculateTabWidth(screenWidth, 30);
+        assertEquals(56, expectedWidth);
+
+        for (int i = 0; i < 30; i++) {
+            net.minecraft.client.gui.components.AbstractWidget btn = (net.minecraft.client.gui.components.AbstractWidget) buttons.get(i);
+            assertInstanceOf(net.minecraft.client.gui.components.tabs.MenuTabBar.MenuTabButton.class, btn,
+                    "Tab button must be native MenuTabBar.MenuTabButton");
+
+            // Verify concise label on tab and button
+            String conciseExpected = "pool_" + i;
+            assertEquals(conciseExpected, nav.getTabs().get(i).getTabTitle().getString(),
+                    "Tab title must use concise label for pool " + i);
+            assertEquals(conciseExpected, btn.getMessage().getString(),
+                    "Button message must use concise label for pool " + i);
+
+            // Verify full ID in tooltip
+            net.minecraft.client.gui.components.WidgetTooltipHolder holder =
+                    (net.minecraft.client.gui.components.WidgetTooltipHolder) tooltipField.get(btn);
+            assertNotNull(holder);
+            net.minecraft.client.gui.components.Tooltip tooltip = holder.get();
+            assertNotNull(tooltip);
+            net.minecraft.network.chat.Component tooltipMsg = (net.minecraft.network.chat.Component) messageField.get(tooltip);
+            assertEquals("minecraft:music.pool_" + i, tooltipMsg.getString(),
+                    "Tooltip message must retain full original pool ID for pool " + i);
+
+            // Check dimensions
+            assertEquals(expectedWidth, btn.getWidth(), "Button width must match calculated per-tab width");
+            assertEquals(24, btn.getHeight(), "Button height must be 24");
+            assertEquals(0, btn.getY(), "Button Y must be 0");
+        }
+
+        // Headless bounds tests: first starts at x=14, last reaches near width-14
+        net.minecraft.client.gui.components.AbstractWidget firstBtn = (net.minecraft.client.gui.components.AbstractWidget) buttons.get(0);
+        assertEquals(14, firstBtn.getX(), "First tab button must start at x=14");
+
+        net.minecraft.client.gui.components.AbstractWidget lastBtn = (net.minecraft.client.gui.components.AbstractWidget) buttons.get(29);
+        int expectedLastX = 14 + 29 * expectedWidth;
+        assertEquals(expectedLastX, lastBtn.getX(), "Last tab button X position");
+        int expectedLastRight = expectedLastX + expectedWidth;
+        assertEquals(expectedLastRight, lastBtn.getRight(), "Last tab button right boundary");
+
+        int rightMargin = screenWidth - 14;
+        assertTrue(lastBtn.getRight() <= rightMargin, "Last button must not exceed right margin");
+        int remainder = rightMargin - lastBtn.getRight();
+        assertTrue(remainder < expectedWidth, "Last button must reach near width - 14 (within one tab width remainder)");
+
+        // Materially wider than old 14px cap
+        assertTrue(firstBtn.getWidth() >= 40,
+                "Representative 30-pool set must receive materially wider tabs at 1728 width than old 14px (was " + firstBtn.getWidth() + ")");
+
+        // Test tab switching
+        nav.selectTab(7, false);
+        assertEquals("minecraft:music.pool_7", screen.selectedPool().id(),
+                "Selecting tab 7 must update screen's selected pool");
     }
 
     @Test

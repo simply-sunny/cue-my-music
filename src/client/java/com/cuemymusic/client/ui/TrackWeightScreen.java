@@ -30,6 +30,7 @@ import net.minecraft.client.gui.components.tabs.GridLayoutTab;
 import net.minecraft.client.gui.components.tabs.MenuTabBar;
 import net.minecraft.client.gui.components.tabs.Tab;
 import net.minecraft.client.gui.components.tabs.TabManager;
+import net.minecraft.client.gui.components.tabs.TabNavigationBar;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
@@ -73,7 +74,7 @@ public final class TrackWeightScreen extends Screen {
     private final PreviewState previewState;
     private final TabManager tabManager;
     private final Map<Tab, Pool> tabToPool = new LinkedHashMap<>();
-    private MenuTabBar tabNavigationBar;
+    private TabNavigationBar tabNavigationBar;
     private PinnedMusicInstance currentPreviewInstance;
     private Component errorMessage;
 
@@ -264,6 +265,34 @@ public final class TrackWeightScreen extends Screen {
         return title + ", " + artist + ", " + formatMultiplier(multiplier) + "×, " + formatPercent(chance) + "%";
     }
 
+    static String concisePoolLabel(String poolId) {
+        if (poolId == null || poolId.isEmpty()) {
+            return "";
+        }
+        String namespace = "minecraft";
+        String path = poolId;
+        int colon = poolId.indexOf(':');
+        if (colon >= 0) {
+            namespace = poolId.substring(0, colon);
+            path = poolId.substring(colon + 1);
+        }
+        if (path.startsWith("music.")) {
+            path = path.substring("music.".length());
+        }
+        if ("minecraft".equals(namespace)) {
+            return path;
+        }
+        return namespace + ":" + path;
+    }
+
+    static int calculateTabWidth(int screenWidth, int tabCount) {
+        if (tabCount <= 0) {
+            return 0;
+        }
+        int available = screenWidth - 28;
+        return Math.max(2, available / tabCount);
+    }
+
     void selectTrack(String resourceId) {
         Track prev = model.selectedTrack();
         if (model.selectTrack(resourceId)) {
@@ -452,11 +481,19 @@ public final class TrackWeightScreen extends Screen {
 
         if (!model.pools().isEmpty()) {
             tabToPool.clear();
-            MenuTabBar.Builder builder = MenuTabBar.builder(this.tabManager, this.width);
+            int navX = 14;
+            int navY = 0;
+            int navWidth = Math.max(0, this.width - 28);
+            int navHeight = 24;
+            int count = model.pools().size();
+            int tabWidth = calculateTabWidth(this.width, count);
+
+            TabNavigationBar.Builder builder = TabNavigationBar.builder(this.tabManager, navX, navY, navWidth, navHeight);
             for (Pool pool : model.pools()) {
-                GridLayoutTab tab = new GridLayoutTab(Component.literal(pool.id()));
+                GridLayoutTab tab = new GridLayoutTab(Component.literal(concisePoolLabel(pool.id())));
                 tabToPool.put(tab, pool);
-                builder.addTab(tab);
+                MenuTabBar.MenuTabButton button = new MenuTabBar.MenuTabButton(this.tabManager, tab, tabWidth, navHeight);
+                builder.addTab(button, tab);
             }
             this.tabNavigationBar = builder.build();
             List<Pool> pools = model.pools();
@@ -467,7 +504,6 @@ public final class TrackWeightScreen extends Screen {
 
             int selectedIndex = model.pools().indexOf(model.selectedPool());
             this.tabNavigationBar.selectTab(selectedIndex >= 0 ? selectedIndex : 0, false);
-            this.tabNavigationBar.arrangeElements(this.width);
             int bottom = this.tabNavigationBar.getRectangle().bottom();
             ScreenRectangle tabArea = new ScreenRectangle(0, bottom, this.width, Math.max(0, this.height - bottom));
             this.tabManager.setTabArea(tabArea);
@@ -730,6 +766,14 @@ public final class TrackWeightScreen extends Screen {
         if (this.tabNavigationBar != null) {
             int headerHeight = this.tabNavigationBar.getRectangle().bottom();
             extractor.blit(RenderPipelines.GUI_TEXTURED, CreateWorldScreen.TAB_HEADER_BACKGROUND, 0, 0, 0.0F, 0.0F, this.width, headerHeight, 16, 16);
+            int firstX = this.tabNavigationBar.getX();
+            if (firstX > 0) {
+                extractor.blit(RenderPipelines.GUI_TEXTURED, HEADER_SEPARATOR, 0, headerHeight - 2, 0.0F, 0.0F, firstX, 2, 32, 2);
+            }
+            int lastRight = this.tabNavigationBar.getRectangle().right();
+            if (this.width > lastRight) {
+                extractor.blit(RenderPipelines.GUI_TEXTURED, HEADER_SEPARATOR, lastRight, headerHeight - 2, 0.0F, 0.0F, this.width - lastRight, 2, 32, 2);
+            }
             this.extractMenuBackground(extractor, 0, headerHeight, this.width, this.height);
         } else {
             super.extractMenuBackground(extractor);
@@ -802,7 +846,7 @@ public final class TrackWeightScreen extends Screen {
         return radialWheel;
     }
 
-    MenuTabBar tabNavigationBar() {
+    TabNavigationBar tabNavigationBar() {
         return tabNavigationBar;
     }
 
