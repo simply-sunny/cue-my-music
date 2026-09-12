@@ -674,8 +674,8 @@ class TrackWeightScreenTest {
 
         assertNotNull(wideScreen.tabNavigationBar(), "Tab bar must exist in wide layout");
         assertEquals(2, wideScreen.tabNavigationBar().getTabs().size(), "Tab bar must have one tab per pool");
-        assertEquals("game", wideScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
-        assertEquals("nether", wideScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
+        assertEquals("minecraft:music.game", wideScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
+        assertEquals("minecraft:music.nether", wideScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
         assertEquals(pool1, wideScreen.selectedPool(), "First pool must be selected initially");
 
         // Verify no CycleButton for Pool exists in wide layout
@@ -690,8 +690,8 @@ class TrackWeightScreenTest {
 
         assertNotNull(narrowScreen.tabNavigationBar(), "Tab bar must exist in narrow layout");
         assertEquals(2, narrowScreen.tabNavigationBar().getTabs().size(), "Tab bar must have one tab per pool");
-        assertEquals("game", narrowScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
-        assertEquals("nether", narrowScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
+        assertEquals("minecraft:music.game", narrowScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
+        assertEquals("minecraft:music.nether", narrowScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
 
         // Verify no CycleButton for Pool exists in narrow layout
         boolean hasPoolCycleButtonNarrow = narrowScreen.children().stream()
@@ -773,58 +773,256 @@ class TrackWeightScreenTest {
 
         assertEquals(pool2, screen.selectedPool(), "Selected pool must be preserved across resize");
         assertNotNull(screen.tabNavigationBar());
-        assertEquals("nether", screen.tabManager().getCurrentTab().getTabTitle().getString(),
+        assertEquals("minecraft:music.nether", screen.tabManager().getCurrentTab().getTabTitle().getString(),
                 "Tab manager must have pool 2's tab selected after resize");
         assertEquals(nether2, screen.selectedTrack(), "Selected track within pool must not reset to first track on resize");
         assertTrue(screen.previewState().isPlaying(), "Active preview must not be stopped on resize");
     }
 
     @Test
-    void concisePoolLabelRemovesMinecraftNamespaceAndMusicPrefix() {
-        assertEquals("credits", TrackWeightScreen.concisePoolLabel("minecraft:music.credits"));
-        assertEquals("nether.basalt_deltas", TrackWeightScreen.concisePoolLabel("minecraft:music.nether.basalt_deltas"));
-        assertEquals("game", TrackWeightScreen.concisePoolLabel("minecraft:music.game"));
-        assertEquals("overworld.day", TrackWeightScreen.concisePoolLabel("minecraft:music.overworld.day"));
-        assertEquals("custom_sound", TrackWeightScreen.concisePoolLabel("minecraft:custom_sound"));
+    void fullNamesInTabTitlesAndButtons() {
+        Pool pool1 = poolWithC418AndUnknown();
+        Track netherTrack = track("minecraft:music/nether/rubedo", "Rubedo", "Lena Raine");
+        Pool pool2 = new Pool("minecraft:music.nether", List.of(netherTrack),
+                List.of(netherTrack.occurrences().getFirst()));
+        Track customTrack = track("custom_mod:sound/ambient", "Cave", "Composer");
+        Pool pool3 = new Pool("custom_mod:ambient.cave", List.of(customTrack),
+                List.of(customTrack.occurrences().getFirst()));
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, List.of(pool1, pool2, pool3));
+        screen.initForDimensions(800, 400);
+
+        TrackWeightScreen.ScrollablePoolTabBar tabBar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
+        assertNotNull(tabBar);
+        assertEquals(3, tabBar.getTabs().size());
+
+        assertEquals("minecraft:music.game", tabBar.getTabs().get(0).getTabTitle().getString());
+        assertEquals("minecraft:music.nether", tabBar.getTabs().get(1).getTabTitle().getString());
+        assertEquals("custom_mod:ambient.cave", tabBar.getTabs().get(2).getTabTitle().getString());
+
+        List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children = tabBar.children();
+        // First is left button, last is right button, middle are tab buttons
+        assertTrue(children.get(0) instanceof Button, "First child must be left arrow button");
+        assertTrue(children.get(children.size() - 1) instanceof Button, "Last child must be right arrow button");
+
+        net.minecraft.client.gui.components.AbstractWidget btn0 = (net.minecraft.client.gui.components.AbstractWidget) children.get(1);
+        net.minecraft.client.gui.components.AbstractWidget btn1 = (net.minecraft.client.gui.components.AbstractWidget) children.get(2);
+        net.minecraft.client.gui.components.AbstractWidget btn2 = (net.minecraft.client.gui.components.AbstractWidget) children.get(3);
+
+        assertEquals("minecraft:music.game", btn0.getMessage().getString());
+        assertEquals("minecraft:music.nether", btn1.getMessage().getString());
+        assertEquals("custom_mod:ambient.cave", btn2.getMessage().getString());
     }
 
     @Test
-    void concisePoolLabelRetainsNonMinecraftNamespace() {
-        assertEquals("modid:credits", TrackWeightScreen.concisePoolLabel("modid:music.credits"));
-        assertEquals("modid:boss_fight", TrackWeightScreen.concisePoolLabel("modid:music.boss_fight"));
-        assertEquals("custom_mod:ambient", TrackWeightScreen.concisePoolLabel("custom_mod:ambient"));
+    void calculateTabWidthDerivedFromFontMetricsAndPaddingWithoutTruncation() {
+        // Fallback font metrics (null font): text length * 6 + 16, min 40
+        assertEquals(Math.max(40, "minecraft:music.game".length() * 6 + 16),
+                TrackWeightScreen.calculateTabWidth("minecraft:music.game"));
+        assertEquals(Math.max(40, "credits".length() * 6 + 16),
+                TrackWeightScreen.calculateTabWidth("credits"));
+        assertEquals(40, TrackWeightScreen.calculateTabWidth(""));
+        assertEquals(40, TrackWeightScreen.calculateTabWidth(null));
+
+        // Derived width must accommodate full string without truncation
+        int widthGame = TrackWeightScreen.calculateTabWidth("minecraft:music.game");
+        assertTrue(widthGame >= "minecraft:music.game".length() * 6 + 16);
     }
 
     @Test
-    void concisePoolLabelHandlesNoNamespaceAndEdgeCases() {
-        assertEquals("credits", TrackWeightScreen.concisePoolLabel("music.credits"));
-        assertEquals("menu", TrackWeightScreen.concisePoolLabel("menu"));
-        assertEquals("", TrackWeightScreen.concisePoolLabel(""));
-        assertEquals("", TrackWeightScreen.concisePoolLabel(null));
+    void contentWidthAndOffsetClamping() {
+        List<Pool> pools = new ArrayList<>();
+        for (int i = 0; i < 15; i++) {
+            Track t = track("minecraft:music/test" + i, "Test " + i, "Composer " + i);
+            pools.add(new Pool("minecraft:music.pool_" + i, List.of(t), List.of(t.occurrences().getFirst())));
+        }
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pools);
+        screen.initForDimensions(600, 400);
+
+        TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
+        assertNotNull(bar);
+
+        int expectedContentW = 0;
+        for (Pool p : pools) {
+            expectedContentW += TrackWeightScreen.calculateTabWidth(p.id());
+        }
+        assertEquals(expectedContentW, bar.contentWidth(), "Content width must match sum of tab button widths");
+
+        int expectedViewportW = 600 - (16 * 2);
+        assertEquals(expectedViewportW, bar.viewportWidth());
+        int expectedMaxScroll = Math.max(0, expectedContentW - expectedViewportW);
+        assertEquals(expectedMaxScroll, bar.maxScroll());
+
+        // Clamping below 0
+        bar.setScrollOffset(-100);
+        assertEquals(0, bar.scrollOffset());
+
+        // Clamping above max
+        bar.setScrollOffset(expectedMaxScroll + 500);
+        assertEquals(expectedMaxScroll, bar.scrollOffset());
+
+        // Setting within range
+        bar.setScrollOffset(100);
+        assertEquals(100, bar.scrollOffset());
     }
 
     @Test
-    void calculateTabWidthDistributesAcrossFullWidthMinusMargins() {
-        // available = 1728 - 28 = 1700. 1700 / 30 = 56.
-        assertEquals(56, TrackWeightScreen.calculateTabWidth(1728, 30));
+    void arrowsStatesAtStartEndAndMiddle() {
+        List<Pool> pools = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            Track t = track("minecraft:music/test" + i, "Test " + i, "Composer " + i);
+            pools.add(new Pool("minecraft:music.pool_" + i, List.of(t), List.of(t.occurrences().getFirst())));
+        }
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pools);
+        screen.initForDimensions(600, 400);
 
-        // available = 800 - 28 = 772. 772 / 30 = 25.
-        assertEquals(25, TrackWeightScreen.calculateTabWidth(800, 30));
+        TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
+        assertNotNull(bar);
+        assertTrue(bar.maxScroll() > 0, "20 pools must exceed 600px viewport");
 
-        // available = 400 - 28 = 372. 372 / 2 = 186.
-        assertEquals(186, TrackWeightScreen.calculateTabWidth(400, 2));
+        // At start (offset 0): left arrow disabled, right arrow enabled
+        bar.setScrollOffset(0);
+        assertFalse(bar.leftButton().active, "Left arrow must be disabled at start");
+        assertTrue(bar.rightButton().active, "Right arrow must be enabled at start");
 
-        // Minimum 2 clamped width for extreme pool counts
-        assertEquals(2, TrackWeightScreen.calculateTabWidth(40, 30));
-        assertEquals(2, TrackWeightScreen.calculateTabWidth(10, 10));
+        // In middle: both enabled
+        bar.setScrollOffset(bar.maxScroll() / 2);
+        assertTrue(bar.leftButton().active, "Left arrow must be enabled in middle");
+        assertTrue(bar.rightButton().active, "Right arrow must be enabled in middle");
 
-        // Non-positive tab count
-        assertEquals(0, TrackWeightScreen.calculateTabWidth(800, 0));
-        assertEquals(0, TrackWeightScreen.calculateTabWidth(800, -1));
+        // At end: left arrow enabled, right arrow disabled
+        bar.setScrollOffset(bar.maxScroll());
+        assertTrue(bar.leftButton().active, "Left arrow must be enabled at end");
+        assertFalse(bar.rightButton().active, "Right arrow must be disabled at end");
+
+        // Single pool: both disabled
+        TrackWeightScreen singleScreen = new TrackWeightScreen(null, saved, List.of(pools.get(0)));
+        singleScreen.initForDimensions(600, 400);
+        TrackWeightScreen.ScrollablePoolTabBar singleBar = (TrackWeightScreen.ScrollablePoolTabBar) singleScreen.tabNavigationBar();
+        assertEquals(0, singleBar.maxScroll());
+        assertFalse(singleBar.leftButton().active, "Left arrow disabled when content fits viewport");
+        assertFalse(singleBar.rightButton().active, "Right arrow disabled when content fits viewport");
+
+        // Clicking arrows scrolls offset by step
+        bar.setScrollOffset(100);
+        int prevOffset = bar.scrollOffset();
+        bar.leftButton().onPress(null);
+        assertTrue(bar.scrollOffset() < prevOffset, "Clicking left arrow must decrease scroll offset");
+
+        prevOffset = bar.scrollOffset();
+        bar.rightButton().onPress(null);
+        assertTrue(bar.scrollOffset() > prevOffset, "Clicking right arrow must increase scroll offset");
     }
 
     @Test
-    void thirtyPoolTabsUseFullWidthWithConciseLabelsAndFullIdTooltips() throws Exception {
+    void wheelDirectionScrollsHorizontally() {
+        List<Pool> pools = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            Track t = track("minecraft:music/test" + i, "Test " + i, "Composer " + i);
+            pools.add(new Pool("minecraft:music.pool_" + i, List.of(t), List.of(t.occurrences().getFirst())));
+        }
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pools);
+        screen.initForDimensions(600, 400);
+
+        TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
+        bar.setScrollOffset(100);
+
+        // Vertical wheel down (scrollY < 0) scrolls content right (increases offset)
+        int before = bar.scrollOffset();
+        boolean handled = screen.mouseScrolled(300, 12, 0.0, -1.0);
+        assertTrue(handled, "Mouse scroll over tab bar must be handled");
+        assertTrue(bar.scrollOffset() > before, "Wheel down must increase scroll offset (scroll content right)");
+
+        // Vertical wheel up (scrollY > 0) scrolls content left (decreases offset)
+        before = bar.scrollOffset();
+        handled = screen.mouseScrolled(300, 12, 0.0, 1.0);
+        assertTrue(handled);
+        assertTrue(bar.scrollOffset() < before, "Wheel up must decrease scroll offset (scroll content left)");
+
+        // Horizontal wheel right (scrollX < 0) increases offset
+        before = bar.scrollOffset();
+        handled = screen.mouseScrolled(300, 12, -1.0, 0.0);
+        assertTrue(handled);
+        assertTrue(bar.scrollOffset() > before, "Horizontal scroll right must increase scroll offset");
+
+        // Horizontal wheel left (scrollX > 0) decreases offset
+        before = bar.scrollOffset();
+        handled = screen.mouseScrolled(300, 12, 1.0, 0.0);
+        assertTrue(handled);
+        assertTrue(bar.scrollOffset() < before, "Horizontal scroll left must decrease scroll offset");
+
+        // Wheel outside bar (e.g. y = 100) must not scroll bar
+        before = bar.scrollOffset();
+        bar.mouseScrolled(300, 100, 0.0, 1.0);
+        assertEquals(before, bar.scrollOffset(), "Mouse scroll outside bar bounds must not alter offset");
+    }
+
+    @Test
+    void calculateRevealOffsetPureBoundsBehavior() {
+        int viewportW = 200;
+        int maxScroll = 500;
+
+        // 1. Tab already fully in view [100, 160] with offset=50, visible=[50, 250]
+        assertEquals(50, TrackWeightScreen.calculateRevealOffset(50, 100, 60, viewportW, maxScroll));
+
+        // 2. Tab to right of viewport: tab [300, 360] with offset=50 (visible=[50, 250])
+        // Target offset should align right edge: 360 - 200 = 160
+        assertEquals(160, TrackWeightScreen.calculateRevealOffset(50, 300, 60, viewportW, maxScroll));
+
+        // 3. Tab to left of viewport: tab [20, 80] with offset=100 (visible=[100, 300])
+        // Target offset should align left edge: 20
+        assertEquals(20, TrackWeightScreen.calculateRevealOffset(100, 20, 60, viewportW, maxScroll));
+
+        // 4. Tab wider than viewport: tab [100, 350] (width 250 > 200) with offset=0
+        // Target offset should align left edge: 100
+        assertEquals(100, TrackWeightScreen.calculateRevealOffset(0, 100, 250, viewportW, maxScroll));
+
+        // 5. Clamping to [0, maxScroll]
+        assertEquals(0, TrackWeightScreen.calculateRevealOffset(100, 0, 50, viewportW, maxScroll));
+        assertEquals(maxScroll, TrackWeightScreen.calculateRevealOffset(0, 800, 50, viewportW, maxScroll));
+
+        // 6. Max scroll <= 0
+        assertEquals(0, TrackWeightScreen.calculateRevealOffset(50, 20, 50, viewportW, 0));
+    }
+
+    @Test
+    void autoRevealSelectedOnTabSelectionAndKeyboard() {
+        List<Pool> pools = new ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            Track t = track("minecraft:music/test" + i, "Test " + i, "Composer " + i);
+            pools.add(new Pool("minecraft:music.pool_" + i, List.of(t), List.of(t.occurrences().getFirst())));
+        }
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pools);
+        screen.initForDimensions(600, 400);
+
+        TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
+        assertEquals(0, bar.scrollOffset());
+
+        // Select tab 15 (way off-viewport initially)
+        bar.selectTab(15, false);
+        assertTrue(bar.scrollOffset() > 0, "Selecting tab 15 must scroll bar to reveal it");
+
+        List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children = bar.children();
+        net.minecraft.client.gui.components.AbstractWidget btn15 =
+                (net.minecraft.client.gui.components.AbstractWidget) children.get(1 + 15);
+        assertTrue(btn15.getX() >= bar.viewportX(), "Revealed tab 15 X must be >= viewportX");
+        assertTrue(btn15.getRight() <= bar.viewportX() + bar.viewportWidth(), "Revealed tab 15 right must be <= viewport right");
+
+        // Select tab 0: must scroll back to start
+        bar.selectTab(0, false);
+        assertEquals(0, bar.scrollOffset(), "Selecting tab 0 must scroll back to 0");
+        net.minecraft.client.gui.components.AbstractWidget btn0 =
+                (net.minecraft.client.gui.components.AbstractWidget) children.get(1);
+        assertEquals(bar.viewportX(), btn0.getX(), "Tab 0 must be aligned to viewportX");
+    }
+
+    @Test
+    void resizingClampsScrollOffsetAndKeepsSelectedVisible() {
         List<Pool> pools = new ArrayList<>();
         for (int i = 0; i < 30; i++) {
             Track t = track("minecraft:music/test" + i, "Test " + i, "Composer " + i);
@@ -832,75 +1030,104 @@ class TrackWeightScreenTest {
         }
         TrackWeightConfig saved = TrackWeightConfig.defaults();
         TrackWeightScreen screen = new TrackWeightScreen(null, saved, pools);
-        int screenWidth = 1728;
-        screen.initForDimensions(screenWidth, 1080);
+        screen.initForDimensions(1728, 1080);
 
-        net.minecraft.client.gui.components.tabs.TabNavigationBar nav = screen.tabNavigationBar();
-        assertNotNull(nav, "TabNavigationBar must be present");
-        assertEquals(30, nav.getTabs().size());
+        TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
+        // Select pool 20
+        bar.selectTab(20, false);
+        Pool selected = screen.selectedPool();
+        assertEquals("minecraft:music.pool_20", selected.id());
 
-        List<? extends net.minecraft.client.gui.components.events.GuiEventListener> buttons = nav.children();
-        assertEquals(30, buttons.size());
+        // Resize to 800 width
+        screen.initForDimensions(800, 600);
+        TrackWeightScreen.ScrollablePoolTabBar bar800 = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
+        assertEquals(selected, screen.selectedPool(), "Selected pool preserved on resize");
+        assertTrue(bar800.scrollOffset() <= bar800.maxScroll(), "Offset clamped to new maxScroll");
 
-        java.lang.reflect.Field tooltipField = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredField("tooltip");
-        tooltipField.setAccessible(true);
-        java.lang.reflect.Field messageField = net.minecraft.client.gui.components.Tooltip.class.getDeclaredField("message");
-        messageField.setAccessible(true);
+        net.minecraft.client.gui.components.AbstractWidget btn20 =
+                (net.minecraft.client.gui.components.AbstractWidget) bar800.children().get(1 + 20);
+        assertTrue(btn20.getX() >= bar800.viewportX(), "Selected tab must remain visible in viewport after resize");
+        assertTrue(btn20.getRight() <= bar800.viewportX() + bar800.viewportWidth());
 
-        int expectedWidth = TrackWeightScreen.calculateTabWidth(screenWidth, 30);
-        assertEquals(56, expectedWidth);
+        // Resize to 400 narrow
+        screen.initForDimensions(400, 300);
+        TrackWeightScreen.ScrollablePoolTabBar bar400 = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
+        assertEquals(selected, screen.selectedPool(), "Selected pool preserved on narrow resize");
+        assertTrue(bar400.scrollOffset() <= bar400.maxScroll());
+    }
 
+    @Test
+    void thirtyPoolsNoOverlapAndContentExceedsViewport() {
+        List<Pool> pools = new ArrayList<>();
         for (int i = 0; i < 30; i++) {
-            net.minecraft.client.gui.components.AbstractWidget btn = (net.minecraft.client.gui.components.AbstractWidget) buttons.get(i);
-            assertInstanceOf(net.minecraft.client.gui.components.tabs.MenuTabBar.MenuTabButton.class, btn,
-                    "Tab button must be native MenuTabBar.MenuTabButton");
-
-            // Verify concise label on tab and button
-            String conciseExpected = "pool_" + i;
-            assertEquals(conciseExpected, nav.getTabs().get(i).getTabTitle().getString(),
-                    "Tab title must use concise label for pool " + i);
-            assertEquals(conciseExpected, btn.getMessage().getString(),
-                    "Button message must use concise label for pool " + i);
-
-            // Verify full ID in tooltip
-            net.minecraft.client.gui.components.WidgetTooltipHolder holder =
-                    (net.minecraft.client.gui.components.WidgetTooltipHolder) tooltipField.get(btn);
-            assertNotNull(holder);
-            net.minecraft.client.gui.components.Tooltip tooltip = holder.get();
-            assertNotNull(tooltip);
-            net.minecraft.network.chat.Component tooltipMsg = (net.minecraft.network.chat.Component) messageField.get(tooltip);
-            assertEquals("minecraft:music.pool_" + i, tooltipMsg.getString(),
-                    "Tooltip message must retain full original pool ID for pool " + i);
-
-            // Check dimensions
-            assertEquals(expectedWidth, btn.getWidth(), "Button width must match calculated per-tab width");
-            assertEquals(24, btn.getHeight(), "Button height must be 24");
-            assertEquals(0, btn.getY(), "Button Y must be 0");
+            Track t = track("minecraft:music/test" + i, "Test " + i, "Composer " + i);
+            pools.add(new Pool("minecraft:music.pool_" + i, List.of(t), List.of(t.occurrences().getFirst())));
         }
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pools);
+        screen.initForDimensions(800, 600);
 
-        // Headless bounds tests: first starts at x=14, last reaches near width-14
-        net.minecraft.client.gui.components.AbstractWidget firstBtn = (net.minecraft.client.gui.components.AbstractWidget) buttons.get(0);
-        assertEquals(14, firstBtn.getX(), "First tab button must start at x=14");
+        TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
+        assertNotNull(bar);
+        assertTrue(bar.contentWidth() > bar.viewportWidth(), "Content width must exceed 800px viewport");
 
-        net.minecraft.client.gui.components.AbstractWidget lastBtn = (net.minecraft.client.gui.components.AbstractWidget) buttons.get(29);
-        int expectedLastX = 14 + 29 * expectedWidth;
-        assertEquals(expectedLastX, lastBtn.getX(), "Last tab button X position");
-        int expectedLastRight = expectedLastX + expectedWidth;
-        assertEquals(expectedLastRight, lastBtn.getRight(), "Last tab button right boundary");
+        List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children = bar.children();
+        assertEquals(32, children.size(), "Left arrow + 30 tabs + right arrow = 32 children");
 
-        int rightMargin = screenWidth - 14;
-        assertTrue(lastBtn.getRight() <= rightMargin, "Last button must not exceed right margin");
-        int remainder = rightMargin - lastBtn.getRight();
-        assertTrue(remainder < expectedWidth, "Last button must reach near width - 14 (within one tab width remainder)");
+        // Verify adjacency: button[i].right == button[i+1].x for all tabs
+        for (int i = 1; i < 30; i++) {
+            net.minecraft.client.gui.components.AbstractWidget curr = (net.minecraft.client.gui.components.AbstractWidget) children.get(i);
+            net.minecraft.client.gui.components.AbstractWidget next = (net.minecraft.client.gui.components.AbstractWidget) children.get(i + 1);
+            assertEquals(curr.getRight(), next.getX(), "Adjacent tab buttons must touch with zero overlap and zero gap at tab " + i);
+            assertEquals(24, curr.getHeight());
+            assertEquals(0, curr.getY());
+        }
+    }
 
-        // Materially wider than old 14px cap
-        assertTrue(firstBtn.getWidth() >= 40,
-                "Representative 30-pool set must receive materially wider tabs at 1728 width than old 14px (was " + firstBtn.getWidth() + ")");
+    @Test
+    void offViewportButtonsCannotReceiveMouseClicks() {
+        List<Pool> pools = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            Track t = track("minecraft:music/test" + i, "Test " + i, "Composer " + i);
+            pools.add(new Pool("minecraft:music.pool_" + i, List.of(t), List.of(t.occurrences().getFirst())));
+        }
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pools);
+        screen.initForDimensions(600, 400);
 
-        // Test tab switching
-        nav.selectTab(7, false);
-        assertEquals("minecraft:music.pool_7", screen.selectedPool().id(),
-                "Selecting tab 7 must update screen's selected pool");
+        TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
+        bar.setScrollOffset(0);
+
+        // Tab button 0 is in viewport (x = 16..): mouse click at (20, 10) must return tab button 0
+        Optional<net.minecraft.client.gui.components.events.GuiEventListener> child = bar.getChildAt(20, 10);
+        assertTrue(child.isPresent());
+        assertEquals(bar.children().get(1), child.get(), "Mouse over visible tab must return that tab button");
+
+        // At offset 0, left arrow is disabled (inactive), so getChildAt(8, 10) must NOT return any child
+        // and specifically must not return tab buttons that are off-viewport or behind the arrow
+        child = bar.getChildAt(8, 10);
+        assertTrue(child.isEmpty(), "Disabled left arrow must not receive clicks and off-viewport tabs must not receive clicks");
+
+        // Right arrow at offset 0 IS active, so (590, 10) returns right arrow button
+        child = bar.getChildAt(590, 10);
+        assertTrue(child.isPresent());
+        assertEquals(bar.rightButton(), child.get(), "Mouse over active right arrow zone must return right arrow button");
+
+        // Now scroll to middle so left arrow is active
+        bar.setScrollOffset(50);
+        child = bar.getChildAt(8, 10);
+        assertTrue(child.isPresent());
+        assertEquals(bar.leftButton(), child.get(), "Mouse over active left arrow zone must return left arrow button");
+
+        // Button 0 has moved left (x = 16 - 50 = -34, width = 136, right = 102)
+        // Its leftmost part is off-screen (x < 16), but clicks outside viewport (e.g. at x = 8) must not hit button 0
+        assertNotEquals(bar.tabButtons().get(0), child.get());
+
+        // Mouse click outside bar (e.g. x = 700 or y = 30) must return empty
+        child = bar.getChildAt(700, 10);
+        assertTrue(child.isEmpty());
+        child = bar.getChildAt(20, 30);
+        assertTrue(child.isEmpty());
     }
 
     @Test
@@ -917,8 +1144,8 @@ class TrackWeightScreenTest {
         java.lang.reflect.Field tooltipField = net.minecraft.client.gui.components.AbstractWidget.class.getDeclaredField("tooltip");
         tooltipField.setAccessible(true);
 
-        List<? extends net.minecraft.client.gui.components.events.GuiEventListener> buttons =
-                screen.tabNavigationBar().children();
+        List<? extends net.minecraft.client.gui.components.TabButton> buttons =
+                screen.tabNavigationBar().tabButtons();
         assertEquals(2, buttons.size());
 
         for (int i = 0; i < buttons.size(); i++) {

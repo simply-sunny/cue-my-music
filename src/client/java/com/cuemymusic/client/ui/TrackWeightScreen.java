@@ -1,6 +1,7 @@
 package com.cuemymusic.client.ui;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -8,6 +9,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+
+import com.google.common.collect.ImmutableList;
 
 import com.cuemymusic.client.music.MusicDirector;
 import com.cuemymusic.client.music.PinnedMusicInstance;
@@ -18,6 +21,7 @@ import com.cuemymusic.client.music.WeightedMusicCatalog.Pool;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Track;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
@@ -25,7 +29,9 @@ import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.ObjectSelectionList;
+import net.minecraft.client.gui.components.TabButton;
 import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.components.tabs.GridLayoutTab;
 import net.minecraft.client.gui.components.tabs.MenuTabBar;
 import net.minecraft.client.gui.components.tabs.Tab;
@@ -74,7 +80,7 @@ public final class TrackWeightScreen extends Screen {
     private final PreviewState previewState;
     private final TabManager tabManager;
     private final Map<Tab, Pool> tabToPool = new LinkedHashMap<>();
-    private TabNavigationBar tabNavigationBar;
+    private ScrollablePoolTabBar tabNavigationBar;
     private PinnedMusicInstance currentPreviewInstance;
     private Component errorMessage;
 
@@ -265,32 +271,30 @@ public final class TrackWeightScreen extends Screen {
         return title + ", " + artist + ", " + formatMultiplier(multiplier) + "×, " + formatPercent(chance) + "%";
     }
 
-    static String concisePoolLabel(String poolId) {
+    public static int calculateTabWidth(Font font, String poolId) {
         if (poolId == null || poolId.isEmpty()) {
-            return "";
+            return 40;
         }
-        String namespace = "minecraft";
-        String path = poolId;
-        int colon = poolId.indexOf(':');
-        if (colon >= 0) {
-            namespace = poolId.substring(0, colon);
-            path = poolId.substring(colon + 1);
-        }
-        if (path.startsWith("music.")) {
-            path = path.substring("music.".length());
-        }
-        if ("minecraft".equals(namespace)) {
-            return path;
-        }
-        return namespace + ":" + path;
+        int textWidth = font != null ? font.width(poolId) : (poolId.length() * 6);
+        return Math.max(40, textWidth + 16);
     }
 
-    static int calculateTabWidth(int screenWidth, int tabCount) {
-        if (tabCount <= 0) {
+    public static int calculateTabWidth(String poolId) {
+        return calculateTabWidth(null, poolId);
+    }
+
+    public static int calculateRevealOffset(int currentOffset, int tabLeft, int tabWidth, int viewportWidth, int maxScroll) {
+        if (maxScroll <= 0) {
             return 0;
         }
-        int available = screenWidth - 28;
-        return Math.max(2, available / tabCount);
+        int tabRight = tabLeft + tabWidth;
+        int target = currentOffset;
+        if (tabWidth >= viewportWidth || tabLeft < currentOffset) {
+            target = tabLeft;
+        } else if (tabRight > currentOffset + viewportWidth) {
+            target = tabRight - viewportWidth;
+        }
+        return Math.clamp(target, 0, maxScroll);
     }
 
     void selectTrack(String resourceId) {
@@ -405,6 +409,9 @@ public final class TrackWeightScreen extends Screen {
     }
 
     private void onTabSelected(Tab tab) {
+        if (this.tabNavigationBar != null) {
+            this.tabNavigationBar.revealTab(tab);
+        }
         Pool pool = tabToPool.get(tab);
         if (pool != null && pool != model.selectedPool()) {
             onPoolChanged(pool);
@@ -481,29 +488,21 @@ public final class TrackWeightScreen extends Screen {
 
         if (!model.pools().isEmpty()) {
             tabToPool.clear();
-            int navX = 14;
-            int navY = 0;
-            int navWidth = Math.max(0, this.width - 28);
             int navHeight = 24;
-            int count = model.pools().size();
-            int tabWidth = calculateTabWidth(this.width, count);
-
-            TabNavigationBar.Builder builder = TabNavigationBar.builder(this.tabManager, navX, navY, navWidth, navHeight);
-            for (Pool pool : model.pools()) {
-                GridLayoutTab tab = new GridLayoutTab(Component.literal(concisePoolLabel(pool.id())));
-                tabToPool.put(tab, pool);
-                MenuTabBar.MenuTabButton button = new MenuTabBar.MenuTabButton(this.tabManager, tab, tabWidth, navHeight);
-                builder.addTab(button, tab);
-            }
-            this.tabNavigationBar = builder.build();
-            List<Pool> pools = model.pools();
-            for (int i = 0; i < pools.size(); i++) {
-                this.tabNavigationBar.setTabTooltip(i, Tooltip.create(Component.literal(pools.get(i).id())));
-            }
+            this.tabNavigationBar = ScrollablePoolTabBar.create(
+                    this.tabManager,
+                    model.pools(),
+                    this.tabToPool,
+                    this.font,
+                    this.width,
+                    navHeight);
             addRenderableWidget(this.tabNavigationBar);
 
             int selectedIndex = model.pools().indexOf(model.selectedPool());
-            this.tabNavigationBar.selectTab(selectedIndex >= 0 ? selectedIndex : 0, false);
+            int indexToSelect = selectedIndex >= 0 ? selectedIndex : 0;
+            this.tabNavigationBar.selectTab(indexToSelect, false);
+            this.tabNavigationBar.revealTab(indexToSelect);
+
             int bottom = this.tabNavigationBar.getRectangle().bottom();
             ScreenRectangle tabArea = new ScreenRectangle(0, bottom, this.width, Math.max(0, this.height - bottom));
             this.tabManager.setTabArea(tabArea);
@@ -762,18 +761,19 @@ public final class TrackWeightScreen extends Screen {
     }
 
     @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (this.tabNavigationBar != null && this.tabNavigationBar.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
     protected void extractMenuBackground(GuiGraphicsExtractor extractor) {
         if (this.tabNavigationBar != null) {
             int headerHeight = this.tabNavigationBar.getRectangle().bottom();
             extractor.blit(RenderPipelines.GUI_TEXTURED, CreateWorldScreen.TAB_HEADER_BACKGROUND, 0, 0, 0.0F, 0.0F, this.width, headerHeight, 16, 16);
-            int firstX = this.tabNavigationBar.getX();
-            if (firstX > 0) {
-                extractor.blit(RenderPipelines.GUI_TEXTURED, HEADER_SEPARATOR, 0, headerHeight - 2, 0.0F, 0.0F, firstX, 2, 32, 2);
-            }
-            int lastRight = this.tabNavigationBar.getRectangle().right();
-            if (this.width > lastRight) {
-                extractor.blit(RenderPipelines.GUI_TEXTURED, HEADER_SEPARATOR, lastRight, headerHeight - 2, 0.0F, 0.0F, this.width - lastRight, 2, 32, 2);
-            }
+            extractor.blit(RenderPipelines.GUI_TEXTURED, HEADER_SEPARATOR, 0, headerHeight - 2, 0.0F, 0.0F, this.width, 2, 32, 2);
             this.extractMenuBackground(extractor, 0, headerHeight, this.width, this.height);
         } else {
             super.extractMenuBackground(extractor);
@@ -846,7 +846,7 @@ public final class TrackWeightScreen extends Screen {
         return radialWheel;
     }
 
-    TabNavigationBar tabNavigationBar() {
+    ScrollablePoolTabBar tabNavigationBar() {
         return tabNavigationBar;
     }
 
@@ -1320,6 +1320,274 @@ public final class TrackWeightScreen extends Screen {
         public void extractRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickProgress) {
             super.extractRenderState(extractor, mouseX, mouseY, tickProgress);
             extractor.centeredText(font, title, width / 2, 14, 0xFFFFFF);
+        }
+    }
+
+    public static final class ScrollablePoolTabBar extends TabNavigationBar {
+        private static final int ARROW_WIDTH = 16;
+        private static final int SCROLL_STEP = 40;
+
+        private final Font font;
+        private final Button leftButton;
+        private final Button rightButton;
+        private int scrollOffset;
+        private int contentWidth;
+        private int viewportX;
+        private int viewportWidth;
+
+        public ScrollablePoolTabBar(
+                int x,
+                int y,
+                int width,
+                int height,
+                TabManager tabManager,
+                ImmutableList<TabButton> tabButtons,
+                ImmutableList<Tab> tabs,
+                Font font) {
+            super(x, y, width, height, tabManager, tabButtons, tabs);
+            this.font = font;
+            this.leftButton = Button.builder(Component.literal("<"), b -> scrollBy(-SCROLL_STEP))
+                    .bounds(x, y, ARROW_WIDTH, height)
+                    .createNarration(supplier -> Component.literal("Scroll tabs left"))
+                    .build();
+            this.rightButton = Button.builder(Component.literal(">"), b -> scrollBy(SCROLL_STEP))
+                    .bounds(Math.max(0, x + width - ARROW_WIDTH), y, ARROW_WIDTH, height)
+                    .createNarration(supplier -> Component.literal("Scroll tabs right"))
+                    .build();
+            this.arrangeElements(width);
+        }
+
+        public static ScrollablePoolTabBar create(
+                TabManager tabManager,
+                List<Pool> pools,
+                Map<Tab, Pool> tabToPool,
+                Font font,
+                int screenWidth,
+                int height) {
+            ImmutableList.Builder<TabButton> buttonsBuilder = ImmutableList.builder();
+            ImmutableList.Builder<Tab> tabsBuilder = ImmutableList.builder();
+            for (Pool pool : pools) {
+                GridLayoutTab tab = new GridLayoutTab(Component.literal(pool.id()));
+                tabToPool.put(tab, pool);
+                int btnWidth = calculateTabWidth(font, pool.id());
+                MenuTabBar.MenuTabButton button = new MenuTabBar.MenuTabButton(tabManager, tab, btnWidth, height);
+                buttonsBuilder.add(button);
+                tabsBuilder.add(tab);
+            }
+            ScrollablePoolTabBar bar = new ScrollablePoolTabBar(
+                    0, 0, screenWidth, height, tabManager, buttonsBuilder.build(), tabsBuilder.build(), font);
+            for (int i = 0; i < pools.size(); i++) {
+                bar.setTabTooltip(i, Tooltip.create(Component.literal(pools.get(i).id())));
+            }
+            return bar;
+        }
+
+        public int scrollOffset() {
+            return scrollOffset;
+        }
+
+        public int contentWidth() {
+            return contentWidth;
+        }
+
+        public int viewportX() {
+            return viewportX;
+        }
+
+        public int viewportWidth() {
+            return viewportWidth;
+        }
+
+        public int maxScroll() {
+            return Math.max(0, contentWidth - viewportWidth);
+        }
+
+        public Button leftButton() {
+            return leftButton;
+        }
+
+        public Button rightButton() {
+            return rightButton;
+        }
+
+        public ImmutableList<TabButton> tabButtons() {
+            return this.tabButtons;
+        }
+
+        public void setScrollOffset(int offset) {
+            int max = maxScroll();
+            this.scrollOffset = Math.clamp(offset, 0, max);
+            updatePositions();
+            updateArrowStates();
+        }
+
+        public void scrollBy(int delta) {
+            setScrollOffset(this.scrollOffset + delta);
+        }
+
+        public void revealTab(int index) {
+            if (index < 0 || index >= this.tabButtons.size()) {
+                return;
+            }
+            int tabLeft = 0;
+            for (int i = 0; i < index; i++) {
+                tabLeft += this.tabButtons.get(i).getWidth();
+            }
+            int tabWidth = this.tabButtons.get(index).getWidth();
+            int newOffset = calculateRevealOffset(this.scrollOffset, tabLeft, tabWidth, this.viewportWidth, maxScroll());
+            setScrollOffset(newOffset);
+        }
+
+        public void revealTab(Tab tab) {
+            int index = this.tabs.indexOf(tab);
+            if (index >= 0) {
+                revealTab(index);
+            }
+        }
+
+        public boolean isInsideViewport(double mouseX, double mouseY) {
+            return mouseX >= this.viewportX && mouseX < (this.viewportX + this.viewportWidth)
+                    && mouseY >= getY() && mouseY <= (getY() + getHeight());
+        }
+
+        @Override
+        public void arrangeElements(int width) {
+            this.width = width;
+            this.viewportX = ARROW_WIDTH;
+            this.viewportWidth = Math.max(0, width - (ARROW_WIDTH * 2));
+
+            this.leftButton.setX(0);
+            this.leftButton.setY(0);
+            this.leftButton.setWidth(ARROW_WIDTH);
+            this.leftButton.setHeight(this.height);
+
+            this.rightButton.setX(Math.max(0, width - ARROW_WIDTH));
+            this.rightButton.setY(0);
+            this.rightButton.setWidth(ARROW_WIDTH);
+            this.rightButton.setHeight(this.height);
+
+            int totalW = 0;
+            for (TabButton button : this.tabButtons) {
+                int btnW = calculateTabWidth(this.font, button.tab().getTabTitle().getString());
+                button.setWidth(btnW);
+                button.setHeight(this.height);
+                totalW += btnW;
+            }
+            this.contentWidth = totalW;
+
+            int max = maxScroll();
+            this.scrollOffset = Math.clamp(this.scrollOffset, 0, max);
+
+            updatePositions();
+            updateArrowStates();
+        }
+
+        private void updatePositions() {
+            int currentX = this.viewportX - this.scrollOffset;
+            for (TabButton button : this.tabButtons) {
+                button.setX(currentX);
+                button.setY(0);
+                currentX += button.getWidth();
+            }
+        }
+
+        private void updateArrowStates() {
+            int max = maxScroll();
+            this.leftButton.active = this.scrollOffset > 0;
+            this.rightButton.active = this.scrollOffset < max;
+        }
+
+        @Override
+        public ScreenRectangle getRectangle() {
+            return new ScreenRectangle(getX(), getY(), getWidth(), getHeight());
+        }
+
+        @Override
+        public boolean isMouseOver(double mouseX, double mouseY) {
+            return mouseX >= getX() && mouseX <= (getX() + getWidth())
+                    && mouseY >= getY() && mouseY <= (getY() + getHeight());
+        }
+
+        @Override
+        public Optional<GuiEventListener> getChildAt(double mouseX, double mouseY) {
+            if (this.leftButton.isMouseOver(mouseX, mouseY)) {
+                return Optional.of(this.leftButton);
+            }
+            if (this.rightButton.isMouseOver(mouseX, mouseY)) {
+                return Optional.of(this.rightButton);
+            }
+            if (isInsideViewport(mouseX, mouseY)) {
+                for (TabButton button : this.tabButtons) {
+                    if (button.isMouseOver(mouseX, mouseY)) {
+                        return Optional.of(button);
+                    }
+                }
+            }
+            return Optional.empty();
+        }
+
+        @Override
+        public List<? extends GuiEventListener> children() {
+            List<GuiEventListener> all = new ArrayList<>(this.tabButtons.size() + 2);
+            all.add(this.leftButton);
+            all.addAll(this.tabButtons);
+            all.add(this.rightButton);
+            return all;
+        }
+
+        @Override
+        public void selectTab(int index, boolean playSound) {
+            super.selectTab(index, playSound);
+            revealTab(index);
+        }
+
+        @Override
+        public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+            if (!isMouseOver(mouseX, mouseY)) {
+                return false;
+            }
+            if (maxScroll() <= 0) {
+                return false;
+            }
+            double delta = (scrollX != 0.0) ? scrollX : scrollY;
+            if (delta == 0.0) {
+                return false;
+            }
+            int step = (int) Math.round(-Math.signum(delta) * SCROLL_STEP);
+            scrollBy(step);
+            return true;
+        }
+
+        @Override
+        protected void extractWidgetRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickProgress) {
+            this.leftButton.extractRenderState(extractor, mouseX, mouseY, tickProgress);
+            this.rightButton.extractRenderState(extractor, mouseX, mouseY, tickProgress);
+
+            int contentRight = this.viewportX + this.contentWidth - this.scrollOffset;
+            int viewportRight = this.viewportX + this.viewportWidth;
+            if (contentRight < viewportRight) {
+                int separatorX = Math.max(this.viewportX, contentRight);
+                int separatorW = viewportRight - separatorX;
+                if (separatorW > 0) {
+                    extractor.blit(RenderPipelines.GUI_TEXTURED, Screen.HEADER_SEPARATOR,
+                            separatorX, getHeight() - 2, 0.0F, 0.0F, separatorW, 2, 32, 2);
+                }
+            }
+
+            boolean insideViewport = isInsideViewport(mouseX, mouseY);
+            int tabMouseX = insideViewport ? mouseX : -1;
+            int tabMouseY = insideViewport ? mouseY : -1;
+
+            extractor.enableScissor(this.viewportX, getY(), viewportRight, getY() + getHeight());
+            try {
+                for (TabButton button : this.tabButtons) {
+                    if (button.getRight() > this.viewportX && button.getX() < viewportRight) {
+                        button.extractRenderState(extractor, tabMouseX, tabMouseY, tickProgress);
+                    }
+                }
+            } finally {
+                extractor.disableScissor();
+            }
         }
     }
 }
