@@ -1095,6 +1095,9 @@ public final class TrackWeightScreen extends Screen {
     }
 
     public static final class TrackEntry extends ObjectSelectionList.Entry<TrackEntry> {
+        static final int TITLE_COLOR = 0xFFFFFFFF;
+        static final int DETAIL_COLOR = 0xFFAAAAAA;
+
         final TrackList list;
         final Track track;
         private double multiplier;
@@ -1123,11 +1126,11 @@ public final class TrackWeightScreen extends Screen {
 
             net.minecraft.client.gui.Font font = list.font();
             if (font != null) {
-                graphics.text(font, track.title(), x + 4, textY, 0xFFFFFF);
+                graphics.text(font, track.title(), x + 4, textY, TITLE_COLOR);
 
                 String rightText = formatMultiplier(multiplier) + "×  " + formatPercent(chance) + "%";
                 int textWidth = font.width(rightText);
-                graphics.text(font, rightText, x + w - textWidth - 6, textY, 0xAAAAAA);
+                graphics.text(font, rightText, x + w - textWidth - 6, textY, DETAIL_COLOR);
             }
         }
 

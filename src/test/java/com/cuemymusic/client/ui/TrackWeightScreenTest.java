@@ -630,4 +630,10 @@ class TrackWeightScreenTest {
         assertFalse(screen.previewState().isPlaying());
         assertEquals("Play Sound", previewBtn.getMessage().getString());
     }
+
+    @Test
+    void trackEntryTextColorsAreOpaqueArgb() {
+        assertEquals(0xFF, (TrackWeightScreen.TrackEntry.TITLE_COLOR >>> 24) & 0xFF, "Title color must have full alpha");
+        assertEquals(0xFF, (TrackWeightScreen.TrackEntry.DETAIL_COLOR >>> 24) & 0xFF, "Detail color must have full alpha");
+    }
 }

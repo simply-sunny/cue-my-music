@@ -14,7 +14,7 @@ Deterministic vanilla background music with a boxed Pause-screen transport: Play
 - **Channel Play/Pause**: Pauses only the background music channel without disrupting world sounds, ambient audio, or global volume resets.
 - **Draggable Scrub Bar**: Real-time seeking via off-thread stream skipping and compressed OGG framing duration detection.
 - **Deterministic Session Isolation**: Seeded per-session music planner maintaining deterministic context-aware track selection across world joins and disconnects.
-- **Zero Bloat**: No external audio codecs, downloads, background services, custom registries, or extraneous configuration screens.
+- **Zero Bloat**: No external audio codecs, downloads, background services, or custom registries.
 
 ## Requirements
 
@@ -40,6 +40,19 @@ Deterministic vanilla background music with a boxed Pause-screen transport: Play
   - **Next**: Immediately advance to the next context-appropriate track.
   - **End**: Stop the current song and trigger natural vanilla cooldown delay before next track.
   - **Scrub Bar**: Click or drag slider (or use arrow keys when focused) to seek within the song.
+
+### Track weighting
+
+Open **Mod Menu → Cue My Music → ⚙ Configure Track Pools…**. Cue My Music discovers loaded music pools and resource-pack tracks dynamically. `1×` preserves native chance, `0×` disables a track, and **Mute 0×** silences the selected pool. **Done** saves to `config/cue-my-music.json`; Esc discards the draft.
+
+The radial chance wheel is CPU-generated and displayed through Minecraft's ordinary GUI texture path; it has no OpenGL, Vulkan, Metal, shader, or Fabric rendering API dependency.
+
+- **Pool Actions**: Quick actions adjust the active pool: **All 1×** resets weights to vanilla distribution, **C418 2×** doubles original soundtrack weight, and **Mute 0×** disables all tracks in the pool.
+- **Anti-Repeat**: Prevents immediate back-to-back song repeats across world sessions when another eligible track exists in the pool.
+- **Test Roll**: Samples candidate selection using current draft weights without starting playback, highlighting the chosen track in the list and wheel.
+- **Track Preview**: Listen to any highlighted track directly with play/pause preview controls; active music resumes cleanly after previewing.
+- **JSON Copy**: View or copy raw configuration JSON directly to the clipboard.
+- **Responsive Layout**: On wider windows, an interactive radial probability wheel displays relative track chances with hover inspection and click selection; on narrow windows, the wheel automatically collapses into an accessible, fully navigable native list fallback.
 
 ## Build
 
