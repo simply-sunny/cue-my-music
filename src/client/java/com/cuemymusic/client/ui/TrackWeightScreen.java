@@ -365,11 +365,172 @@ public final class TrackWeightScreen extends Screen {
         return title + ", " + artist + ", " + formatMultiplier(multiplier) + "×, " + formatPercent(chance) + "%";
     }
 
+    public static String poolDisplayName(String poolId) {
+        if (poolId == null || poolId.isEmpty()) {
+            return "";
+        }
+        String namespace;
+        String path;
+        int colon = poolId.indexOf(':');
+        if (colon >= 0) {
+            namespace = poolId.substring(0, colon);
+            path = poolId.substring(colon + 1);
+        } else {
+            namespace = "minecraft";
+            path = poolId;
+        }
+
+        if (namespace.equals("minecraft")) {
+            if (path.equals("music.creative") || path.equals("creative")) {
+                return "Creative";
+            }
+            if (path.equals("music.credits") || path.equals("credits")) {
+                return "Credits";
+            }
+            if (path.equals("music.dragon") || path.equals("dragon")) {
+                return "Ender Dragon";
+            }
+            if (path.equals("music.end") || path.equals("end")) {
+                return "The End";
+            }
+            if (path.equals("music.game") || path.equals("game")) {
+                return "Survival";
+            }
+            if (path.equals("music.menu") || path.equals("menu")) {
+                return "Main Menu";
+            }
+            if (path.equals("music.under_water") || path.equals("music.underwater")
+                    || path.equals("under_water") || path.equals("underwater")) {
+                return "Underwater";
+            }
+            if (path.equals("music.nether") || path.equals("nether")) {
+                return "Nether";
+            }
+            if (path.equals("music.overworld") || path.equals("overworld")) {
+                return "Overworld";
+            }
+
+            if (path.startsWith("music.overworld.")) {
+                String place = path.substring("music.overworld.".length());
+                return titleCase(place);
+            }
+
+            if (path.startsWith("music.nether.")) {
+                String place = path.substring("music.nether.".length());
+                return titleCase(place);
+            }
+
+            String subPath = path;
+            if (subPath.startsWith("music.")) {
+                subPath = subPath.substring("music.".length());
+            } else if (subPath.startsWith("music/")) {
+                subPath = subPath.substring("music/".length());
+            }
+            return titleCase(subPath);
+        }
+
+        String subPath = path;
+        if (subPath.startsWith("music.")) {
+            subPath = subPath.substring("music.".length());
+        } else if (subPath.startsWith("music/")) {
+            subPath = subPath.substring("music/".length());
+        }
+        return namespace + ": " + titleCase(subPath);
+    }
+
+    public static String poolTooltip(String poolId) {
+        if (poolId == null || poolId.isEmpty()) {
+            return "";
+        }
+        String namespace;
+        String path;
+        int colon = poolId.indexOf(':');
+        if (colon >= 0) {
+            namespace = poolId.substring(0, colon);
+            path = poolId.substring(colon + 1);
+        } else {
+            namespace = "minecraft";
+            path = poolId;
+        }
+
+        if (namespace.equals("minecraft")) {
+            if (path.equals("music.creative") || path.equals("creative")) {
+                return "Plays in Creative mode";
+            }
+            if (path.equals("music.credits") || path.equals("credits")) {
+                return "Plays during the end credits";
+            }
+            if (path.equals("music.dragon") || path.equals("dragon")) {
+                return "Plays during the Ender Dragon fight";
+            }
+            if (path.equals("music.end") || path.equals("end")) {
+                return "Plays in The End";
+            }
+            if (path.equals("music.game") || path.equals("game")) {
+                return "Plays in Survival mode";
+            }
+            if (path.equals("music.menu") || path.equals("menu")) {
+                return "Plays on the main menu";
+            }
+            if (path.equals("music.under_water") || path.equals("music.underwater")
+                    || path.equals("under_water") || path.equals("underwater")) {
+                return "Plays while underwater";
+            }
+            if (path.equals("music.nether") || path.equals("nether")) {
+                return "Plays in the Nether";
+            }
+            if (path.equals("music.overworld") || path.equals("overworld")) {
+                return "Plays in the Overworld";
+            }
+
+            if (path.startsWith("music.overworld.")) {
+                String place = path.substring("music.overworld.".length());
+                return "Plays in the " + titleCase(place) + " Overworld biome";
+            }
+
+            if (path.startsWith("music.nether.")) {
+                String place = path.substring("music.nether.".length());
+                return "Plays in the " + titleCase(place) + " Nether biome";
+            }
+        }
+
+        return "Custom music pool: " + poolId;
+    }
+
+    static String titleCase(String input) {
+        if (input == null || input.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        boolean capitalizeNext = true;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (c == '_' || c == '.' || c == '/' || c == '-') {
+                if (!sb.isEmpty() && sb.charAt(sb.length() - 1) != ' ') {
+                    sb.append(' ');
+                }
+                capitalizeNext = true;
+            } else if (Character.isWhitespace(c)) {
+                if (!sb.isEmpty() && sb.charAt(sb.length() - 1) != ' ') {
+                    sb.append(' ');
+                }
+                capitalizeNext = true;
+            } else if (capitalizeNext) {
+                sb.append(Character.toUpperCase(c));
+                capitalizeNext = false;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString().trim();
+    }
+
     public static int calculateTabWidth(Font font, String poolId) {
         if (poolId == null || poolId.isEmpty()) {
             return 40;
         }
-        int textWidth = font != null ? font.width(poolId) : (poolId.length() * 6);
+        String label = poolDisplayName(poolId);
+        int textWidth = font != null ? font.width(label) : (label.length() * 6);
         return Math.max(40, textWidth + 16);
     }
 
@@ -1497,9 +1658,16 @@ public final class TrackWeightScreen extends Screen {
             ImmutableList.Builder<TabButton> buttonsBuilder = ImmutableList.builder();
             ImmutableList.Builder<Tab> tabsBuilder = ImmutableList.builder();
             for (Pool pool : pools) {
-                GridLayoutTab tab = new GridLayoutTab(Component.literal(pool.id()));
+                String displayName = poolDisplayName(pool.id());
+                String tooltipText = poolTooltip(pool.id());
+                GridLayoutTab tab = new GridLayoutTab(Component.literal(displayName)) {
+                    @Override
+                    public Component getTabExtraNarration() {
+                        return Component.literal(tooltipText);
+                    }
+                };
                 tabToPool.put(tab, pool);
-                int btnWidth = calculateTabWidth(font, pool.id());
+                int btnWidth = calculateTabWidth(font, displayName);
                 MenuTabBar.MenuTabButton button = new MenuTabBar.MenuTabButton(tabManager, tab, btnWidth, height);
                 buttonsBuilder.add(button);
                 tabsBuilder.add(tab);
@@ -1507,7 +1675,7 @@ public final class TrackWeightScreen extends Screen {
             ScrollablePoolTabBar bar = new ScrollablePoolTabBar(
                     x, y, width, height, tabManager, buttonsBuilder.build(), tabsBuilder.build(), font);
             for (int i = 0; i < pools.size(); i++) {
-                bar.setTabTooltip(i, Tooltip.create(Component.literal(pools.get(i).id())));
+                bar.setTabTooltip(i, Tooltip.create(Component.literal(poolTooltip(pools.get(i).id()))));
             }
             return bar;
         }

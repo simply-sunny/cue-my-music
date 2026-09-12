@@ -89,7 +89,7 @@ class TrackWeightScreenTest {
     }
 
     @Test
-    void poolTabsPreserveFullIdsAndClampedWheelScrollingAndReveal() {
+    void poolTabsUseCleanTitlesAndClampedWheelScrollingAndReveal() {
         TrackWeightScreen screen = screenWithPools(30);
         screen.width = 1000;
         screen.height = 600;
@@ -97,10 +97,10 @@ class TrackWeightScreenTest {
         TrackWeightScreen.ScrollablePoolTabBar bar = screen.tabNavigationBar();
         Bounds workspace = TrackWeightScreen.workspaceBounds(1000, 600);
 
-        // Full pool IDs remain tab titles
+        // Clean category titles on tab buttons
         for (int i = 0; i < 30; i++) {
             TabButton tabBtn = bar.tabButtons().get(i);
-            assertEquals("minecraft:music.pool_" + i, tabBtn.getMessage().getString());
+            assertEquals("Pool " + i, tabBtn.getMessage().getString());
         }
 
         // Wheel scrolling clamps inside maxScroll()
@@ -910,8 +910,8 @@ class TrackWeightScreenTest {
 
         assertNotNull(wideScreen.tabNavigationBar(), "Tab bar must exist in wide layout");
         assertEquals(2, wideScreen.tabNavigationBar().getTabs().size(), "Tab bar must have one tab per pool");
-        assertEquals("minecraft:music.game", wideScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
-        assertEquals("minecraft:music.nether", wideScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
+        assertEquals("Survival", wideScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
+        assertEquals("Nether", wideScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
         assertEquals(pool1, wideScreen.selectedPool(), "First pool must be selected initially");
 
         // Verify no CycleButton for Pool exists in wide layout
@@ -926,8 +926,8 @@ class TrackWeightScreenTest {
 
         assertNotNull(narrowScreen.tabNavigationBar(), "Tab bar must exist in narrow layout");
         assertEquals(2, narrowScreen.tabNavigationBar().getTabs().size(), "Tab bar must have one tab per pool");
-        assertEquals("minecraft:music.game", narrowScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
-        assertEquals("minecraft:music.nether", narrowScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
+        assertEquals("Survival", narrowScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
+        assertEquals("Nether", narrowScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
 
         // Verify no CycleButton for Pool exists in narrow layout
         boolean hasPoolCycleButtonNarrow = narrowScreen.children().stream()
@@ -1009,14 +1009,14 @@ class TrackWeightScreenTest {
 
         assertEquals(pool2, screen.selectedPool(), "Selected pool must be preserved across resize");
         assertNotNull(screen.tabNavigationBar());
-        assertEquals("minecraft:music.nether", screen.tabManager().getCurrentTab().getTabTitle().getString(),
+        assertEquals("Nether", screen.tabManager().getCurrentTab().getTabTitle().getString(),
                 "Tab manager must have pool 2's tab selected after resize");
         assertEquals(nether2, screen.selectedTrack(), "Selected track within pool must not reset to first track on resize");
         assertTrue(screen.previewState().isPlaying(), "Active preview must not be stopped on resize");
     }
 
     @Test
-    void fullNamesInTabTitlesAndButtons() {
+    void cleanCategoryNamesInTabTitlesAndButtons() {
         Pool pool1 = poolWithC418AndUnknown();
         Track netherTrack = track("minecraft:music/nether/rubedo", "Rubedo", "Lena Raine");
         Pool pool2 = new Pool("minecraft:music.nether", List.of(netherTrack),
@@ -1033,9 +1033,9 @@ class TrackWeightScreenTest {
         assertNotNull(tabBar);
         assertEquals(3, tabBar.getTabs().size());
 
-        assertEquals("minecraft:music.game", tabBar.getTabs().get(0).getTabTitle().getString());
-        assertEquals("minecraft:music.nether", tabBar.getTabs().get(1).getTabTitle().getString());
-        assertEquals("custom_mod:ambient.cave", tabBar.getTabs().get(2).getTabTitle().getString());
+        assertEquals("Survival", tabBar.getTabs().get(0).getTabTitle().getString());
+        assertEquals("Nether", tabBar.getTabs().get(1).getTabTitle().getString());
+        assertEquals("custom_mod: Ambient Cave", tabBar.getTabs().get(2).getTabTitle().getString());
 
         List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children = tabBar.children();
         assertEquals(3, children.size(), "Tab bar should contain only tab buttons, no arrow buttons");
@@ -1045,24 +1045,24 @@ class TrackWeightScreenTest {
         net.minecraft.client.gui.components.AbstractWidget btn1 = (net.minecraft.client.gui.components.AbstractWidget) children.get(1);
         net.minecraft.client.gui.components.AbstractWidget btn2 = (net.minecraft.client.gui.components.AbstractWidget) children.get(2);
 
-        assertEquals("minecraft:music.game", btn0.getMessage().getString());
-        assertEquals("minecraft:music.nether", btn1.getMessage().getString());
-        assertEquals("custom_mod:ambient.cave", btn2.getMessage().getString());
+        assertEquals("Survival", btn0.getMessage().getString());
+        assertEquals("Nether", btn1.getMessage().getString());
+        assertEquals("custom_mod: Ambient Cave", btn2.getMessage().getString());
     }
 
     @Test
     void calculateTabWidthDerivedFromFontMetricsAndPaddingWithoutTruncation() {
         // Fallback font metrics (null font): text length * 6 + 16, min 40
-        assertEquals(Math.max(40, "minecraft:music.game".length() * 6 + 16),
+        assertEquals(Math.max(40, "Survival".length() * 6 + 16),
                 TrackWeightScreen.calculateTabWidth("minecraft:music.game"));
-        assertEquals(Math.max(40, "credits".length() * 6 + 16),
+        assertEquals(Math.max(40, "Credits".length() * 6 + 16),
                 TrackWeightScreen.calculateTabWidth("credits"));
         assertEquals(40, TrackWeightScreen.calculateTabWidth(""));
         assertEquals(40, TrackWeightScreen.calculateTabWidth(null));
 
-        // Derived width must accommodate full string without truncation
+        // Derived width must accommodate clean display name without truncation
         int widthGame = TrackWeightScreen.calculateTabWidth("minecraft:music.game");
-        assertTrue(widthGame >= "minecraft:music.game".length() * 6 + 16);
+        assertTrue(widthGame >= "Survival".length() * 6 + 16);
     }
 
     @Test
@@ -1310,7 +1310,7 @@ class TrackWeightScreenTest {
     }
 
     @Test
-    void everyTabButtonReceivesFullPoolIdTooltip() throws Exception {
+    void everyTabButtonReceivesContextualTooltipAndNarration() throws Exception {
         Pool pool1 = poolWithC418AndUnknown();
         Track netherTrack = track("minecraft:music/nether/rubedo", "Rubedo", "Lena Raine");
         Pool pool2 = new Pool("minecraft:music.nether", List.of(netherTrack),
@@ -1338,8 +1338,79 @@ class TrackWeightScreenTest {
             java.lang.reflect.Field messageField = net.minecraft.client.gui.components.Tooltip.class.getDeclaredField("message");
             messageField.setAccessible(true);
             net.minecraft.network.chat.Component msg = (net.minecraft.network.chat.Component) messageField.get(tooltip);
-            assertEquals(i == 0 ? pool1.id() : pool2.id(), msg.getString(),
-                    "Tooltip message must match full pool ID for tab " + i);
+            String expectedTooltip = i == 0 ? "Plays in Survival mode" : "Plays in the Nether";
+            assertEquals(expectedTooltip, msg.getString(),
+                    "Tooltip message must match contextual copy for tab " + i);
+
+            assertEquals(expectedTooltip,
+                    screen.tabNavigationBar().getTabs().get(i).getTabExtraNarration().getString(),
+                    "Tab extra narration must supply contextual copy for tab " + i);
         }
+    }
+
+    @Test
+    void poolDisplayNameMapsKnownVanillaTopLevel() {
+        assertEquals("Creative", TrackWeightScreen.poolDisplayName("minecraft:music.creative"));
+        assertEquals("Credits", TrackWeightScreen.poolDisplayName("minecraft:music.credits"));
+        assertEquals("Ender Dragon", TrackWeightScreen.poolDisplayName("minecraft:music.dragon"));
+        assertEquals("The End", TrackWeightScreen.poolDisplayName("minecraft:music.end"));
+        assertEquals("Survival", TrackWeightScreen.poolDisplayName("minecraft:music.game"));
+        assertEquals("Main Menu", TrackWeightScreen.poolDisplayName("minecraft:music.menu"));
+        assertEquals("Underwater", TrackWeightScreen.poolDisplayName("minecraft:music.underwater"));
+        assertEquals("Underwater", TrackWeightScreen.poolDisplayName("minecraft:music.under_water"));
+        assertEquals("Nether", TrackWeightScreen.poolDisplayName("minecraft:music.nether"));
+        assertEquals("Overworld", TrackWeightScreen.poolDisplayName("minecraft:music.overworld"));
+
+        // Unprefixed / short forms
+        assertEquals("Survival", TrackWeightScreen.poolDisplayName("music.game"));
+        assertEquals("Creative", TrackWeightScreen.poolDisplayName("creative"));
+    }
+
+    @Test
+    void poolDisplayNameMapsOverworldAndNetherPlaces() {
+        assertEquals("Cherry Grove", TrackWeightScreen.poolDisplayName("minecraft:music.overworld.cherry_grove"));
+        assertEquals("Deep Dark", TrackWeightScreen.poolDisplayName("minecraft:music.overworld.deep_dark"));
+        assertEquals("Dripstone Caves", TrackWeightScreen.poolDisplayName("minecraft:music.overworld.dripstone_caves"));
+        assertEquals("Old Growth Taiga", TrackWeightScreen.poolDisplayName("minecraft:music.overworld.old_growth_taiga"));
+        assertEquals("Crimson Forest", TrackWeightScreen.poolDisplayName("minecraft:music.nether.crimson_forest"));
+        assertEquals("Basalt Deltas", TrackWeightScreen.poolDisplayName("minecraft:music.nether.basalt_deltas"));
+        assertEquals("Nether Wastes", TrackWeightScreen.poolDisplayName("minecraft:music.nether.nether_wastes"));
+    }
+
+    @Test
+    void poolDisplayNameMapsCustomAndUnknownPools() {
+        assertEquals("Pool 0", TrackWeightScreen.poolDisplayName("minecraft:music.pool_0"));
+        assertEquals("Pool 29", TrackWeightScreen.poolDisplayName("minecraft:music.pool_29"));
+        assertEquals("custom_mod: Ambient Cave", TrackWeightScreen.poolDisplayName("custom_mod:ambient.cave"));
+        assertEquals("other: Pool", TrackWeightScreen.poolDisplayName("other:pool"));
+        assertEquals("mod: Battle", TrackWeightScreen.poolDisplayName("mod:music.battle"));
+    }
+
+    @Test
+    void poolTooltipMapsKnownContextsAndCustomPools() {
+        assertEquals("Plays in Creative mode", TrackWeightScreen.poolTooltip("minecraft:music.creative"));
+        assertEquals("Plays during the end credits", TrackWeightScreen.poolTooltip("minecraft:music.credits"));
+        assertEquals("Plays during the Ender Dragon fight", TrackWeightScreen.poolTooltip("minecraft:music.dragon"));
+        assertEquals("Plays in The End", TrackWeightScreen.poolTooltip("minecraft:music.end"));
+        assertEquals("Plays in Survival mode", TrackWeightScreen.poolTooltip("minecraft:music.game"));
+        assertEquals("Plays on the main menu", TrackWeightScreen.poolTooltip("minecraft:music.menu"));
+        assertEquals("Plays while underwater", TrackWeightScreen.poolTooltip("minecraft:music.underwater"));
+        assertEquals("Plays while underwater", TrackWeightScreen.poolTooltip("minecraft:music.under_water"));
+        assertEquals("Plays in the Nether", TrackWeightScreen.poolTooltip("minecraft:music.nether"));
+        assertEquals("Plays in the Overworld", TrackWeightScreen.poolTooltip("minecraft:music.overworld"));
+
+        assertEquals("Plays in the Cherry Grove Overworld biome",
+                TrackWeightScreen.poolTooltip("minecraft:music.overworld.cherry_grove"));
+        assertEquals("Plays in the Deep Dark Overworld biome",
+                TrackWeightScreen.poolTooltip("minecraft:music.overworld.deep_dark"));
+        assertEquals("Plays in the Crimson Forest Nether biome",
+                TrackWeightScreen.poolTooltip("minecraft:music.nether.crimson_forest"));
+
+        assertEquals("Custom music pool: minecraft:music.pool_0",
+                TrackWeightScreen.poolTooltip("minecraft:music.pool_0"));
+        assertEquals("Custom music pool: custom_mod:ambient.cave",
+                TrackWeightScreen.poolTooltip("custom_mod:ambient.cave"));
+        assertEquals("Custom music pool: other:pool",
+                TrackWeightScreen.poolTooltip("other:pool"));
     }
 }
