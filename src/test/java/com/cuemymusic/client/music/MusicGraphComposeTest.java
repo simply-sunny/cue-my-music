@@ -139,6 +139,93 @@ class MusicGraphComposeTest {
         assertSame(direct, resolved.orElseThrow());
     }
 
+    @Test void weightedLeavesMultiplyConditionalNestedProbability() {
+        Sound a = file("music/game/a", 1.0F, 1.0F, 3, false, false);
+        Sound b = file("music/game/b", 1.0F, 1.0F, 1, false, false);
+        WeighedSoundEvents root = event("minecraft:music.game", List.of(a, b));
+        List<MusicGraph.WeightedLeaf> leaves = MusicGraph.weightedLeaves(
+                root, id -> null, entry -> null, entry -> null);
+        assertEquals(0.75, leaves.get(0).nativeProbability(), 1e-9);
+        assertEquals(0.25, leaves.get(1).nativeProbability(), 1e-9);
+    }
+
+    @Test void weightedLeavesMultiplyAcrossNestedEvents() {
+        Sound direct = file("music/game/sweden", 1.0F, 1.0F, 1, false, false);
+        Sound subA = file("music/game/aria_math", 1.0F, 1.0F, 3, false, false);
+        Sound subB = file("music/game/dreiton", 1.0F, 1.0F, 1, false, false);
+        WeighedSoundEvents sub = event("minecraft:music.game.creative", List.of(subA, subB));
+        Sound definition = file("music/nested-def", 1.0F, 1.0F, 3, false, false);
+        NestedStub nested = new NestedStub("minecraft:music.game.creative", definition, sub);
+        WeighedSoundEvents root = event("minecraft:music.game", List.of(direct, nested));
+        Map<Identifier, WeighedSoundEvents> registry =
+                Map.of(Identifier.parse("minecraft:music.game.creative"), sub);
+        List<MusicGraph.WeightedLeaf> leaves = MusicGraph.weightedLeaves(root, registry::get,
+                entry -> entry instanceof NestedStub stub ? stub.target : null,
+                entry -> entry instanceof NestedStub stub ? stub.definition : null);
+        // Root total is 1 + 3 = 4: direct takes 1/4, nested takes 3/4 split 3:1 inside.
+        assertEquals(3, leaves.size());
+        assertEquals(0.25, leaves.get(0).nativeProbability(), 1e-9);
+        assertEquals(0.75 * 0.75, leaves.get(1).nativeProbability(), 1e-9);
+        assertEquals(0.75 * 0.25, leaves.get(2).nativeProbability(), 1e-9);
+    }
+
+    @Test void weightedLeavesKeepDuplicateResourcePathsSeparate() {
+        Sound first = file("music/game/sweden", 1.0F, 1.0F, 1, false, false);
+        Sound second = file("music/game/sweden", 1.0F, 1.0F, 2, false, false);
+        WeighedSoundEvents root = event("minecraft:music.game", List.of(first, second));
+        List<MusicGraph.WeightedLeaf> leaves = MusicGraph.weightedLeaves(
+                root, id -> null, entry -> null, entry -> null);
+        assertEquals(2, leaves.size(), "duplicate branches must survive as separate leaves");
+        assertEquals(leaves.get(0).sound().getPath().toString(),
+                leaves.get(1).sound().getPath().toString());
+        assertEquals(1.0 / 3.0, leaves.get(0).nativeProbability(), 1e-9);
+        assertEquals(2.0 / 3.0, leaves.get(1).nativeProbability(), 1e-9);
+    }
+
+    @Test void weightedLeavesComposeVolumeAndPitchThroughNesting() {
+        Sound definition = file("music/nested-def", 0.5F, 2.0F, 1, false, false);
+        Sound child = file("music/game/aria_math", 0.8F, 1.5F, 1, false, false);
+        WeighedSoundEvents sub = event("minecraft:music.sub", List.of(child));
+        NestedStub nested = new NestedStub("minecraft:music.sub", definition, sub);
+        WeighedSoundEvents root = event("minecraft:music.game", List.of(nested));
+        Map<Identifier, WeighedSoundEvents> registry =
+                Map.of(Identifier.parse("minecraft:music.sub"), sub);
+        List<MusicGraph.WeightedLeaf> leaves = MusicGraph.weightedLeaves(root, registry::get,
+                entry -> entry instanceof NestedStub stub ? stub.target : null,
+                entry -> entry instanceof NestedStub stub ? stub.definition : null);
+        assertEquals(1, leaves.size());
+        assertEquals(1.0, leaves.get(0).nativeProbability(), 1e-9);
+        RandomSource random = RandomSource.create(1L);
+        assertEquals(0.4F, leaves.get(0).sound().getVolume().sample(random), 0.0001F);
+        assertEquals(3.0F, leaves.get(0).sound().getPitch().sample(random), 0.0001F);
+    }
+
+    @Test void weightedLeavesExcludeSilence() {
+        WeighedSoundEvents root = event("minecraft:music.game", List.of(
+                SoundManager.EMPTY_SOUND, file("music/game/sweden", 1.0F, 1.0F, 1, false, false)));
+        List<MusicGraph.WeightedLeaf> leaves = MusicGraph.weightedLeaves(
+                root, id -> null, entry -> null, entry -> null);
+        assertEquals(1, leaves.size(), "silence must be absent");
+        assertEquals(path("music/game/sweden"), leaves.get(0).sound().getPath().toString());
+    }
+
+    @Test void weightedLeavesTerminateOnCycles() {
+        Sound direct = file("music/game/sweden", 1.0F, 1.0F, 1, false, false);
+        Sound definition = file("music/nested-def", 1.0F, 1.0F, 1, false, false);
+        WeighedSoundEvents root = event("minecraft:music.game", List.of(direct));
+        NestedStub self = new NestedStub("minecraft:music.game", definition, root);
+        // Rebuild with the self-referencing delegate included.
+        WeighedSoundEvents cyclic = event("minecraft:music.game", List.of(direct, self));
+        Map<Identifier, WeighedSoundEvents> registry =
+                Map.of(Identifier.parse("minecraft:music.game"), cyclic);
+        List<MusicGraph.WeightedLeaf> leaves = MusicGraph.weightedLeaves(cyclic, registry::get,
+                entry -> entry instanceof NestedStub stub ? stub.target : null,
+                entry -> entry instanceof NestedStub stub ? stub.definition : null);
+        assertDoesNotThrow(() -> leaves);
+        assertTrue(leaves.stream().anyMatch(leaf ->
+                leaf.sound().getPath().toString().equals(path("music/game/sweden"))));
+    }
+
     @Test void silenceDetectedByIdentifierNotReference() {
         assertTrue(MusicGraph.isSilence(SoundManager.EMPTY_SOUND));
         assertTrue(MusicGraph.isSilence(SoundManager.INTENTIONALLY_EMPTY_SOUND));

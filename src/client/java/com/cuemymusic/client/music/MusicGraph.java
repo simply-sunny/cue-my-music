@@ -62,6 +62,35 @@ public final class MusicGraph {
         return null;
     }
 
+    /**
+     * A concrete file candidate with its exact native selection probability.
+     *
+     * <p>The probability is the product of each edge's weight divided by
+     * its containing event total along the traversal path, so it matches
+     * what vanilla weighted sampling would converge to. Duplicate resource
+     * paths stay separate leaves; callers group them when needed.
+     */
+    public record WeightedLeaf(Sound sound, double nativeProbability) {
+    }
+
+    /**
+     * Exact weighted membership over the loaded graph: every non-silence
+     * file paired with its native probability. Nested delegates recurse
+     * with the multiplied parent probability and compose definitions on
+     * unwind. The visited set is path-local (added before recursion,
+     * removed after) so duplicate branches survive while cycles terminate.
+     */
+    public static List<WeightedLeaf> weightedLeaves(
+            WeighedSoundEvents root,
+            Function<Identifier, WeighedSoundEvents> eventLookup,
+            Function<Weighted<Sound>, Identifier> nestedEventOf,
+            Function<Weighted<Sound>, Sound> nestedDefinitionOf) {
+        List<WeightedLeaf> leaves = new java.util.ArrayList<>();
+        collectWeighted(root, 1.0, eventLookup, nestedEventOf, nestedDefinitionOf,
+                new HashSet<>(), leaves);
+        return List.copyOf(leaves);
+    }
+
     public static Set<String> eligibleFiles(
             WeighedSoundEvents root,
             Function<Identifier, WeighedSoundEvents> eventLookup,
@@ -116,6 +145,55 @@ public final class MusicGraph {
         Identifier location = sound.getLocation();
         return location.equals(SoundManager.EMPTY_SOUND_LOCATION)
                 || location.equals(SoundManager.INTENTIONALLY_EMPTY_SOUND_LOCATION);
+    }
+
+    private static void collectWeighted(
+            WeighedSoundEvents event,
+            double parentProbability,
+            Function<Identifier, WeighedSoundEvents> eventLookup,
+            Function<Weighted<Sound>, Identifier> nestedEventOf,
+            Function<Weighted<Sound>, Sound> nestedDefinitionOf,
+            Set<WeighedSoundEvents> path,
+            List<WeightedLeaf> leaves) {
+        if (event == null || !path.add(event)) {
+            return;
+        }
+        try {
+            List<Weighted<Sound>> entries = entriesOf(event);
+            int totalWeight = 0;
+            for (Weighted<Sound> entry : entries) {
+                totalWeight += Math.max(0, entry.getWeight());
+            }
+            if (totalWeight <= 0) {
+                return;
+            }
+            for (Weighted<Sound> entry : entries) {
+                int weight = entry.getWeight();
+                if (weight <= 0) {
+                    continue;
+                }
+                double probability = parentProbability * weight / totalWeight;
+                if (entry instanceof Sound sound) {
+                    if (!isSilence(sound)) {
+                        leaves.add(new WeightedLeaf(sound, probability));
+                    }
+                } else {
+                    Identifier nested = nestedEventOf.apply(entry);
+                    if (nested == null) {
+                        continue;
+                    }
+                    List<WeightedLeaf> childLeaves = new java.util.ArrayList<>();
+                    collectWeighted(eventLookup.apply(nested), probability, eventLookup,
+                            nestedEventOf, nestedDefinitionOf, path, childLeaves);
+                    Sound definition = nestedDefinitionOf.apply(entry);
+                    childLeaves.forEach(leaf -> leaves.add(new WeightedLeaf(
+                            definition == null ? leaf.sound() : composeDefinition(definition, leaf.sound()),
+                            leaf.nativeProbability())));
+                }
+            }
+        } finally {
+            path.remove(event);
+        }
     }
 
     private static void collectInto(

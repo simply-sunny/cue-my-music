@@ -103,6 +103,7 @@ class ModContractTest {
         // and the approved track-weighting config (Task 1; catalog, settings screen,
         // and radial widget assertions arrive in Tasks 2, 5, and 7).
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/TrackWeightConfig.java")));
+        assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/WeightedMusicCatalog.java")));
         assertTrue(productionFiles <= 24, "expected approved production surface, found " + productionFiles);
     }
 }
