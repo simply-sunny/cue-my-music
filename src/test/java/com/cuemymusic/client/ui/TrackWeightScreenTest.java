@@ -17,10 +17,12 @@ import com.cuemymusic.client.music.WeightedMusicCatalog;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Occurrence;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Pool;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Track;
+import com.cuemymusic.client.ui.TrackWeightScreen.Bounds;
 import com.cuemymusic.client.ui.TrackWeightScreen.PreviewState;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.TabButton;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -41,6 +43,83 @@ class TrackWeightScreenTest {
         Track lena = track("minecraft:music/game/relic", "Relic", "Lena Raine");
         return new Pool("minecraft:music.game", List.of(c418, unknown, lena),
                 List.of(c418.occurrences().getFirst(), unknown.occurrences().getFirst(), lena.occurrences().getFirst()));
+    }
+
+    private static TrackWeightScreen screenWithPools(int count) {
+        List<Pool> pools = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            Track t = track("minecraft:music/test" + i, "Test " + i, "Composer " + i);
+            pools.add(new Pool("minecraft:music.pool_" + i, List.of(t), List.of(t.occurrences().getFirst())));
+        }
+        return new TrackWeightScreen(null, TrackWeightConfig.defaults(), pools);
+    }
+
+    @Test
+    void workspaceIsCenteredInnerEightyPercent() {
+        assertEquals(new Bounds(100, 60, 800, 480), TrackWeightScreen.workspaceBounds(1000, 600));
+        assertEquals(new Bounds(30, 21, 240, 167), TrackWeightScreen.workspaceBounds(300, 209));
+    }
+
+    @Test
+    void poolTabsFillWorkspaceAndHaveNoArrowButtons() {
+        TrackWeightScreen screen = screenWithPools(30);
+        screen.width = 1000;
+        screen.height = 600;
+        screen.init();
+        Bounds workspace = TrackWeightScreen.workspaceBounds(1000, 600);
+        assertEquals(workspace.x(), screen.tabNavigationBar().getX());
+        assertEquals(workspace.width(), screen.tabNavigationBar().getWidth());
+        assertTrue(screen.tabNavigationBar().maxScroll() > 0);
+        assertTrue(screen.children().stream().noneMatch(child -> child instanceof Button button
+                && (button.getMessage().getString().equals("<") || button.getMessage().getString().equals(">"))));
+    }
+
+    @Test
+    void poolTabsPreserveFullIdsAndClampedWheelScrollingAndReveal() {
+        TrackWeightScreen screen = screenWithPools(30);
+        screen.width = 1000;
+        screen.height = 600;
+        screen.init();
+        TrackWeightScreen.ScrollablePoolTabBar bar = screen.tabNavigationBar();
+        Bounds workspace = TrackWeightScreen.workspaceBounds(1000, 600);
+
+        // Full pool IDs remain tab titles
+        for (int i = 0; i < 30; i++) {
+            TabButton tabBtn = bar.tabButtons().get(i);
+            assertEquals("minecraft:music.pool_" + i, tabBtn.getMessage().getString());
+        }
+
+        // Wheel scrolling clamps inside maxScroll()
+        int maxScroll = bar.maxScroll();
+        assertTrue(maxScroll > 0);
+
+        int initialOffset = bar.scrollOffset();
+        screen.mouseScrolled(workspace.x() + 10, workspace.y() + 10, 0.0, -1.0);
+        assertTrue(bar.scrollOffset() > initialOffset, "Wheel scroll down must increase scroll offset");
+
+        // Scroll past max clamps to maxScroll
+        bar.scrollBy(maxScroll + 1000);
+        assertEquals(maxScroll, bar.scrollOffset(), "Scroll offset must clamp to maxScroll()");
+
+        // Scrolling further down stays clamped at maxScroll
+        screen.mouseScrolled(workspace.x() + 10, workspace.y() + 10, 0.0, -1.0);
+        assertEquals(maxScroll, bar.scrollOffset(), "Wheel scroll down must stay clamped to maxScroll()");
+
+        // Scroll past 0 clamps to 0
+        bar.scrollBy(-maxScroll - 1000);
+        assertEquals(0, bar.scrollOffset(), "Scroll offset must clamp to 0");
+
+        // Scrolling further up stays clamped at 0
+        screen.mouseScrolled(workspace.x() + 10, workspace.y() + 10, 0.0, 1.0);
+        assertEquals(0, bar.scrollOffset(), "Wheel scroll up must stay clamped to 0");
+
+        // Selected-tab reveal clamps inside maxScroll()
+        bar.revealTab(29);
+        assertTrue(bar.scrollOffset() <= maxScroll, "Reveal last tab must clamp inside maxScroll()");
+        assertTrue(bar.scrollOffset() > 0, "Reveal last tab must increase offset");
+
+        bar.revealTab(0);
+        assertEquals(0, bar.scrollOffset(), "Reveal first tab must clamp to 0");
     }
 
     @Test void configureButtonIsLongAndBottomCentered() {
@@ -802,13 +881,12 @@ class TrackWeightScreenTest {
         assertEquals("custom_mod:ambient.cave", tabBar.getTabs().get(2).getTabTitle().getString());
 
         List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children = tabBar.children();
-        // First is left button, last is right button, middle are tab buttons
-        assertTrue(children.get(0) instanceof Button, "First child must be left arrow button");
-        assertTrue(children.get(children.size() - 1) instanceof Button, "Last child must be right arrow button");
+        assertEquals(3, children.size(), "Tab bar should contain only tab buttons, no arrow buttons");
+        assertTrue(children.stream().noneMatch(c -> c instanceof Button b && (b.getMessage().getString().equals("<") || b.getMessage().getString().equals(">"))));
 
-        net.minecraft.client.gui.components.AbstractWidget btn0 = (net.minecraft.client.gui.components.AbstractWidget) children.get(1);
-        net.minecraft.client.gui.components.AbstractWidget btn1 = (net.minecraft.client.gui.components.AbstractWidget) children.get(2);
-        net.minecraft.client.gui.components.AbstractWidget btn2 = (net.minecraft.client.gui.components.AbstractWidget) children.get(3);
+        net.minecraft.client.gui.components.AbstractWidget btn0 = (net.minecraft.client.gui.components.AbstractWidget) children.get(0);
+        net.minecraft.client.gui.components.AbstractWidget btn1 = (net.minecraft.client.gui.components.AbstractWidget) children.get(1);
+        net.minecraft.client.gui.components.AbstractWidget btn2 = (net.minecraft.client.gui.components.AbstractWidget) children.get(2);
 
         assertEquals("minecraft:music.game", btn0.getMessage().getString());
         assertEquals("minecraft:music.nether", btn1.getMessage().getString());
@@ -850,9 +928,9 @@ class TrackWeightScreenTest {
         }
         assertEquals(expectedContentW, bar.contentWidth(), "Content width must match sum of tab button widths");
 
-        int expectedViewportW = 600 - (16 * 2);
-        assertEquals(expectedViewportW, bar.viewportWidth());
-        int expectedMaxScroll = Math.max(0, expectedContentW - expectedViewportW);
+        Bounds workspace = TrackWeightScreen.workspaceBounds(600, 400);
+        assertEquals(workspace.width(), bar.viewportWidth());
+        int expectedMaxScroll = Math.max(0, expectedContentW - workspace.width());
         assertEquals(expectedMaxScroll, bar.maxScroll());
 
         // Clamping below 0
@@ -869,55 +947,6 @@ class TrackWeightScreenTest {
     }
 
     @Test
-    void arrowsStatesAtStartEndAndMiddle() {
-        List<Pool> pools = new ArrayList<>();
-        for (int i = 0; i < 20; i++) {
-            Track t = track("minecraft:music/test" + i, "Test " + i, "Composer " + i);
-            pools.add(new Pool("minecraft:music.pool_" + i, List.of(t), List.of(t.occurrences().getFirst())));
-        }
-        TrackWeightConfig saved = TrackWeightConfig.defaults();
-        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pools);
-        screen.initForDimensions(600, 400);
-
-        TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
-        assertNotNull(bar);
-        assertTrue(bar.maxScroll() > 0, "20 pools must exceed 600px viewport");
-
-        // At start (offset 0): left arrow disabled, right arrow enabled
-        bar.setScrollOffset(0);
-        assertFalse(bar.leftButton().active, "Left arrow must be disabled at start");
-        assertTrue(bar.rightButton().active, "Right arrow must be enabled at start");
-
-        // In middle: both enabled
-        bar.setScrollOffset(bar.maxScroll() / 2);
-        assertTrue(bar.leftButton().active, "Left arrow must be enabled in middle");
-        assertTrue(bar.rightButton().active, "Right arrow must be enabled in middle");
-
-        // At end: left arrow enabled, right arrow disabled
-        bar.setScrollOffset(bar.maxScroll());
-        assertTrue(bar.leftButton().active, "Left arrow must be enabled at end");
-        assertFalse(bar.rightButton().active, "Right arrow must be disabled at end");
-
-        // Single pool: both disabled
-        TrackWeightScreen singleScreen = new TrackWeightScreen(null, saved, List.of(pools.get(0)));
-        singleScreen.initForDimensions(600, 400);
-        TrackWeightScreen.ScrollablePoolTabBar singleBar = (TrackWeightScreen.ScrollablePoolTabBar) singleScreen.tabNavigationBar();
-        assertEquals(0, singleBar.maxScroll());
-        assertFalse(singleBar.leftButton().active, "Left arrow disabled when content fits viewport");
-        assertFalse(singleBar.rightButton().active, "Right arrow disabled when content fits viewport");
-
-        // Clicking arrows scrolls offset by step
-        bar.setScrollOffset(100);
-        int prevOffset = bar.scrollOffset();
-        bar.leftButton().onPress(null);
-        assertTrue(bar.scrollOffset() < prevOffset, "Clicking left arrow must decrease scroll offset");
-
-        prevOffset = bar.scrollOffset();
-        bar.rightButton().onPress(null);
-        assertTrue(bar.scrollOffset() > prevOffset, "Clicking right arrow must increase scroll offset");
-    }
-
-    @Test
     void wheelDirectionScrollsHorizontally() {
         List<Pool> pools = new ArrayList<>();
         for (int i = 0; i < 20; i++) {
@@ -931,33 +960,36 @@ class TrackWeightScreenTest {
         TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
         bar.setScrollOffset(100);
 
+        int tabY = bar.getY() + 12;
+        int tabX = bar.getX() + 50;
+
         // Vertical wheel down (scrollY < 0) scrolls content right (increases offset)
         int before = bar.scrollOffset();
-        boolean handled = screen.mouseScrolled(300, 12, 0.0, -1.0);
+        boolean handled = screen.mouseScrolled(tabX, tabY, 0.0, -1.0);
         assertTrue(handled, "Mouse scroll over tab bar must be handled");
         assertTrue(bar.scrollOffset() > before, "Wheel down must increase scroll offset (scroll content right)");
 
         // Vertical wheel up (scrollY > 0) scrolls content left (decreases offset)
         before = bar.scrollOffset();
-        handled = screen.mouseScrolled(300, 12, 0.0, 1.0);
+        handled = screen.mouseScrolled(tabX, tabY, 0.0, 1.0);
         assertTrue(handled);
         assertTrue(bar.scrollOffset() < before, "Wheel up must decrease scroll offset (scroll content left)");
 
         // Horizontal wheel right (scrollX < 0) increases offset
         before = bar.scrollOffset();
-        handled = screen.mouseScrolled(300, 12, -1.0, 0.0);
+        handled = screen.mouseScrolled(tabX, tabY, -1.0, 0.0);
         assertTrue(handled);
         assertTrue(bar.scrollOffset() > before, "Horizontal scroll right must increase scroll offset");
 
         // Horizontal wheel left (scrollX > 0) decreases offset
         before = bar.scrollOffset();
-        handled = screen.mouseScrolled(300, 12, 1.0, 0.0);
+        handled = screen.mouseScrolled(tabX, tabY, 1.0, 0.0);
         assertTrue(handled);
         assertTrue(bar.scrollOffset() < before, "Horizontal scroll left must decrease scroll offset");
 
-        // Wheel outside bar (e.g. y = 100) must not scroll bar
+        // Wheel outside bar (e.g. y = 10) must not scroll bar
         before = bar.scrollOffset();
-        bar.mouseScrolled(300, 100, 0.0, 1.0);
+        bar.mouseScrolled(tabX, 10, 0.0, 1.0);
         assertEquals(before, bar.scrollOffset(), "Mouse scroll outside bar bounds must not alter offset");
     }
 
@@ -1009,7 +1041,7 @@ class TrackWeightScreenTest {
 
         List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children = bar.children();
         net.minecraft.client.gui.components.AbstractWidget btn15 =
-                (net.minecraft.client.gui.components.AbstractWidget) children.get(1 + 15);
+                (net.minecraft.client.gui.components.AbstractWidget) children.get(15);
         assertTrue(btn15.getX() >= bar.viewportX(), "Revealed tab 15 X must be >= viewportX");
         assertTrue(btn15.getRight() <= bar.viewportX() + bar.viewportWidth(), "Revealed tab 15 right must be <= viewport right");
 
@@ -1017,7 +1049,7 @@ class TrackWeightScreenTest {
         bar.selectTab(0, false);
         assertEquals(0, bar.scrollOffset(), "Selecting tab 0 must scroll back to 0");
         net.minecraft.client.gui.components.AbstractWidget btn0 =
-                (net.minecraft.client.gui.components.AbstractWidget) children.get(1);
+                (net.minecraft.client.gui.components.AbstractWidget) children.get(0);
         assertEquals(bar.viewportX(), btn0.getX(), "Tab 0 must be aligned to viewportX");
     }
 
@@ -1045,7 +1077,7 @@ class TrackWeightScreenTest {
         assertTrue(bar800.scrollOffset() <= bar800.maxScroll(), "Offset clamped to new maxScroll");
 
         net.minecraft.client.gui.components.AbstractWidget btn20 =
-                (net.minecraft.client.gui.components.AbstractWidget) bar800.children().get(1 + 20);
+                (net.minecraft.client.gui.components.AbstractWidget) bar800.children().get(20);
         assertTrue(btn20.getX() >= bar800.viewportX(), "Selected tab must remain visible in viewport after resize");
         assertTrue(btn20.getRight() <= bar800.viewportX() + bar800.viewportWidth());
 
@@ -1072,15 +1104,15 @@ class TrackWeightScreenTest {
         assertTrue(bar.contentWidth() > bar.viewportWidth(), "Content width must exceed 800px viewport");
 
         List<? extends net.minecraft.client.gui.components.events.GuiEventListener> children = bar.children();
-        assertEquals(32, children.size(), "Left arrow + 30 tabs + right arrow = 32 children");
+        assertEquals(30, children.size(), "30 tabs = 30 children without arrow buttons");
 
         // Verify adjacency: button[i].right == button[i+1].x for all tabs
-        for (int i = 1; i < 30; i++) {
+        for (int i = 0; i < 29; i++) {
             net.minecraft.client.gui.components.AbstractWidget curr = (net.minecraft.client.gui.components.AbstractWidget) children.get(i);
             net.minecraft.client.gui.components.AbstractWidget next = (net.minecraft.client.gui.components.AbstractWidget) children.get(i + 1);
             assertEquals(curr.getRight(), next.getX(), "Adjacent tab buttons must touch with zero overlap and zero gap at tab " + i);
             assertEquals(24, curr.getHeight());
-            assertEquals(0, curr.getY());
+            assertEquals(bar.getY(), curr.getY());
         }
     }
 
@@ -1098,35 +1130,25 @@ class TrackWeightScreenTest {
         TrackWeightScreen.ScrollablePoolTabBar bar = (TrackWeightScreen.ScrollablePoolTabBar) screen.tabNavigationBar();
         bar.setScrollOffset(0);
 
-        // Tab button 0 is in viewport (x = 16..): mouse click at (20, 10) must return tab button 0
-        Optional<net.minecraft.client.gui.components.events.GuiEventListener> child = bar.getChildAt(20, 10);
+        // Tab button 0 is in viewport (x = viewportX..): mouse click inside visible tab
+        Optional<net.minecraft.client.gui.components.events.GuiEventListener> child =
+                bar.getChildAt(bar.viewportX() + 10, bar.getY() + 10);
         assertTrue(child.isPresent());
-        assertEquals(bar.children().get(1), child.get(), "Mouse over visible tab must return that tab button");
+        assertEquals(bar.children().get(0), child.get(), "Mouse over visible tab must return that tab button");
 
-        // At offset 0, left arrow is disabled (inactive), so getChildAt(8, 10) must NOT return any child
-        // and specifically must not return tab buttons that are off-viewport or behind the arrow
-        child = bar.getChildAt(8, 10);
-        assertTrue(child.isEmpty(), "Disabled left arrow must not receive clicks and off-viewport tabs must not receive clicks");
+        // Mouse click to the left of the workspace tab bar (e.g. x = bar.viewportX() - 10) must return empty
+        child = bar.getChildAt(bar.viewportX() - 10, bar.getY() + 10);
+        assertTrue(child.isEmpty(), "Clicks left of viewport must not hit tab buttons");
 
-        // Right arrow at offset 0 IS active, so (590, 10) returns right arrow button
-        child = bar.getChildAt(590, 10);
-        assertTrue(child.isPresent());
-        assertEquals(bar.rightButton(), child.get(), "Mouse over active right arrow zone must return right arrow button");
+        // Now scroll to 200: button 0 is off to the left (x < bar.viewportX())
+        bar.setScrollOffset(200);
+        child = bar.getChildAt(bar.viewportX() - 10, bar.getY() + 10);
+        assertTrue(child.isEmpty(), "Clicks left of viewport must not hit scrolled off tab buttons");
 
-        // Now scroll to middle so left arrow is active
-        bar.setScrollOffset(50);
-        child = bar.getChildAt(8, 10);
-        assertTrue(child.isPresent());
-        assertEquals(bar.leftButton(), child.get(), "Mouse over active left arrow zone must return left arrow button");
-
-        // Button 0 has moved left (x = 16 - 50 = -34, width = 136, right = 102)
-        // Its leftmost part is off-screen (x < 16), but clicks outside viewport (e.g. at x = 8) must not hit button 0
-        assertNotEquals(bar.tabButtons().get(0), child.get());
-
-        // Mouse click outside bar (e.g. x = 700 or y = 30) must return empty
-        child = bar.getChildAt(700, 10);
+        // Mouse click outside bar vertically (e.g. y = bar.getY() - 10 or y = bar.getY() + 30) must return empty
+        child = bar.getChildAt(bar.viewportX() + 10, bar.getY() - 10);
         assertTrue(child.isEmpty());
-        child = bar.getChildAt(20, 30);
+        child = bar.getChildAt(bar.viewportX() + 10, bar.getY() + 30);
         assertTrue(child.isEmpty());
     }
 

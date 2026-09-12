@@ -131,6 +131,13 @@ public final class TrackWeightScreen extends Screen {
         this.tabManager = new TabManager(this::addRenderableWidget, this::removeWidget, this::onTabSelected, tab -> {});
     }
 
+    public static Bounds workspaceBounds(int width, int height) {
+        int workspaceWidth = width * 4 / 5;
+        int workspaceHeight = height * 4 / 5;
+        return new Bounds((width - workspaceWidth) / 2, (height - workspaceHeight) / 2,
+                workspaceWidth, workspaceHeight);
+    }
+
     static boolean usesWideLayout(int width) {
         return width >= 640;
     }
@@ -489,22 +496,29 @@ public final class TrackWeightScreen extends Screen {
         if (!model.pools().isEmpty()) {
             tabToPool.clear();
             int navHeight = 24;
+            Bounds workspace = workspaceBounds(this.width, this.height);
+            int previousOffset = (this.tabNavigationBar != null) ? this.tabNavigationBar.scrollOffset() : 0;
             this.tabNavigationBar = ScrollablePoolTabBar.create(
                     this.tabManager,
                     model.pools(),
                     this.tabToPool,
                     this.font,
-                    this.width,
+                    workspace.x(),
+                    workspace.y(),
+                    workspace.width(),
                     navHeight);
             addRenderableWidget(this.tabNavigationBar);
 
             int selectedIndex = model.pools().indexOf(model.selectedPool());
             int indexToSelect = selectedIndex >= 0 ? selectedIndex : 0;
             this.tabNavigationBar.selectTab(indexToSelect, false);
+            if (previousOffset > 0) {
+                this.tabNavigationBar.setScrollOffset(previousOffset);
+            }
             this.tabNavigationBar.revealTab(indexToSelect);
 
             int bottom = this.tabNavigationBar.getRectangle().bottom();
-            ScreenRectangle tabArea = new ScreenRectangle(0, bottom, this.width, Math.max(0, this.height - bottom));
+            ScreenRectangle tabArea = new ScreenRectangle(workspace.x(), bottom, workspace.width(), Math.max(0, workspace.bottom() - bottom));
             this.tabManager.setTabArea(tabArea);
         } else {
             this.tabNavigationBar = null;
@@ -770,13 +784,14 @@ public final class TrackWeightScreen extends Screen {
 
     @Override
     protected void extractMenuBackground(GuiGraphicsExtractor extractor) {
+        super.extractMenuBackground(extractor);
         if (this.tabNavigationBar != null) {
-            int headerHeight = this.tabNavigationBar.getRectangle().bottom();
-            extractor.blit(RenderPipelines.GUI_TEXTURED, CreateWorldScreen.TAB_HEADER_BACKGROUND, 0, 0, 0.0F, 0.0F, this.width, headerHeight, 16, 16);
-            extractor.blit(RenderPipelines.GUI_TEXTURED, HEADER_SEPARATOR, 0, headerHeight - 2, 0.0F, 0.0F, this.width, 2, 32, 2);
-            this.extractMenuBackground(extractor, 0, headerHeight, this.width, this.height);
-        } else {
-            super.extractMenuBackground(extractor);
+            int x = this.tabNavigationBar.getX();
+            int y = this.tabNavigationBar.getY();
+            int w = this.tabNavigationBar.getWidth();
+            int h = this.tabNavigationBar.getHeight();
+            extractor.blit(RenderPipelines.GUI_TEXTURED, CreateWorldScreen.TAB_HEADER_BACKGROUND, x, y, 0.0F, 0.0F, w, h, 16, 16);
+            extractor.blit(RenderPipelines.GUI_TEXTURED, HEADER_SEPARATOR, x, y + h - 2, 0.0F, 0.0F, w, 2, 32, 2);
         }
     }
 
@@ -1324,12 +1339,9 @@ public final class TrackWeightScreen extends Screen {
     }
 
     public static final class ScrollablePoolTabBar extends TabNavigationBar {
-        private static final int ARROW_WIDTH = 16;
         private static final int SCROLL_STEP = 40;
 
         private final Font font;
-        private final Button leftButton;
-        private final Button rightButton;
         private int scrollOffset;
         private int contentWidth;
         private int viewportX;
@@ -1346,14 +1358,6 @@ public final class TrackWeightScreen extends Screen {
                 Font font) {
             super(x, y, width, height, tabManager, tabButtons, tabs);
             this.font = font;
-            this.leftButton = Button.builder(Component.literal("<"), b -> scrollBy(-SCROLL_STEP))
-                    .bounds(x, y, ARROW_WIDTH, height)
-                    .createNarration(supplier -> Component.literal("Scroll tabs left"))
-                    .build();
-            this.rightButton = Button.builder(Component.literal(">"), b -> scrollBy(SCROLL_STEP))
-                    .bounds(Math.max(0, x + width - ARROW_WIDTH), y, ARROW_WIDTH, height)
-                    .createNarration(supplier -> Component.literal("Scroll tabs right"))
-                    .build();
             this.arrangeElements(width);
         }
 
@@ -1362,7 +1366,9 @@ public final class TrackWeightScreen extends Screen {
                 List<Pool> pools,
                 Map<Tab, Pool> tabToPool,
                 Font font,
-                int screenWidth,
+                int x,
+                int y,
+                int width,
                 int height) {
             ImmutableList.Builder<TabButton> buttonsBuilder = ImmutableList.builder();
             ImmutableList.Builder<Tab> tabsBuilder = ImmutableList.builder();
@@ -1375,7 +1381,7 @@ public final class TrackWeightScreen extends Screen {
                 tabsBuilder.add(tab);
             }
             ScrollablePoolTabBar bar = new ScrollablePoolTabBar(
-                    0, 0, screenWidth, height, tabManager, buttonsBuilder.build(), tabsBuilder.build(), font);
+                    x, y, width, height, tabManager, buttonsBuilder.build(), tabsBuilder.build(), font);
             for (int i = 0; i < pools.size(); i++) {
                 bar.setTabTooltip(i, Tooltip.create(Component.literal(pools.get(i).id())));
             }
@@ -1402,14 +1408,6 @@ public final class TrackWeightScreen extends Screen {
             return Math.max(0, contentWidth - viewportWidth);
         }
 
-        public Button leftButton() {
-            return leftButton;
-        }
-
-        public Button rightButton() {
-            return rightButton;
-        }
-
         public ImmutableList<TabButton> tabButtons() {
             return this.tabButtons;
         }
@@ -1418,7 +1416,6 @@ public final class TrackWeightScreen extends Screen {
             int max = maxScroll();
             this.scrollOffset = Math.clamp(offset, 0, max);
             updatePositions();
-            updateArrowStates();
         }
 
         public void scrollBy(int delta) {
@@ -1453,18 +1450,8 @@ public final class TrackWeightScreen extends Screen {
         @Override
         public void arrangeElements(int width) {
             this.width = width;
-            this.viewportX = ARROW_WIDTH;
-            this.viewportWidth = Math.max(0, width - (ARROW_WIDTH * 2));
-
-            this.leftButton.setX(0);
-            this.leftButton.setY(0);
-            this.leftButton.setWidth(ARROW_WIDTH);
-            this.leftButton.setHeight(this.height);
-
-            this.rightButton.setX(Math.max(0, width - ARROW_WIDTH));
-            this.rightButton.setY(0);
-            this.rightButton.setWidth(ARROW_WIDTH);
-            this.rightButton.setHeight(this.height);
+            this.viewportX = getX();
+            this.viewportWidth = width;
 
             int totalW = 0;
             for (TabButton button : this.tabButtons) {
@@ -1479,22 +1466,28 @@ public final class TrackWeightScreen extends Screen {
             this.scrollOffset = Math.clamp(this.scrollOffset, 0, max);
 
             updatePositions();
-            updateArrowStates();
         }
 
         private void updatePositions() {
             int currentX = this.viewportX - this.scrollOffset;
             for (TabButton button : this.tabButtons) {
                 button.setX(currentX);
-                button.setY(0);
+                button.setY(getY());
                 currentX += button.getWidth();
             }
         }
 
-        private void updateArrowStates() {
-            int max = maxScroll();
-            this.leftButton.active = this.scrollOffset > 0;
-            this.rightButton.active = this.scrollOffset < max;
+        @Override
+        public void setX(int x) {
+            super.setX(x);
+            this.viewportX = x;
+            updatePositions();
+        }
+
+        @Override
+        public void setY(int y) {
+            super.setY(y);
+            updatePositions();
         }
 
         @Override
@@ -1510,12 +1503,6 @@ public final class TrackWeightScreen extends Screen {
 
         @Override
         public Optional<GuiEventListener> getChildAt(double mouseX, double mouseY) {
-            if (this.leftButton.isMouseOver(mouseX, mouseY)) {
-                return Optional.of(this.leftButton);
-            }
-            if (this.rightButton.isMouseOver(mouseX, mouseY)) {
-                return Optional.of(this.rightButton);
-            }
             if (isInsideViewport(mouseX, mouseY)) {
                 for (TabButton button : this.tabButtons) {
                     if (button.isMouseOver(mouseX, mouseY)) {
@@ -1528,11 +1515,7 @@ public final class TrackWeightScreen extends Screen {
 
         @Override
         public List<? extends GuiEventListener> children() {
-            List<GuiEventListener> all = new ArrayList<>(this.tabButtons.size() + 2);
-            all.add(this.leftButton);
-            all.addAll(this.tabButtons);
-            all.add(this.rightButton);
-            return all;
+            return this.tabButtons;
         }
 
         @Override
@@ -1560,9 +1543,6 @@ public final class TrackWeightScreen extends Screen {
 
         @Override
         protected void extractWidgetRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickProgress) {
-            this.leftButton.extractRenderState(extractor, mouseX, mouseY, tickProgress);
-            this.rightButton.extractRenderState(extractor, mouseX, mouseY, tickProgress);
-
             int contentRight = this.viewportX + this.contentWidth - this.scrollOffset;
             int viewportRight = this.viewportX + this.viewportWidth;
             if (contentRight < viewportRight) {
@@ -1570,7 +1550,7 @@ public final class TrackWeightScreen extends Screen {
                 int separatorW = viewportRight - separatorX;
                 if (separatorW > 0) {
                     extractor.blit(RenderPipelines.GUI_TEXTURED, Screen.HEADER_SEPARATOR,
-                            separatorX, getHeight() - 2, 0.0F, 0.0F, separatorW, 2, 32, 2);
+                            separatorX, getY() + getHeight() - 2, 0.0F, 0.0F, separatorW, 2, 32, 2);
                 }
             }
 
