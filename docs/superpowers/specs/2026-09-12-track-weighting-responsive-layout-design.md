@@ -29,6 +29,8 @@ Tab titles use clean human-readable category names, such as `Creative`, `Ender D
 
 Hovering a tab shows a plain-language tooltip explaining where that category's music can play, such as “Plays during the end credits” or “Plays in the Cherry Grove Overworld biome.” Unknown resource-pack pools use “Custom music pool: `<full-id>`” rather than inventing gameplay semantics.
 
+Tabs follow a user-oriented progression rather than raw identifier order: Main Menu, Survival, Creative, Overworld categories alphabetically, Underwater, Nether categories alphabetically, Ender Dragon, The End, Credits, remaining Minecraft pools, then custom pools alphabetically. This order affects only the UI; catalog traversal and deterministic selection order remain unchanged.
+
 The tab viewport:
 
 - occupies the full width of the inner workspace;
