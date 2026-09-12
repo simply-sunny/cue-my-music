@@ -353,6 +353,52 @@ public final class MusicDirector {
     }
 
     /**
+     * Pauses active tracked music exclusively for a preview session.
+     * Returns true only if tracked music was active and unpaused, and was successfully paused.
+     */
+    public boolean pauseForPreview() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return false;
+        }
+        PinnedMusicInstance current = transportInstance;
+        if (current == null || !minecraft.getSoundManager().isActive(current) || transportPaused) {
+            return false;
+        }
+        SoundEngine engine = engineOf(minecraft);
+        if (engine == null) {
+            return false;
+        }
+        transportPaused = true;
+        ((EngineTransport) engine).cueMyMusic$setInstancePaused(current, true);
+        return true;
+    }
+
+    /**
+     * Resumes tracked music after a preview session only if the preview session owned the pause
+     * and the transport instance still exists and remains paused.
+     */
+    public void resumeAfterPreview(boolean pausedByPreview) {
+        if (!pausedByPreview) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return;
+        }
+        PinnedMusicInstance current = transportInstance;
+        if (current == null || !minecraft.getSoundManager().isActive(current) || !transportPaused) {
+            return;
+        }
+        SoundEngine engine = engineOf(minecraft);
+        if (engine == null) {
+            return;
+        }
+        transportPaused = false;
+        ((EngineTransport) engine).cueMyMusic$setInstancePaused(current, false);
+    }
+
+    /**
      * Seek within the current song: reopens the same pinned sound at a new
      * offset on a new generation, preserving pause state, duration, planner
      * index and history. Stale generations are closed, never attached.

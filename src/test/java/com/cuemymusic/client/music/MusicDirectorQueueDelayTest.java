@@ -235,4 +235,27 @@ class MusicDirectorQueueDelayTest {
         assertEquals(0, director.remainingDelayTicks());
         assertEquals(0.0, director.remainingDelaySeconds(), 1e-9);
     }
+
+    @Test void pauseAndResumeForPreviewSafelyHandleHeadlessAndNoActiveMusic() {
+        MusicDirector director = MusicDirector.getInstance();
+        director.beginSession(42L);
+        long initialSeq = director.planner().peekSequence("minecraft:music.game");
+        long initialGen = director.currentGeneration();
+        int initialDelay = director.remainingDelayTicks();
+
+        // Without active music, pauseForPreview returns false and does not mutate state
+        assertFalse(director.pauseForPreview());
+        assertEquals(initialSeq, director.planner().peekSequence("minecraft:music.game"));
+        assertEquals(initialGen, director.currentGeneration());
+        assertEquals(initialDelay, director.remainingDelayTicks());
+
+        // resumeAfterPreview(false) is a no-op
+        assertDoesNotThrow(() -> director.resumeAfterPreview(false));
+
+        // resumeAfterPreview(true) with no active transport is a no-op
+        assertDoesNotThrow(() -> director.resumeAfterPreview(true));
+        assertEquals(initialSeq, director.planner().peekSequence("minecraft:music.game"));
+        assertEquals(initialGen, director.currentGeneration());
+        assertEquals(initialDelay, director.remainingDelayTicks());
+    }
 }

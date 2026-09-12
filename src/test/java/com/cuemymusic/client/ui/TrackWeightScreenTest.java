@@ -2,6 +2,7 @@ package com.cuemymusic.client.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -16,8 +17,10 @@ import com.cuemymusic.client.music.WeightedMusicCatalog;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Occurrence;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Pool;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Track;
+import com.cuemymusic.client.ui.TrackWeightScreen.PreviewState;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.minecraft.client.gui.components.Button;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -26,6 +29,10 @@ class TrackWeightScreenTest {
     private static Track track(String resourceId, String title, String composer) {
         Occurrence occ = new Occurrence(resourceId, null, 1.0);
         return new Track(resourceId, title, composer, 1.0, List.of(occ));
+    }
+
+    private static Track track(String resourceId) {
+        return track(resourceId, resourceId, null);
     }
 
     private static Pool poolWithC418AndUnknown() {
@@ -466,5 +473,161 @@ class TrackWeightScreenTest {
         for (RadialWeightWidget.Slice s : screen.radialWheel().slices()) {
             assertEquals(0.0, s.chance(), 1e-6, "Muted pool must result in 0 chance for all wheel slices");
         }
+    }
+
+    @Test void previewStopsPreviousAndResumesOnlyOwnedPause() {
+        List<String> calls = new ArrayList<>();
+        PreviewState state = new PreviewState(
+                sound -> calls.add("play:" + sound.resourceId()),
+                sound -> calls.add("stop:" + sound.resourceId()),
+                () -> { calls.add("pause"); return true; },
+                () -> calls.add("resume"));
+        state.toggle(track("a"));
+        state.toggle(track("b"));
+        state.close();
+        assertEquals(List.of("pause", "play:a", "stop:a", "play:b", "stop:b", "resume"), calls);
+    }
+
+    @Test void previewSecondPressStopsAndResumes() {
+        List<String> calls = new ArrayList<>();
+        PreviewState state = new PreviewState(
+                sound -> calls.add("play:" + sound.resourceId()),
+                sound -> calls.add("stop:" + sound.resourceId()),
+                () -> { calls.add("pause"); return true; },
+                () -> calls.add("resume"));
+        Track trackA = track("a");
+        state.toggle(trackA);
+        assertTrue(state.isPlaying());
+        assertEquals(trackA, state.playingTrack());
+        assertEquals(List.of("pause", "play:a"), calls);
+
+        state.toggle(trackA);
+        assertFalse(state.isPlaying());
+        assertNull(state.playingTrack());
+        assertEquals(List.of("pause", "play:a", "stop:a", "resume"), calls);
+
+        state.close();
+        assertEquals(List.of("pause", "play:a", "stop:a", "resume"), calls);
+    }
+
+    @Test void naturalInactiveDetectionResumesOnce() {
+        List<String> calls = new ArrayList<>();
+        PreviewState state = new PreviewState(
+                sound -> calls.add("play:" + sound.resourceId()),
+                sound -> calls.add("stop:" + sound.resourceId()),
+                () -> { calls.add("pause"); return true; },
+                () -> calls.add("resume"));
+        state.toggle(track("a"));
+        assertTrue(state.isPlaying());
+        assertEquals(List.of("pause", "play:a"), calls);
+
+        state.tick(true);
+        assertTrue(state.isPlaying());
+        assertEquals(List.of("pause", "play:a"), calls);
+
+        state.tick(false);
+        assertFalse(state.isPlaying());
+        assertNull(state.playingTrack());
+        assertEquals(List.of("pause", "play:a", "stop:a", "resume"), calls);
+
+        state.tick(false);
+        assertEquals(List.of("pause", "play:a", "stop:a", "resume"), calls);
+
+        state.close();
+        assertEquals(List.of("pause", "play:a", "stop:a", "resume"), calls);
+    }
+
+    @Test void previewWithNoCurrentMusicDoesNotIssueResume() {
+        List<String> calls = new ArrayList<>();
+        PreviewState state = new PreviewState(
+                sound -> calls.add("play:" + sound.resourceId()),
+                sound -> calls.add("stop:" + sound.resourceId()),
+                () -> { calls.add("pause"); return false; },
+                () -> calls.add("resume"));
+        state.toggle(track("a"));
+        assertTrue(state.isPlaying());
+        assertFalse(state.ownsPause());
+        assertEquals(List.of("pause", "play:a"), calls);
+
+        state.toggle(track("a"));
+        assertFalse(state.isPlaying());
+        assertEquals(List.of("pause", "play:a", "stop:a"), calls);
+
+        state.close();
+        assertEquals(List.of("pause", "play:a", "stop:a"), calls);
+    }
+
+    @Test void previewOperationsDoNotMutateConfigOrPlannerSequence() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightConfig config = TrackWeightConfig.defaults()
+                .withMultiplier(pool.id(), "minecraft:music/game/sweden", 3.0);
+        MusicPlanner planner = new MusicPlanner();
+        long initialSeq = planner.peekSequence(pool.id());
+
+        List<String> calls = new ArrayList<>();
+        PreviewState state = new PreviewState(
+                sound -> calls.add("play:" + sound.resourceId()),
+                sound -> calls.add("stop:" + sound.resourceId()),
+                () -> true,
+                () -> {});
+
+        Track sweden = pool.tracks().getFirst();
+        state.toggle(sweden);
+        state.tick(true);
+        state.toggle(pool.tracks().get(1));
+        state.close();
+
+        assertEquals(3.0, config.multiplier(pool.id(), "minecraft:music/game/sweden"));
+        assertEquals(1.0, config.multiplier(pool.id(), "minecraft:music/game/unknown"));
+        assertEquals(initialSeq, planner.peekSequence(pool.id()));
+    }
+
+    @Test void previewButtonLabelAndLifecycleInScreen() {
+        Pool pool = poolWithC418AndUnknown();
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, pool);
+        screen.initForDimensions(800, 400);
+
+        Button previewBtn = screen.previewButton();
+        assertNotNull(previewBtn);
+        assertTrue(previewBtn.active);
+        assertEquals("Play Sound", previewBtn.getMessage().getString());
+
+        // Pressing preview button starts preview and updates label to "Stop Sound"
+        previewBtn.onPress(null);
+        assertTrue(screen.previewState().isPlaying());
+        assertEquals("Stop Sound", previewBtn.getMessage().getString());
+
+        // Second press stops preview and resets label to "Play Sound"
+        previewBtn.onPress(null);
+        assertFalse(screen.previewState().isPlaying());
+        assertEquals("Play Sound", previewBtn.getMessage().getString());
+
+        // Start preview again
+        previewBtn.onPress(null);
+        assertTrue(screen.previewState().isPlaying());
+
+        // Selecting a different track stops preview and resets button label
+        screen.selectTrack("minecraft:music/game/unknown");
+        assertFalse(screen.previewState().isPlaying());
+        assertEquals("Play Sound", previewBtn.getMessage().getString());
+
+        // Start preview again
+        previewBtn.onPress(null);
+        assertTrue(screen.previewState().isPlaying());
+
+        // Screen removal stops preview
+        screen.removed();
+        assertFalse(screen.previewState().isPlaying());
+        assertEquals("Play Sound", previewBtn.getMessage().getString());
+
+        // Start preview again
+        previewBtn.onPress(null);
+        assertTrue(screen.previewState().isPlaying());
+
+        // Screen onClose (Escape) stops preview
+        screen.onClose();
+        assertFalse(screen.previewState().isPlaying());
+        assertEquals("Play Sound", previewBtn.getMessage().getString());
     }
 }

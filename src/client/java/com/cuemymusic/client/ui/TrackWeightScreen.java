@@ -6,8 +6,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 import com.cuemymusic.client.music.MusicDirector;
+import com.cuemymusic.client.music.PinnedMusicInstance;
 import com.cuemymusic.client.music.TrackWeightConfig;
 import com.cuemymusic.client.music.WeightedMusicCatalog;
 import com.cuemymusic.client.music.WeightedMusicCatalog.Occurrence;
@@ -26,6 +29,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.RandomSource;
 
 /**
@@ -57,6 +61,8 @@ public final class TrackWeightScreen extends Screen {
     private final MusicPlayerScreen parent;
     private final TrackWeightConfig saved;
     private final Model model;
+    private final PreviewState previewState;
+    private PinnedMusicInstance currentPreviewInstance;
     private Component errorMessage;
 
     private CycleButton<Pool> poolButton;
@@ -99,6 +105,11 @@ public final class TrackWeightScreen extends Screen {
         this.parent = parent;
         this.saved = saved != null ? saved : TrackWeightConfig.defaults();
         this.model = new Model(this.saved, pools);
+        this.previewState = new PreviewState(
+                this::playPreviewSound,
+                this::stopPreviewSound,
+                () -> MusicDirector.getInstance().pauseForPreview(),
+                () -> MusicDirector.getInstance().resumeAfterPreview(true));
     }
 
     static boolean usesWideLayout(int width) {
@@ -242,9 +253,18 @@ public final class TrackWeightScreen extends Screen {
     }
 
     void selectTrack(String resourceId) {
+        Track prev = model.selectedTrack();
         if (model.selectTrack(resourceId)) {
+            if (prev == null || !prev.resourceId().equals(resourceId)) {
+                stopPreview();
+            }
             updateSelectedTrackWidgets();
         }
+    }
+
+    private void onTrackSelectionChanged() {
+        stopPreview();
+        updateSelectedTrackWidgets();
     }
 
     private void onDraftChanged() {
@@ -263,12 +283,62 @@ public final class TrackWeightScreen extends Screen {
             double currentMult = model.draft().multiplier(model.selectedPool().id(), track.resourceId());
             weightSlider.syncFromModel(currentMult);
         }
+        updatePreviewButton();
+        updateWheelModel();
+    }
+
+    private void updatePreviewButton() {
         if (previewButton != null) {
+            Track track = model.selectedTrack();
             previewButton.active = track != null
                     && track.occurrences() != null
                     && !track.occurrences().isEmpty();
+            boolean isPlayingSelected = previewState != null
+                    && previewState.isPlaying()
+                    && track != null
+                    && previewState.playingTrack() != null
+                    && track.resourceId().equals(previewState.playingTrack().resourceId());
+            previewButton.setMessage(Component.literal(isPlayingSelected ? "Stop Sound" : "Play Sound"));
         }
-        updateWheelModel();
+    }
+
+    private void playPreviewSound(Track track) {
+        if (minecraft == null || model.selectedPool() == null || track == null) {
+            return;
+        }
+        if (track.occurrences() == null || track.occurrences().isEmpty()) {
+            return;
+        }
+        Occurrence occurrence = track.occurrences().getFirst();
+        if (occurrence.sound() == null) {
+            return;
+        }
+        PinnedMusicInstance preview = new PinnedMusicInstance(
+                Identifier.parse(model.selectedPool().id()),
+                occurrence.sound(),
+                RandomSource.create(0x435545L),
+                0L,
+                0.0);
+        this.currentPreviewInstance = preview;
+        if (minecraft.getSoundManager() != null) {
+            minecraft.getSoundManager().play(preview);
+        }
+    }
+
+    private void stopPreviewSound(Track track) {
+        if (currentPreviewInstance != null) {
+            if (minecraft != null && minecraft.getSoundManager() != null) {
+                minecraft.getSoundManager().stop(currentPreviewInstance);
+            }
+            currentPreviewInstance = null;
+        }
+    }
+
+    void stopPreview() {
+        if (previewState != null) {
+            previewState.stop();
+        }
+        updatePreviewButton();
     }
 
     private void updateWheelModel() {
@@ -294,6 +364,7 @@ public final class TrackWeightScreen extends Screen {
     }
 
     private void onPoolChanged(Pool newPool) {
+        stopPreview();
         model.switchPool(newPool);
         if (searchBox != null) {
             searchBox.setValue("");
@@ -309,6 +380,7 @@ public final class TrackWeightScreen extends Screen {
     }
 
     void saveAndClose() {
+        stopPreview();
         try {
             TrackWeightConfig draft = model.draft();
             MusicDirector.getInstance().saveWeightingConfig(draft);
@@ -323,6 +395,7 @@ public final class TrackWeightScreen extends Screen {
     @Override
     public void removed() {
         super.removed();
+        stopPreview();
         if (radialWheel != null) {
             radialWheel.close();
         }
@@ -330,9 +403,23 @@ public final class TrackWeightScreen extends Screen {
 
     @Override
     public void onClose() {
+        stopPreview();
         if (minecraft != null) {
             minecraft.setScreenAndShow(parent);
         }
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        boolean active = currentPreviewInstance != null
+                && minecraft != null
+                && minecraft.getSoundManager() != null
+                && minecraft.getSoundManager().isActive(currentPreviewInstance);
+        if (previewState != null) {
+            previewState.tick(active);
+        }
+        updatePreviewButton();
     }
 
     @Override
@@ -369,14 +456,19 @@ public final class TrackWeightScreen extends Screen {
         searchBox.setHint(Component.literal("Search track or composer…"));
         searchBox.setValue(model.searchQuery());
         searchBox.setResponder(query -> {
+            Track prev = model.selectedTrack();
             model.setSearchQuery(query);
+            Track current = model.selectedTrack();
+            if (prev != current && (prev == null || current == null || !prev.resourceId().equals(current.resourceId()))) {
+                stopPreview();
+            }
             refreshTrackList();
             updateSelectedTrackWidgets();
         });
         addRenderableWidget(searchBox);
 
         Bounds listBounds = wideListBounds(width, height);
-        trackList = new TrackList(minecraft, listBounds.width(), listBounds.height(), listBounds.y(), 20, model, this::updateSelectedTrackWidgets);
+        trackList = new TrackList(minecraft, listBounds.width(), listBounds.height(), listBounds.y(), 20, model, this::onTrackSelectionChanged);
         trackList.setX(listBounds.x());
         addRenderableWidget(trackList);
 
@@ -403,7 +495,13 @@ public final class TrackWeightScreen extends Screen {
         addRenderableWidget(btn2x);
         addRenderableWidget(btn5x);
 
-        previewButton = Button.builder(Component.literal("Play Sound"), b -> {}).bounds(rightX, qbY + 24, 120, 20).build();
+        previewButton = Button.builder(Component.literal("Play Sound"), b -> {
+            Track track = model.selectedTrack();
+            if (track != null) {
+                previewState.toggle(track);
+                updatePreviewButton();
+            }
+        }).bounds(rightX, qbY + 24, 120, 20).build();
         previewButton.active = model.selectedTrack() != null
                 && model.selectedTrack().occurrences() != null
                 && !model.selectedTrack().occurrences().isEmpty();
@@ -448,6 +546,7 @@ public final class TrackWeightScreen extends Screen {
         bx += 76;
 
         jsonButton = Button.builder(Component.literal("JSON"), b -> {
+            stopPreview();
             if (minecraft != null) {
                 minecraft.setScreenAndShow(new JsonScreen(this, model.draft()));
             }
@@ -484,14 +583,19 @@ public final class TrackWeightScreen extends Screen {
         searchBox.setHint(Component.literal("Search track or composer…"));
         searchBox.setValue(model.searchQuery());
         searchBox.setResponder(query -> {
+            Track prev = model.selectedTrack();
             model.setSearchQuery(query);
+            Track current = model.selectedTrack();
+            if (prev != current && (prev == null || current == null || !prev.resourceId().equals(current.resourceId()))) {
+                stopPreview();
+            }
             refreshTrackList();
             updateSelectedTrackWidgets();
         });
         addRenderableWidget(searchBox);
 
         trackList = new TrackList(minecraft, geom.list().width(), geom.list().height(), geom.list().y(),
-                20, model, this::updateSelectedTrackWidgets);
+                20, model, this::onTrackSelectionChanged);
         trackList.setX(geom.list().x());
         addRenderableWidget(trackList);
 
@@ -515,7 +619,13 @@ public final class TrackWeightScreen extends Screen {
 
         int previewX = qbX + (qbW + 4) * 5 + 4;
         int previewW = Math.max(60, geom.quickButtons().right() - previewX);
-        previewButton = Button.builder(Component.literal("Play Sound"), b -> {}).bounds(previewX, qbY, previewW, 18).build();
+        previewButton = Button.builder(Component.literal("Play Sound"), b -> {
+            Track track = model.selectedTrack();
+            if (track != null) {
+                previewState.toggle(track);
+                updatePreviewButton();
+            }
+        }).bounds(previewX, qbY, previewW, 18).build();
         previewButton.active = model.selectedTrack() != null
                 && model.selectedTrack().occurrences() != null
                 && !model.selectedTrack().occurrences().isEmpty();
@@ -564,6 +674,7 @@ public final class TrackWeightScreen extends Screen {
         }).bounds(r2X, r2Y, row2BtnW, 18).build();
 
         jsonButton = Button.builder(Component.literal("JSON"), b -> {
+            stopPreview();
             if (minecraft != null) {
                 minecraft.setScreenAndShow(new JsonScreen(this, model.draft()));
             }
@@ -645,10 +756,105 @@ public final class TrackWeightScreen extends Screen {
         return radialWheel;
     }
 
+    PreviewState previewState() {
+        return previewState;
+    }
+
+    Button previewButton() {
+        return previewButton;
+    }
+
     void initForDimensions(int width, int height) {
         this.width = width;
         this.height = height;
         init();
+    }
+
+    static final class PreviewState implements AutoCloseable {
+        private final Consumer<Track> onPlay;
+        private final Consumer<Track> onStop;
+        private final BooleanSupplier pauseAction;
+        private final Runnable resumeAction;
+
+        private Track playingTrack;
+        private boolean pausedByPreview;
+
+        PreviewState(
+                Consumer<Track> onPlay,
+                Consumer<Track> onStop,
+                BooleanSupplier pauseAction,
+                Runnable resumeAction) {
+            this.onPlay = onPlay != null ? onPlay : t -> {};
+            this.onStop = onStop != null ? onStop : t -> {};
+            this.pauseAction = pauseAction != null ? pauseAction : () -> false;
+            this.resumeAction = resumeAction != null ? resumeAction : () -> {};
+        }
+
+        public boolean isPlaying() {
+            return playingTrack != null;
+        }
+
+        public Track playingTrack() {
+            return playingTrack;
+        }
+
+        public boolean ownsPause() {
+            return pausedByPreview;
+        }
+
+        public boolean pausedByPreview() {
+            return pausedByPreview;
+        }
+
+        public void toggle(Track track) {
+            if (track == null) {
+                stop();
+                return;
+            }
+            if (playingTrack != null && playingTrack.resourceId().equals(track.resourceId())) {
+                stop();
+                return;
+            }
+            if (playingTrack != null) {
+                Track prev = playingTrack;
+                playingTrack = null;
+                onStop.accept(prev);
+            } else if (!pausedByPreview) {
+                pausedByPreview = pauseAction.getAsBoolean();
+            }
+            playingTrack = track;
+            onPlay.accept(track);
+        }
+
+        public void stop() {
+            if (playingTrack != null) {
+                Track stopped = playingTrack;
+                playingTrack = null;
+                onStop.accept(stopped);
+            }
+            resumeIfNeeded();
+        }
+
+        public void tick(boolean soundActive) {
+            if (playingTrack != null && !soundActive) {
+                Track stopped = playingTrack;
+                playingTrack = null;
+                onStop.accept(stopped);
+                resumeIfNeeded();
+            }
+        }
+
+        private void resumeIfNeeded() {
+            if (pausedByPreview) {
+                pausedByPreview = false;
+                resumeAction.run();
+            }
+        }
+
+        @Override
+        public void close() {
+            stop();
+        }
     }
 
     public static final class Model {

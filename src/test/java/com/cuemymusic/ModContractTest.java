@@ -100,13 +100,36 @@ class ModContractTest {
                     .count();
         }
         // Minimal surface: reduction survivors, transport, two Mod Menu screen adapters,
-        // and the approved track-weighting config (Task 1; catalog, settings screen,
-        // and radial widget assertions arrive in Tasks 2, 5, and 7).
+        // and the 4 approved track-weighting production files:
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/TrackWeightConfig.java")));
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/music/WeightedMusicCatalog.java")));
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/ui/TrackWeightScreen.java")));
         assertTrue(Files.exists(SRC.resolve("client/java/com/cuemymusic/client/ui/RadialWeightWidget.java")));
         assertTrue(productionFiles <= 24, "expected approved production surface, found " + productionFiles);
+    }
+
+    @Test void configAndCatalogAllowedOnlyForTrackWeightingSubsystem() throws Exception {
+        List<String> filesWithConfigOrCatalog;
+        try (Stream<Path> files = Files.walk(SRC)) {
+            filesWithConfigOrCatalog = files
+                    .filter(Files::isRegularFile)
+                    .map(SRC::relativize)
+                    .map(Path::toString)
+                    .filter(name -> name.endsWith(".java")
+                            && (name.startsWith("main" + java.io.File.separator)
+                                    || name.startsWith("client" + java.io.File.separator)))
+                    .filter(name -> {
+                        String lower = name.toLowerCase();
+                        return lower.contains("config") || lower.contains("catalog");
+                    })
+                    .sorted()
+                    .toList();
+        }
+        assertEquals(
+                List.of(
+                        Path.of("client/java/com/cuemymusic/client/music/TrackWeightConfig.java").toString(),
+                        Path.of("client/java/com/cuemymusic/client/music/WeightedMusicCatalog.java").toString()),
+                filesWithConfigOrCatalog);
     }
 
     @Test void radialWeightWidgetRemainsRendererAgnostic() throws Exception {
