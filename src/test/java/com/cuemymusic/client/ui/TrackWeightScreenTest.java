@@ -636,4 +636,136 @@ class TrackWeightScreenTest {
         assertEquals(0xFF, (TrackWeightScreen.TrackEntry.TITLE_COLOR >>> 24) & 0xFF, "Title color must have full alpha");
         assertEquals(0xFF, (TrackWeightScreen.TrackEntry.DETAIL_COLOR >>> 24) & 0xFF, "Detail color must have full alpha");
     }
+
+    @Test
+    void nativeMenuTabBarReplacesCycleButtonPoolSelectorContract() throws Exception {
+        String source = Files.readString(
+                Path.of("src/client/java/com/cuemymusic/client/ui/TrackWeightScreen.java"));
+        assertTrue(source.contains("MenuTabBar"), "Must use MenuTabBar");
+        assertTrue(source.contains("TabManager"), "Must use TabManager");
+        assertTrue(source.contains("GridLayoutTab"), "Must use GridLayoutTab");
+        assertTrue(source.contains("tabNavigationBar.keyPressed"), "Must delegate keyPressed to tabNavigationBar");
+        assertFalse(source.contains("CycleButton<Pool>"), "Must not use CycleButton<Pool>");
+        assertFalse(source.contains("poolButton"), "Must not keep poolButton");
+        int extractStart = source.indexOf("public void extractRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickProgress)");
+        int jsonStart = source.indexOf("class JsonScreen");
+        String mainRender = source.substring(extractStart, jsonStart);
+        assertFalse(mainRender.contains("centeredText(font, title,"), "Must remove redundant screen title rendering in TrackWeightScreen");
+    }
+
+    @Test
+    void nativeMenuTabBarCreatedInBothWideAndNarrowLayoutsWithDynamicPools() {
+        Pool pool1 = poolWithC418AndUnknown();
+        Track netherTrack = track("minecraft:music/nether/rubedo", "Rubedo", "Lena Raine");
+        Pool pool2 = new Pool("minecraft:music.nether", List.of(netherTrack),
+                List.of(netherTrack.occurrences().getFirst()));
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+
+        TrackWeightScreen wideScreen = new TrackWeightScreen(null, saved, List.of(pool1, pool2));
+        wideScreen.initForDimensions(800, 400);
+
+        assertNotNull(wideScreen.tabNavigationBar(), "Tab bar must exist in wide layout");
+        assertEquals(2, wideScreen.tabNavigationBar().getTabs().size(), "Tab bar must have one tab per pool");
+        assertEquals(pool1.id(), wideScreen.tabNavigationBar().getTabs().get(0).getTabTitle().getString());
+        assertEquals(pool2.id(), wideScreen.tabNavigationBar().getTabs().get(1).getTabTitle().getString());
+        assertEquals(pool1, wideScreen.selectedPool(), "First pool must be selected initially");
+
+        // Verify no CycleButton for Pool exists in wide layout
+        boolean hasPoolCycleButtonWide = wideScreen.children().stream()
+                .filter(w -> w instanceof net.minecraft.client.gui.components.CycleButton)
+                .map(w -> ((net.minecraft.client.gui.components.CycleButton<?>) w).getMessage().getString())
+                .anyMatch(msg -> msg.contains("Pool") || msg.contains(pool1.id()));
+        assertFalse(hasPoolCycleButtonWide, "Wide layout must not contain a CycleButton for pool selection");
+
+        TrackWeightScreen narrowScreen = new TrackWeightScreen(null, saved, List.of(pool1, pool2));
+        narrowScreen.initForDimensions(400, 300);
+
+        assertNotNull(narrowScreen.tabNavigationBar(), "Tab bar must exist in narrow layout");
+        assertEquals(2, narrowScreen.tabNavigationBar().getTabs().size(), "Tab bar must have one tab per pool");
+
+        // Verify no CycleButton for Pool exists in narrow layout
+        boolean hasPoolCycleButtonNarrow = narrowScreen.children().stream()
+                .filter(w -> w instanceof net.minecraft.client.gui.components.CycleButton)
+                .map(w -> ((net.minecraft.client.gui.components.CycleButton<?>) w).getMessage().getString())
+                .anyMatch(msg -> msg.contains("Pool") || msg.contains(pool1.id()));
+        assertFalse(hasPoolCycleButtonNarrow, "Narrow layout must not contain a CycleButton for pool selection");
+    }
+
+    @Test
+    void emptyPoolsYieldsNoTabBar() {
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+
+        TrackWeightScreen wideScreen = new TrackWeightScreen(null, saved, List.of());
+        wideScreen.initForDimensions(800, 400);
+        assertNull(wideScreen.tabNavigationBar(), "Empty pools must yield no tab bar in wide layout");
+        assertNull(wideScreen.selectedPool());
+
+        TrackWeightScreen narrowScreen = new TrackWeightScreen(null, saved, List.of());
+        narrowScreen.initForDimensions(400, 300);
+        assertNull(narrowScreen.tabNavigationBar(), "Empty pools must yield no tab bar in narrow layout");
+        assertNull(narrowScreen.selectedPool());
+    }
+
+    @Test
+    void tabSelectionRoutesThroughSinglePathSwitchingPoolAndPreservingState() {
+        Pool pool1 = poolWithC418AndUnknown();
+        Track netherTrack = track("minecraft:music/nether/rubedo", "Rubedo", "Lena Raine");
+        Pool pool2 = new Pool("minecraft:music.nether", List.of(netherTrack),
+                List.of(netherTrack.occurrences().getFirst()));
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, List.of(pool1, pool2));
+        screen.initForDimensions(800, 400);
+
+        screen.model().setSearchQuery("swed");
+        assertEquals("Sweden", screen.model().selectedTrack().title());
+
+        screen.previewState().toggle(screen.model().selectedTrack());
+        assertTrue(screen.previewState().isPlaying(), "Preview should be playing before pool switch");
+
+        // Select tab 1
+        screen.tabNavigationBar().selectTab(1, false);
+
+        assertEquals(pool2, screen.selectedPool(), "Selected pool must update to pool 2");
+        assertEquals(netherTrack, screen.selectedTrack(), "Selected track must update to pool 2's first track");
+        assertFalse(screen.previewState().isPlaying(), "Preview must be stopped on pool switch");
+        assertEquals("", screen.model().searchQuery(), "Search query must be cleared on pool switch");
+        assertEquals(1, screen.radialWheel().slices().size(), "Radial wheel must be synced to pool 2");
+        assertEquals(netherTrack.resourceId(), screen.radialWheel().selectedResourceId());
+    }
+
+    @Test
+    void resizePreservesSelectedPoolAndDoesNotFireUnintendedReset() {
+        Pool pool1 = poolWithC418AndUnknown();
+        Track nether1 = track("minecraft:music/nether/rubedo", "Rubedo", "Lena Raine");
+        Track nether2 = track("minecraft:music/nether/chrysopoeia", "Chrysopoeia", "Lena Raine");
+        Pool pool2 = new Pool("minecraft:music.nether", List.of(nether1, nether2),
+                List.of(nether1.occurrences().getFirst(), nether2.occurrences().getFirst()));
+        TrackWeightConfig saved = TrackWeightConfig.defaults();
+
+        TrackWeightScreen screen = new TrackWeightScreen(null, saved, List.of(pool1, pool2));
+        screen.initForDimensions(800, 400);
+
+        // Switch to pool 2
+        screen.tabNavigationBar().selectTab(1, false);
+        assertEquals(pool2, screen.selectedPool());
+
+        // Select nether2 specifically
+        screen.selectTrack(nether2.resourceId());
+        assertEquals(nether2, screen.selectedTrack());
+
+        // Start preview on nether2
+        screen.previewState().toggle(nether2);
+        assertTrue(screen.previewState().isPlaying());
+
+        // Simulate resize to narrow layout
+        screen.initForDimensions(400, 300);
+
+        assertEquals(pool2, screen.selectedPool(), "Selected pool must be preserved across resize");
+        assertNotNull(screen.tabNavigationBar());
+        assertEquals(pool2.id(), screen.tabManager().getCurrentTab().getTabTitle().getString(),
+                "Tab manager must have pool 2's tab selected after resize");
+        assertEquals(nether2, screen.selectedTrack(), "Selected track within pool must not reset to first track on resize");
+        assertTrue(screen.previewState().isPlaying(), "Active preview must not be stopped on resize");
+    }
 }

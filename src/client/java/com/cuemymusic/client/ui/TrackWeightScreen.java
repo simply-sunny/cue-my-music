@@ -25,7 +25,13 @@ import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.ObjectSelectionList;
+import net.minecraft.client.gui.components.tabs.GridLayoutTab;
+import net.minecraft.client.gui.components.tabs.MenuTabBar;
+import net.minecraft.client.gui.components.tabs.Tab;
+import net.minecraft.client.gui.components.tabs.TabManager;
+import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
@@ -62,10 +68,12 @@ public final class TrackWeightScreen extends Screen {
     private final TrackWeightConfig saved;
     private final Model model;
     private final PreviewState previewState;
+    private final TabManager tabManager;
+    private final Map<Tab, Pool> tabToPool = new LinkedHashMap<>();
+    private MenuTabBar tabNavigationBar;
     private PinnedMusicInstance currentPreviewInstance;
     private Component errorMessage;
 
-    private CycleButton<Pool> poolButton;
     private EditBox searchBox;
     private TrackList trackList;
     private WeightSlider weightSlider;
@@ -110,6 +118,7 @@ public final class TrackWeightScreen extends Screen {
                 this::stopPreviewSound,
                 () -> MusicDirector.getInstance().pauseForPreview(),
                 () -> MusicDirector.getInstance().resumeAfterPreview(true));
+        this.tabManager = new TabManager(this::addRenderableWidget, this::removeWidget, this::onTabSelected, tab -> {});
     }
 
     static boolean usesWideLayout(int width) {
@@ -363,6 +372,13 @@ public final class TrackWeightScreen extends Screen {
         }
     }
 
+    private void onTabSelected(Tab tab) {
+        Pool pool = tabToPool.get(tab);
+        if (pool != null && pool != model.selectedPool()) {
+            onPoolChanged(pool);
+        }
+    }
+
     private void onPoolChanged(Pool newPool) {
         stopPreview();
         model.switchPool(newPool);
@@ -431,6 +447,27 @@ public final class TrackWeightScreen extends Screen {
             radialWheel = null;
         }
 
+        if (!model.pools().isEmpty()) {
+            tabToPool.clear();
+            MenuTabBar.Builder builder = MenuTabBar.builder(this.tabManager, this.width);
+            for (Pool pool : model.pools()) {
+                GridLayoutTab tab = new GridLayoutTab(Component.literal(pool.id()));
+                tabToPool.put(tab, pool);
+                builder.addTab(tab);
+            }
+            this.tabNavigationBar = builder.build();
+            addRenderableWidget(this.tabNavigationBar);
+
+            int selectedIndex = model.pools().indexOf(model.selectedPool());
+            this.tabNavigationBar.selectTab(selectedIndex >= 0 ? selectedIndex : 0, false);
+            this.tabNavigationBar.arrangeElements(this.width);
+            int bottom = this.tabNavigationBar.getRectangle().bottom();
+            ScreenRectangle tabArea = new ScreenRectangle(0, bottom, this.width, Math.max(0, this.height - bottom));
+            this.tabManager.setTabArea(tabArea);
+        } else {
+            this.tabNavigationBar = null;
+        }
+
         boolean wide = usesWideLayout(width);
 
         if (wide) {
@@ -445,14 +482,7 @@ public final class TrackWeightScreen extends Screen {
 
     private void initWideLayout() {
         int topY = 24;
-        if (!model.pools().isEmpty()) {
-            poolButton = CycleButton.builder((Pool pool) -> Component.literal(pool.id()), model.selectedPool())
-                    .withValues(model.pools())
-                    .create(20, topY, 240, 20, Component.literal("Pool"), (btn, pool) -> onPoolChanged(pool));
-            addRenderableWidget(poolButton);
-        }
-
-        searchBox = new EditBox(font, 268, topY, 180, 20, Component.literal("Search"));
+        searchBox = new EditBox(font, 20, topY, 220, 20, Component.literal("Search"));
         searchBox.setHint(Component.literal("Search track or composer…"));
         searchBox.setValue(model.searchQuery());
         searchBox.setResponder(query -> {
@@ -569,17 +599,8 @@ public final class TrackWeightScreen extends Screen {
     private void initNarrowLayout() {
         NarrowGeometry geom = narrowGeometry(width, height);
 
-        int halfW = (geom.poolSearch().width() - 4) / 2;
-        if (!model.pools().isEmpty()) {
-            poolButton = CycleButton.builder((Pool pool) -> Component.literal(pool.id()), model.selectedPool())
-                    .withValues(model.pools())
-                    .create(geom.poolSearch().x(), geom.poolSearch().y(), halfW, geom.poolSearch().height(),
-                            Component.literal("Pool"), (btn, pool) -> onPoolChanged(pool));
-            addRenderableWidget(poolButton);
-        }
-
-        searchBox = new EditBox(font, geom.poolSearch().x() + halfW + 4, geom.poolSearch().y(),
-                halfW, geom.poolSearch().height(), Component.literal("Search"));
+        searchBox = new EditBox(font, geom.poolSearch().x(), geom.poolSearch().y(),
+                geom.poolSearch().width(), geom.poolSearch().height(), Component.literal("Search"));
         searchBox.setHint(Component.literal("Search track or composer…"));
         searchBox.setValue(model.searchQuery());
         searchBox.setResponder(query -> {
@@ -690,11 +711,23 @@ public final class TrackWeightScreen extends Screen {
     }
 
     @Override
+    public void repositionElements() {
+        super.repositionElements();
+    }
+
+    @Override
+    public boolean keyPressed(KeyEvent event) {
+        if (this.tabNavigationBar != null && this.tabNavigationBar.keyPressed(event)) {
+            return true;
+        }
+        return super.keyPressed(event);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickProgress) {
         super.extractRenderState(extractor, mouseX, mouseY, tickProgress);
 
         boolean wide = usesWideLayout(width);
-        extractor.centeredText(font, title, width / 2, wide ? 10 : 4, 0xFFFFFF);
 
         Track track = model.selectedTrack();
         if (track != null) {
@@ -754,6 +787,14 @@ public final class TrackWeightScreen extends Screen {
 
     RadialWeightWidget radialWheel() {
         return radialWheel;
+    }
+
+    MenuTabBar tabNavigationBar() {
+        return tabNavigationBar;
+    }
+
+    TabManager tabManager() {
+        return tabManager;
     }
 
     PreviewState previewState() {
