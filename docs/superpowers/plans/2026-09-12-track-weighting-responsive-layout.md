@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rebuild the track-weighting screen around a centered 80% workspace, scrollable full-ID pool tabs, responsive track browser, below-wheel editor, icon toolbar, and functional compact preview player.
+**Goal:** Rebuild the track-weighting screen around a centered 80% workspace, scrollable clean-name pool tabs with contextual tooltips, responsive track browser, below-wheel editor, icon toolbar, and functional compact preview player.
 
 **Architecture:** Keep `TrackWeightScreen` as the composition root, but move preview transport state into a focused `TrackPreviewController`. Continue using native Minecraft widgets and `MenuTabBar.MenuTabButton`; retain CPU rasterization for the wheel. Preview audio uses a separately owned transport in `MusicDirector` without entering planner selection/history or the normal queue.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - All settings UI must stay within a centered 80% × 80% workspace.
-- Pool names remain full stable IDs in one horizontally scrollable native-style row; no arrow buttons, wrapping, paging, abbreviations, or cycle button.
+- Pool tabs use clean human-readable category names in one horizontally scrollable native-style row; no arrow buttons, wrapping, paging, or cycle button. Tooltips explain where known categories play and safely identify unknown custom pools.
 - The narrow track browser fills the workspace content area and hides wheel/editor/player.
 - Multiplier controls live below the radial wheel, never in a right-hand column.
 - Bottom actions are icon-only native buttons with tooltips and narration; preview is icon-only with narration.
@@ -62,7 +62,7 @@ void poolTabsFillWorkspaceAndHaveNoArrowButtons() {
 }
 ```
 
-Also assert full pool IDs remain tab titles and wheel scrolling plus selected-tab reveal clamp inside `maxScroll()`.
+Also assert tabs use clean category titles, known-category tooltips explain where music plays, custom tooltips identify the full pool ID without invented semantics, and wheel scrolling plus selected-tab reveal clamps inside `maxScroll()`.
 
 - [ ] **Step 2: Run tests and verify RED**
 
@@ -87,7 +87,7 @@ static Bounds workspaceBounds(int width, int height) {
 }
 ```
 
-Position `ScrollablePoolTabBar` at `(workspace.x(), workspace.y())`; its viewport width is `workspace.width()`. Delete its left/right `Button` fields and arrow zones. Keep full-ID tab widths (`font.width(pool.id()) + 16`), scissor clipping, wheel/trackpad scrolling, offset clamping, keyboard delegation, and selected-tab auto-reveal. Render header background/separators only within the workspace tab/header bounds.
+Position `ScrollablePoolTabBar` at `(workspace.x(), workspace.y())`; its viewport width is `workspace.width()`. Delete its left/right `Button` fields and arrow zones. Use clean category-label widths (`font.width(poolDisplayName(pool.id())) + 16`), scissor clipping, wheel/trackpad scrolling, offset clamping, keyboard delegation, and selected-tab auto-reveal. `poolDisplayName` special-cases known vanilla contexts and title-cases path segments; `poolTooltip` explains known playback contexts and returns `Custom music pool: <full-id>` for unknown namespaces/paths. Render header background/separators only within the workspace tab/header bounds.
 
 - [ ] **Step 4: Run targeted and full tests**
 
@@ -410,7 +410,7 @@ final class TrackPreviewPlayer {
 
 It owns native widgets only: title `StringWidget`, progress slider, play/pause `Button`, and stop `Button`. `TrackWeightScreen` adds `widgets()` through its normal widget path. `tick()` synchronizes without invoking slider callbacks recursively. Scrub is disabled when `snapshot.canSeek()` is false.
 
-In `TrackWeightScreen`, idle preview is `▶` with narration `Preview selected track` and no visual tooltip. Starting preview swaps the idle control for `TrackPreviewPlayer` in `ResponsiveLayout.preview()`. Stopping/natural completion swaps it back. Browser-overlay mode does not render or focus hidden player widgets.
+In `TrackWeightScreen`, idle preview is `▶` with narration `Preview selected track` and no visual tooltip. Starting preview swaps the idle control for `TrackPreviewPlayer` in `ResponsiveLayout.preview()`. The preview bounds consume the available lower main-panel region beneath the radial wheel and multiplier editor, matching the user-marked runtime layout rather than remaining a one-row button slot. Stopping/natural completion swaps it back. Browser-overlay mode does not render or focus hidden player widgets.
 
 - [ ] **Step 4: Run targeted/full tests and runtime review**
 
@@ -448,7 +448,7 @@ git commit -m 'feat: show compact settings preview player'
 
 - [ ] **Step 1: Update README**
 
-Document centered responsive workspace, scrollable full-ID tabs, collapsible browser, icon toolbar, below-wheel editor, and compact preview player. Remove descriptions contradicted by the new layout.
+Document centered responsive workspace, scrollable clean-name tabs with contextual tooltips, collapsible browser, icon toolbar, below-wheel editor, and compact preview player. Remove descriptions contradicted by the new layout.
 
 - [ ] **Step 2: Run clean verification**
 
@@ -477,7 +477,7 @@ unzip -l build/libs/cue-my-music-*.jar | grep -E 'TrackPreview|TrackWeight|Weigh
 
 - [ ] **Step 4: User visual/runtime review**
 
-Gemini launches `./gradlew runClient --console=plain` and leaves it open. The user supplies client-window screenshots showing wide browser, collapsed browser, narrow browser overlay, scrolled full-ID tabs, below-wheel editor, icon tooltips, active preview player, and muted pool. Record only verified behavior in `.pi/track-weighting-proof/README.md`.
+Gemini launches `./gradlew runClient --console=plain` and leaves it open. The user supplies client-window screenshots showing wide browser, collapsed browser, narrow browser overlay, scrolled clean-name tabs and contextual hover tooltip, below-wheel editor, icon tooltips, active preview player in the lower region, and muted pool. Record only verified behavior in `.pi/track-weighting-proof/README.md`.
 
 - [ ] **Step 5: Independent nonvisual review**
 

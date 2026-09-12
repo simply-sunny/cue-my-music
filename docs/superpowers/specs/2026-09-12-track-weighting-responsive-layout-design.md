@@ -25,7 +25,9 @@ Geometry is recalculated from screen dimensions during initialization and resize
 
 Each dynamically discovered pool is represented by one native Minecraft `MenuTabBar.MenuTabButton`, preserving the World Creation tab appearance, selected state, focus underline, narration, and keyboard selection behavior.
 
-Tab titles display the complete stable pool ID, such as `minecraft:music.overworld.cherry_grove`. The tab width is the rendered full title width plus native horizontal padding. Full IDs remain available in tooltips and narration.
+Tab titles use clean human-readable category names, such as `Creative`, `Ender Dragon`, `Main Menu`, and `Cherry Grove`. Known vanilla categories receive accurate contextual names; dynamically discovered custom pools receive a title-c-cased path with their namespace retained when useful. The complete stable pool ID remains available to narration/debug context but is not the visible label.
+
+Hovering a tab shows a plain-language tooltip explaining where that category's music can play, such as “Plays during the end credits” or “Plays in the Cherry Grove Overworld biome.” Unknown resource-pack pools use “Custom music pool: `<full-id>`” rather than inventing gameplay semantics.
 
 The tab viewport:
 
@@ -34,6 +36,7 @@ The tab viewport:
 - clips overflowing tabs to its bounds;
 - scrolls horizontally through mouse wheel or trackpad input;
 - has no left/right scroll buttons;
+- sizes tabs from the clean visible category names;
 - automatically reveals a tab selected by mouse or keyboard;
 - clamps its offset after resize;
 - preserves the selected pool through widget rebuilds;
@@ -87,7 +90,7 @@ The existing preview button defect must be root-caused and reproduced before cor
 
 The idle preview control is the icon-only `▶` button. Because its meaning is self-evident, it does not require a visual hover tooltip, but it retains accessible narration.
 
-When preview starts, the `▶` control is replaced by a compact preview player within the main panel. It shows:
+When preview starts, the `▶` control is replaced by a compact preview player occupying the available lower main-panel region beneath the radial wheel and multiplier controls. It shows:
 
 - the full selected track title;
 - elapsed and total time when duration is known;
