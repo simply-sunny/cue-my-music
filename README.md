@@ -4,13 +4,15 @@
 
 # Cue My Music
 
-Deterministic vanilla background music with a boxed Pause-screen transport: Play/Pause, draggable scrub bar, Previous, immediate Next, and End song with the natural delay.
+Deterministic vanilla background music with one responsive player for Pause, Options, and Mod Menu: Play/Pause, scrub, Previous, immediate Next, natural End, queue preview, and Playback Rate.
 
 ## Features
 
 - **Vanilla Playback Ownership**: Integrates directly with Minecraft's native `MusicManager` to preserve ticks, fades, delays, streaming backend, replacement rules, and toasts.
-- **Pause Screen Transport**: Compact, GUI-scale-aware top-right transport panel on the Escape menu with track metadata, live audible clock, and full playback controls.
+- **Responsive Native Player**: A compact, GUI-scale-aware top-right player on Pause and eligible Options screens plus a centered expanded player opened through Mod Menu.
 - **Previous, Next & End**: Skip immediately to deterministic situational tracks, simulate natural song ends with normal delay recomputation, or step back through recently played history.
+- **Upcoming Queue**: Read-only next-five projection using the same deterministic weighted selector as playback; the expanded drawer moves below the player on narrow screens.
+- **Playback Rate**: The expanded player adjusts music from `0.50×` to `2.00×` for the current game session. Like a turntable, it changes playback speed and pitch together; previews and other Minecraft sounds are unaffected.
 - **Channel Play/Pause**: Pauses only the background music channel without disrupting world sounds, ambient audio, or global volume resets.
 - **Draggable Scrub Bar**: Real-time seeking via off-thread stream skipping and compressed OGG framing duration detection.
 - **Deterministic Session Isolation**: Seeded per-session music planner maintaining deterministic context-aware track selection across world joins and disconnects.
@@ -34,12 +36,16 @@ Deterministic vanilla background music with a boxed Pause-screen transport: Play
 ## Controls
 
 - Open Pause Screen: press `Escape`.
-- Transport Controls (top-right panel):
+- Compact transport: use the top-right player on Pause or eligible Options screens.
+- Expanded transport: open **Mod Menu → Cue My Music**.
+- Player controls:
   - **Previous**: Step back through recently played tracks in the current context.
   - **Play / Pause**: Toggle music playback without muting environmental sounds.
   - **Next**: Immediately advance to the next context-appropriate track.
   - **End**: Stop the current song and trigger natural vanilla cooldown delay before next track.
   - **Scrub Bar**: Click or drag slider (or use arrow keys when focused) to seek within the song.
+  - **Queue (`≡`)**: Show or hide the next five projected tracks.
+  - **Playback Rate**: In the expanded player, adjust music speed and pitch together from `0.50×` to `2.00×`.
 
 ### Track weighting
 
