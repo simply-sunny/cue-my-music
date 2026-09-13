@@ -3,16 +3,9 @@ package com.cuemymusic.client.music;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import net.minecraft.client.resources.sounds.Sound;
-import net.minecraft.client.sounds.WeighedSoundEvents;
-import net.minecraft.resources.Identifier;
-import net.minecraft.util.valueproviders.ConstantFloat;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -74,16 +67,7 @@ class MusicDirectorSessionTest {
         TrackWeightConfig custom = TrackWeightConfig.defaults().withAntiRepeat(false);
         director.setWeightingConfig(custom);
 
-        Sound sweden = new Sound(
-                Identifier.parse("minecraft:music/game/sweden"),
-                ConstantFloat.of(1.0F), ConstantFloat.of(1.0F), 1,
-                Sound.Type.FILE, false, false, 16);
-        WeighedSoundEvents event = new WeighedSoundEvents(Identifier.parse("minecraft:music.game"), null);
-        event.addSound(sweden);
-
-        WeightedMusicCatalog catalogA = WeightedMusicCatalog.fromEvents(
-                java.util.List.of(Identifier.parse("minecraft:music.game")),
-                id -> event, entry -> null, entry -> null);
+        WeightedMusicCatalog catalogA = WeightedMusicCatalog.empty();
         director.setWeightedCatalog(catalogA);
         assertSame(catalogA, director.weightedCatalog());
 
@@ -126,5 +110,20 @@ class MusicDirectorSessionTest {
         assertNotEquals(MusicDirector.delaySeed(42L), MusicDirector.delaySeed(43L));
         long selection = MusicPlanner.selectionSeed(42L, "minecraft:music.game", 0);
         assertNotEquals(selection, MusicDirector.delaySeed(42L));
+    }
+
+    @Test void transportStatusDistinguishesLifecycleStates() {
+        assertEquals(MusicDirector.PlaybackStatus.NO_TRACK,
+                MusicDirector.statusFor(false, false, false, false, 0));
+        assertEquals(MusicDirector.PlaybackStatus.COOLDOWN,
+                MusicDirector.statusFor(false, false, false, false, 20));
+        assertEquals(MusicDirector.PlaybackStatus.LOADING,
+                MusicDirector.statusFor(true, false, false, false, 0));
+        assertEquals(MusicDirector.PlaybackStatus.PLAYING,
+                MusicDirector.statusFor(true, true, true, false, 0));
+        assertEquals(MusicDirector.PlaybackStatus.PAUSED,
+                MusicDirector.statusFor(true, true, true, true, 0));
+        assertEquals(MusicDirector.PlaybackStatus.COOLDOWN,
+                MusicDirector.statusFor(true, true, false, false, 20));
     }
 }

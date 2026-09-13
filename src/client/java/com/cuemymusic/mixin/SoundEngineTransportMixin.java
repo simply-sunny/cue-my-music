@@ -42,4 +42,13 @@ public abstract class SoundEngineTransportMixin implements EngineTransport {
             handle.execute(Channel::unpause);
         }
     }
+
+    @Unique
+    @Override
+    public void cueMyMusic$setInstancePitch(SoundInstance instance, float pitch) {
+        ChannelHandle handle = instanceToChannel.get(instance);
+        if (handle != null && !handle.isStopped()) {
+            handle.execute(channel -> channel.setPitch(pitch));
+        }
+    }
 }

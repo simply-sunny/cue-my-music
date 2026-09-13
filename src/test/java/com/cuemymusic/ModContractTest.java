@@ -134,6 +134,39 @@ class ModContractTest {
                 filesWithConfigOrCatalog);
     }
 
+    @Test void playbackRateUsesOwnedChannelWithoutDspOrPreviewWrapping() throws Exception {
+        Path music = SRC.resolve("client/java/com/cuemymusic/client/music");
+        assertFalse(Files.exists(music.resolve("WsolaAudioStream.java")));
+
+        String engine = Files.readString(music.resolve("EngineTransport.java"));
+        assertTrue(engine.contains("cueMyMusic$setInstancePitch"));
+
+        String audible = Files.readString(SRC.resolve(
+                "client/java/com/cuemymusic/mixin/ChannelAudibleMixin.java"));
+        assertTrue(audible.contains("TaggedStream"));
+        assertTrue(audible.contains("playbackRate"));
+
+        String buffers = Files.readString(SRC.resolve(
+                "client/java/com/cuemymusic/mixin/SoundBufferLibraryMixin.java"));
+        assertFalse(buffers.contains("WsolaAudioStream"));
+
+        try (Stream<Path> files = Files.walk(SRC.resolve("client/java"))) {
+            String production = files.filter(Files::isRegularFile)
+                    .filter(path -> path.toString().endsWith(".java"))
+                    .map(path -> {
+                        try {
+                            return Files.readString(path);
+                        } catch (java.io.IOException exception) {
+                            throw new java.io.UncheckedIOException(exception);
+                        }
+                    })
+                    .reduce("", (left, right) -> left + "\n" + right);
+            assertFalse(production.contains("SourceMode"));
+            assertFalse(production.contains("Crossfade"));
+            assertFalse(production.contains("pitchSemitones"));
+        }
+    }
+
     @Test void radialWeightWidgetRemainsRendererAgnostic() throws Exception {
         Path path = SRC.resolve("client/java/com/cuemymusic/client/ui/RadialWeightWidget.java");
         assertTrue(Files.exists(path), "RadialWeightWidget.java must exist");

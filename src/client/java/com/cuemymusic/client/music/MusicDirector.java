@@ -69,6 +69,7 @@ public final class MusicDirector {
     private final TransportClock clock = new TransportClock();
     private volatile double durationSeconds = Double.NaN;
     private volatile boolean transportPaused;
+    private volatile boolean audibleStarted;
     private final Map<Identifier, List<OffsetRequest>> offsetRequests = new ConcurrentHashMap<>();
     /** Hard ceiling on decoded bytes dropped for one seek (far past any music track). */
     static final long SKIP_BUDGET_BYTES = 256L << 20;
@@ -81,6 +82,25 @@ public final class MusicDirector {
     public enum StreamOwner {
         TRANSPORT,
         PREVIEW
+    }
+
+    public enum PlaybackStatus {
+        NO_TRACK,
+        LOADING,
+        PLAYING,
+        PAUSED,
+        COOLDOWN
+    }
+
+    static PlaybackStatus statusFor(
+            boolean tracked, boolean audibleStarted, boolean active, boolean paused, int delayTicks) {
+        if (tracked && !audibleStarted) {
+            return PlaybackStatus.LOADING;
+        }
+        if (tracked && active) {
+            return paused ? PlaybackStatus.PAUSED : PlaybackStatus.PLAYING;
+        }
+        return delayTicks > 0 ? PlaybackStatus.COOLDOWN : PlaybackStatus.NO_TRACK;
     }
 
     /** Pending offset reopen, captured by the play redirect at stream-open time. */
@@ -248,6 +268,7 @@ public final class MusicDirector {
                 new PinnedMusicInstance(eventId, chosen, RandomSource.create(seed), generation, 0.0);
         transportInstance = pin;
         transportPaused = false;
+        audibleStarted = false;
         durationSeconds = Double.NaN;
         clock.reset();
         clearOffsetRequests(StreamOwner.TRANSPORT);
@@ -439,6 +460,7 @@ public final class MusicDirector {
                 RandomSource.create(generation), generation, target);
         clearOffsetRequests(StreamOwner.TRANSPORT);
         registerOffsetRequest(current.pinnedSound().getPath(), new OffsetRequest(StreamOwner.TRANSPORT, generation, target));
+        audibleStarted = false;
         minecraft.getSoundManager().stop(current);
         minecraft.getSoundManager().play(next);
         MusicManager manager = minecraft.getMusicManager();
@@ -538,6 +560,20 @@ public final class MusicDirector {
             return Optional.empty();
         }
         return Optional.ofNullable(trackInfo(sound));
+    }
+
+    /** Selected track metadata remains available while its channel is loading. */
+    public Optional<TrackInfo> currentTrack() {
+        PinnedMusicInstance current = transportInstance;
+        return current == null ? Optional.empty() : Optional.ofNullable(trackInfo(current.pinnedSound()));
+    }
+
+    public PlaybackStatus playbackStatus() {
+        Minecraft minecraft = Minecraft.getInstance();
+        PinnedMusicInstance current = transportInstance;
+        boolean active = minecraft != null && current != null
+                && minecraft.getSoundManager().isActive(current);
+        return statusFor(current != null, audibleStarted, active, transportPaused, remainingDelayTicks());
     }
 
     /**
@@ -655,6 +691,7 @@ public final class MusicDirector {
         transportGeneration.incrementAndGet();
         transportInstance = null;
         transportPaused = false;
+        audibleStarted = false;
         durationSeconds = Double.NaN;
         clock.reset();
         clearOffsetRequests(StreamOwner.TRANSPORT);
@@ -940,6 +977,7 @@ public final class MusicDirector {
             return;
         }
         clock.noteStarted(currentOffsetSeconds(), System.nanoTime());
+        audibleStarted = true;
     }
 
     /** Narrow hook: the native channel paused a tagged stream. */
@@ -979,6 +1017,20 @@ public final class MusicDirector {
 
     public boolean transportPaused() {
         return transportPaused && transportInstance != null;
+    }
+
+    public double playbackRate() {
+        return clock.playbackRate();
+    }
+
+    public void setPlaybackRate(double rate) {
+        clock.setPlaybackRate(rate, System.nanoTime());
+        Minecraft minecraft = Minecraft.getInstance();
+        PinnedMusicInstance current = transportInstance;
+        SoundEngine engine = minecraft == null || current == null ? null : engineOf(minecraft);
+        if (engine != null) {
+            ((EngineTransport) engine).cueMyMusic$setInstancePitch(current, (float) clock.playbackRate());
+        }
     }
 
     /** Whether Play/Pause can act: a live pinned song is held by the engine. */

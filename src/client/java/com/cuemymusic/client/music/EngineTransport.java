@@ -8,4 +8,6 @@ import net.minecraft.client.resources.sounds.SoundInstance;
  */
 public interface EngineTransport {
     void cueMyMusic$setInstancePaused(SoundInstance instance, boolean paused);
+
+    void cueMyMusic$setInstancePitch(SoundInstance instance, float pitch);
 }

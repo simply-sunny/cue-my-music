@@ -35,6 +35,15 @@ public abstract class ChannelAudibleMixin {
         return Long.MIN_VALUE;
     }
 
+    @Inject(method = "play()V", at = @At("HEAD"))
+    private void cueMyMusic$applyPlaybackRate(CallbackInfo info) {
+        long generation = cueMyMusic$taggedGeneration();
+        MusicDirector director = MusicDirector.getInstance();
+        if (director.isCurrentGeneration(generation)) {
+            ((Channel) (Object) this).setPitch((float) director.playbackRate());
+        }
+    }
+
     @Inject(method = "play()V", at = @At("TAIL"))
     private void cueMyMusic$noteAudibleStart(CallbackInfo info) {
         long generation = cueMyMusic$taggedGeneration();
