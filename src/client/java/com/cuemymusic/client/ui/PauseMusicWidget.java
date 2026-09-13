@@ -224,20 +224,21 @@ public final class PauseMusicWidget {
         return List.of(info.title(), info.artist());
     }
 
-    record Presentation(String title, String playPauseText, String endText, String endTooltip,
+    record Presentation(String title, String artist, String playPauseText, String endText, String endTooltip,
             boolean scrubEnabled, boolean playPauseEnabled) {
     }
 
     static Presentation presentation(MusicDirector.PlaybackStatus status,
             Optional<MusicDirector.TrackInfo> track, boolean durationKnown, int delayTicks) {
         String title = track.map(MusicDirector.TrackInfo::title).orElse(FALLBACK_TEXT);
+        String artist = track.map(MusicDirector.TrackInfo::artist).orElse(null);
         return switch (status) {
-            case LOADING -> new Presentation(title, PAUSE_TEXT, "Loading…", "Loading track", false, false);
-            case PLAYING -> new Presentation(title, PAUSE_TEXT, END_TEXT, END_TOOLTIP, durationKnown, true);
-            case PAUSED -> new Presentation(title, PLAY_TEXT, END_TEXT, END_TOOLTIP, durationKnown, true);
-            case COOLDOWN -> new Presentation(FALLBACK_TEXT, PLAY_TEXT,
+            case LOADING -> new Presentation(title, artist, PAUSE_TEXT, "Loading…", "Loading track", false, false);
+            case PLAYING -> new Presentation(title, artist, PAUSE_TEXT, END_TEXT, END_TOOLTIP, durationKnown, true);
+            case PAUSED -> new Presentation(title, artist, PLAY_TEXT, END_TEXT, END_TOOLTIP, durationKnown, true);
+            case COOLDOWN -> new Presentation(FALLBACK_TEXT, null, PLAY_TEXT,
                     MusicDirector.formatTime(delayTicks / 20.0), "Skip cooldown", false, false);
-            case NO_TRACK -> new Presentation(FALLBACK_TEXT, PLAY_TEXT, END_TEXT,
+            case NO_TRACK -> new Presentation(FALLBACK_TEXT, null, PLAY_TEXT, END_TEXT,
                     "No active music", false, false);
         };
     }
@@ -506,9 +507,13 @@ public final class PauseMusicWidget {
         PanelLayout computeLayout() {
             var font = client.font;
             MusicDirector director = MusicDirector.getInstance();
-            List<String> lines = displayLines(director.currentTrack());
-            int titleWidth = font.width(lines.get(0));
-            int artistWidth = lines.size() > 1 ? font.width(lines.get(1)) : 0;
+            Optional<MusicDirector.TrackInfo> track = director.currentTrack();
+            MusicDirector.PlaybackStatus status = director.playbackStatus();
+            double duration = director.transportDurationSeconds();
+            boolean durationKnown = Double.isFinite(duration) && duration > 0.0;
+            Presentation view = presentation(status, track, durationKnown, director.remainingDelayTicks());
+            int titleWidth = font.width(view.title());
+            int artistWidth = view.artist() != null ? font.width(view.artist()) : 0;
             Mode mode = screen instanceof MusicPlayerScreen ? Mode.EXPANDED : Mode.COMPACT;
             return panelLayout(screen.width, screen.height, titleWidth, artistWidth, font.lineHeight, queueOpen,
                     screen instanceof OptionsScreen, mode);
@@ -613,8 +618,8 @@ public final class PauseMusicWidget {
             title.setMaxWidth(layout.titleWidth());
             title.visible = true;
 
-            if (lines.size() > 1) {
-                artist.setMessage(Component.literal(lines.get(1)));
+            if (view.artist() != null) {
+                artist.setMessage(Component.literal(view.artist()));
                 artist.visible = true;
             } else {
                 artist.visible = false;

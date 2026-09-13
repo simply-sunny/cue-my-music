@@ -56,6 +56,7 @@ class PauseWidgetStateTest {
         var none = PauseMusicWidget.presentation(
                 MusicDirector.PlaybackStatus.NO_TRACK, Optional.empty(), false, 0);
         assertEquals("No music playing", none.title());
+        assertNull(none.artist());
         assertFalse(none.scrubEnabled());
         assertFalse(none.playPauseEnabled());
 
@@ -63,11 +64,15 @@ class PauseWidgetStateTest {
                 MusicDirector.PlaybackStatus.LOADING,
                 Optional.of(new MusicDirector.TrackInfo("Sweden", "C418")), false, 0);
         assertEquals("Sweden", loading.title());
+        assertEquals("C418", loading.artist());
         assertEquals("Loading…", loading.endText());
         assertFalse(loading.playPauseEnabled());
 
         var cooldown = PauseMusicWidget.presentation(
-                MusicDirector.PlaybackStatus.COOLDOWN, Optional.empty(), false, 80);
+                MusicDirector.PlaybackStatus.COOLDOWN,
+                Optional.of(new MusicDirector.TrackInfo("Sweden", "C418")), false, 80);
+        assertEquals("No music playing", cooldown.title());
+        assertNull(cooldown.artist(), "cooldown must not retain previous track's artist");
         assertEquals("0:04", cooldown.endText());
         assertEquals("Skip cooldown", cooldown.endTooltip());
     }
@@ -77,6 +82,8 @@ class PauseWidgetStateTest {
                 new MusicDirector.TrackInfo("Sweden", "C418"));
         var playing = PauseMusicWidget.presentation(
                 MusicDirector.PlaybackStatus.PLAYING, track, true, 0);
+        assertEquals("Sweden", playing.title());
+        assertEquals("C418", playing.artist());
         assertEquals(PauseMusicWidget.PAUSE_TEXT, playing.playPauseText());
         assertTrue(playing.scrubEnabled());
         assertTrue(playing.playPauseEnabled());
