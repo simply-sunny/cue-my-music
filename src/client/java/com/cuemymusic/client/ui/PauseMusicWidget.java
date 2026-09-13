@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 import com.cuemymusic.client.music.MusicDirector;
+import com.cuemymusic.client.music.TransportClock;
 
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
@@ -69,6 +70,8 @@ public final class PauseMusicWidget {
     static final String RESTORE_TOOLTIP = "Restore";
     static final String OPEN_PLAYER_TOOLTIP = "Open music player in Mod Menu";
     static final String CLOSE_TOOLTIP = "Back to Options";
+    static final String RATE_LABEL = "Playback Rate";
+    static final String RATE_TOOLTIP = "Changes playback speed and pitch";
     static final int CARD_BG_COLOR = 0xD0101010;
     static final int CARD_BORDER_COLOR = 0xFF505050;
 
@@ -221,12 +224,41 @@ public final class PauseMusicWidget {
         return List.of(info.title(), info.artist());
     }
 
+    record Presentation(String title, String playPauseText, String endText, String endTooltip,
+            boolean scrubEnabled, boolean playPauseEnabled) {
+    }
+
+    static Presentation presentation(MusicDirector.PlaybackStatus status,
+            Optional<MusicDirector.TrackInfo> track, boolean durationKnown, int delayTicks) {
+        String title = track.map(MusicDirector.TrackInfo::title).orElse(FALLBACK_TEXT);
+        return switch (status) {
+            case LOADING -> new Presentation(title, PAUSE_TEXT, "Loading…", "Loading track", false, false);
+            case PLAYING -> new Presentation(title, PAUSE_TEXT, END_TEXT, END_TOOLTIP, durationKnown, true);
+            case PAUSED -> new Presentation(title, PLAY_TEXT, END_TEXT, END_TOOLTIP, durationKnown, true);
+            case COOLDOWN -> new Presentation(FALLBACK_TEXT, PLAY_TEXT,
+                    MusicDirector.formatTime(delayTicks / 20.0), "Skip cooldown", false, false);
+            case NO_TRACK -> new Presentation(FALLBACK_TEXT, PLAY_TEXT, END_TEXT,
+                    "No active music", false, false);
+        };
+    }
+
     /** Pure upcoming item formatting: number + title + optional artist. */
     static String formatUpcoming(int index, MusicDirector.TrackInfo track) {
         if (track.artist() != null && !track.artist().isEmpty()) {
             return index + ". " + track.title() + " - " + track.artist();
         }
         return index + ". " + track.title();
+    }
+
+    static List<String> queueLines(List<MusicDirector.TrackInfo> tracks) {
+        if (tracks.isEmpty()) {
+            return List.of("No upcoming tracks");
+        }
+        java.util.ArrayList<String> lines = new java.util.ArrayList<>(tracks.size());
+        for (int i = 0; i < tracks.size(); i++) {
+            lines.add(formatUpcoming(i + 1, tracks.get(i)));
+        }
+        return lines;
     }
 
     /**
@@ -325,6 +357,47 @@ public final class PauseMusicWidget {
         }
     }
 
+    /** Expanded-player varispeed control; compact hosts never expose it. */
+    static final class PlaybackRateSlider extends AbstractSliderButton {
+        private static final double STEP = 0.05;
+
+        PlaybackRateSlider(int x, int y, int width) {
+            super(x, y, width, SLIDER_HEIGHT, Component.empty(), valueFor(1.0));
+            setTooltip(Tooltip.create(Component.literal(RATE_TOOLTIP)));
+            updateMessage();
+        }
+
+        static double rateFor(double value) {
+            return snapRate(TransportClock.RATE_MIN
+                    + Math.clamp(value, 0.0, 1.0) * (TransportClock.RATE_MAX - TransportClock.RATE_MIN));
+        }
+
+        static double snapRate(double rate) {
+            return Math.round(TransportClock.clampRate(rate) / STEP) * STEP;
+        }
+
+        static double valueFor(double rate) {
+            return (TransportClock.clampRate(rate) - TransportClock.RATE_MIN)
+                    / (TransportClock.RATE_MAX - TransportClock.RATE_MIN);
+        }
+
+        void sync(double rate) {
+            value = valueFor(rate);
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Component.literal(String.format(java.util.Locale.ROOT,
+                    "%s %.2f×", RATE_LABEL, rateFor(value))));
+        }
+
+        @Override
+        protected void applyValue() {
+            MusicDirector.getInstance().setPlaybackRate(rateFor(value));
+        }
+    }
+
     static boolean isEligible(Class<?> screenClass, boolean inWorld) {
         if (screenClass == null) {
             return false;
@@ -378,12 +451,21 @@ public final class PauseMusicWidget {
         final Button minimizeButton;
         final StringWidget queueHeader;
         final StringWidget[] queueItems;
+        final PlaybackRateSlider rateSlider;
         boolean queueOpen;
         boolean minimized;
 
         Panel(net.minecraft.client.Minecraft client, Screen screen, StringWidget title, StringWidget artist,
                 ScrubSlider slider, Button previous, Button playPause, Button next, Button end,
                 Button queueButton, Button minimizeButton, StringWidget queueHeader, StringWidget[] queueItems) {
+            this(client, screen, title, artist, slider, previous, playPause, next, end,
+                    queueButton, minimizeButton, queueHeader, queueItems, null);
+        }
+
+        Panel(net.minecraft.client.Minecraft client, Screen screen, StringWidget title, StringWidget artist,
+                ScrubSlider slider, Button previous, Button playPause, Button next, Button end,
+                Button queueButton, Button minimizeButton, StringWidget queueHeader, StringWidget[] queueItems,
+                PlaybackRateSlider rateSlider) {
             this.client = client;
             this.screen = screen;
             this.title = title;
@@ -397,6 +479,7 @@ public final class PauseMusicWidget {
             this.minimizeButton = minimizeButton;
             this.queueHeader = queueHeader;
             this.queueItems = queueItems;
+            this.rateSlider = rateSlider;
         }
 
         void addWidgets(List<net.minecraft.client.gui.components.AbstractWidget> widgets) {
@@ -414,13 +497,16 @@ public final class PauseMusicWidget {
                 for (StringWidget item : queueItems) {
                     widgets.add(item);
                 }
+                if (rateSlider != null) {
+                    widgets.add(rateSlider);
+                }
             }
         }
 
         PanelLayout computeLayout() {
             var font = client.font;
             MusicDirector director = MusicDirector.getInstance();
-            List<String> lines = displayLines(director.nowPlaying());
+            List<String> lines = displayLines(director.currentTrack());
             int titleWidth = font.width(lines.get(0));
             int artistWidth = lines.size() > 1 ? font.width(lines.get(1)) : 0;
             Mode mode = screen instanceof MusicPlayerScreen ? Mode.EXPANDED : Mode.COMPACT;
@@ -494,6 +580,10 @@ public final class PauseMusicWidget {
                 for (StringWidget item : queueItems) {
                     item.visible = false;
                 }
+                if (rateSlider != null) {
+                    rateSlider.visible = false;
+                    rateSlider.active = false;
+                }
                 minimizeButton.setMessage(Component.literal(RESTORE_TEXT));
                 minimizeButton.setTooltip(Tooltip.create(Component.literal(
                         forcedMinimized ? OPEN_PLAYER_TOOLTIP : RESTORE_TOOLTIP)));
@@ -507,11 +597,16 @@ public final class PauseMusicWidget {
             }
 
             MusicDirector director = MusicDirector.getInstance();
-            List<String> lines = displayLines(director.nowPlaying());
+            Optional<MusicDirector.TrackInfo> track = director.currentTrack();
+            List<String> lines = displayLines(track);
+            MusicDirector.PlaybackStatus status = director.playbackStatus();
+            double duration = director.transportDurationSeconds();
+            boolean durationKnown = Double.isFinite(duration) && duration > 0.0;
+            Presentation view = presentation(status, track, durationKnown, director.remainingDelayTicks());
             PanelLayout layout = computeLayout();
             var font = client.font;
 
-            title.setMessage(Component.literal(lines.get(0)));
+            title.setMessage(Component.literal(view.title()));
             title.setX(layout.titleX());
             title.setY(layout.titleY());
             title.setWidth(layout.titleWidth());
@@ -534,9 +629,11 @@ public final class PauseMusicWidget {
             slider.setWidth(layout.sliderWidth());
             slider.visible = true;
 
-            boolean live = director.canTogglePause();
+            boolean live = status == MusicDirector.PlaybackStatus.PLAYING
+                    || status == MusicDirector.PlaybackStatus.PAUSED;
             slider.sync(live ? director.transportPositionSeconds() : 0.0,
-                    live ? director.transportDurationSeconds() : Double.NaN);
+                    live ? duration : Double.NaN);
+            slider.active = view.scrubEnabled();
 
             minimizeButton.setMessage(Component.literal(playerScreen ? CLOSE_TEXT : MINIMIZE_TEXT));
             minimizeButton.setTooltip(Tooltip.create(Component.literal(
@@ -569,29 +666,26 @@ public final class PauseMusicWidget {
             queueButton.setY(layout.buttonsY());
             queueButton.visible = true;
 
-            playPause.setMessage(
-                    Component.literal(director.transportPaused() ? PLAY_TEXT : PAUSE_TEXT));
+            playPause.setMessage(Component.literal(view.playPauseText()));
 
             previous.active = director.canGoPrevious();
-            playPause.active = director.canTogglePause();
+            playPause.active = view.playPauseEnabled();
             next.active = director.canGoNext();
             queueButton.active = true;
+            queueButton.setTooltip(Tooltip.create(Component.literal(
+                    queueOpen ? "Close upcoming tracks" : "Open upcoming tracks")));
 
-            if (live) {
-                end.setMessage(Component.literal(END_TEXT));
-                end.setTooltip(Tooltip.create(Component.literal(END_TOOLTIP)));
-                end.active = true;
-            } else {
-                int delayTicks = director.remainingDelayTicks();
-                if (delayTicks > 0) {
-                    end.setMessage(Component.literal(MusicDirector.formatTime(director.remainingDelaySeconds())));
-                    end.setTooltip(Tooltip.create(Component.literal("Skip delay?")));
-                    end.active = true;
-                } else {
-                    end.setMessage(Component.literal(END_TEXT));
-                    end.setTooltip(Tooltip.create(Component.literal("No active music")));
-                    end.active = false;
-                }
+            end.setMessage(Component.literal(view.endText()));
+            end.setTooltip(Tooltip.create(Component.literal(view.endTooltip())));
+            end.active = live || status == MusicDirector.PlaybackStatus.COOLDOWN;
+
+            if (rateSlider != null) {
+                rateSlider.setX(layout.rateX());
+                rateSlider.setY(layout.rateY());
+                rateSlider.setWidth(layout.rateWidth());
+                rateSlider.visible = layout.effectsVisible();
+                rateSlider.active = layout.effectsVisible();
+                rateSlider.sync(director.playbackRate());
             }
 
             // Queue display
@@ -602,12 +696,12 @@ public final class PauseMusicWidget {
                 queueHeader.setMaxWidth(layout.queueCardWidth() - PAD * 2);
                 queueHeader.visible = true;
 
-                List<MusicDirector.TrackInfo> upcoming = director.upcomingTracks(5);
+                List<String> upcoming = queueLines(director.upcomingTracks(5));
                 int lineH = font.lineHeight + LINE_GAP;
                 for (int i = 0; i < queueItems.length; i++) {
                     StringWidget item = queueItems[i];
                     if (i < upcoming.size()) {
-                        item.setMessage(Component.literal(formatUpcoming(i + 1, upcoming.get(i))));
+                        item.setMessage(Component.literal(upcoming.get(i)));
                         item.setX(layout.queueCardX() + PAD);
                         item.setY(layout.queueListY() + i * lineH);
                         item.setWidth(layout.queueCardWidth() - PAD * 2);
@@ -716,7 +810,9 @@ public final class PauseMusicWidget {
                 })
                 .bounds(layout.endX(), layout.buttonsY(), layout.endWidth(), BUTTON_SIZE)
                 .tooltip(Tooltip.create(Component.literal(END_TOOLTIP)))
-                .createNarration(narration -> Component.literal("End song"))
+                .createNarration(narration -> Component.literal(
+                        MusicDirector.getInstance().playbackStatus() == MusicDirector.PlaybackStatus.COOLDOWN
+                                ? "Skip cooldown" : "End song"))
                 .build();
 
         Button queueButton = Button.builder(Component.literal(QUEUE_ICON),
@@ -727,13 +823,18 @@ public final class PauseMusicWidget {
                 })
                 .bounds(layout.queueX(), layout.buttonsY(), QUEUE_WIDTH, BUTTON_SIZE)
                 .tooltip(Tooltip.create(Component.literal(QUEUE_TOOLTIP)))
-                .createNarration(narration -> Component.literal(QUEUE_TOOLTIP))
+                .createNarration(narration -> Component.literal(
+                        panelHolder[0] != null && panelHolder[0].queueOpen
+                                ? "Close upcoming tracks" : "Open upcoming tracks"))
                 .build();
 
         StringWidget queueHeader = new StringWidget(layout.queueCardX() + PAD, layout.queueHeaderY(),
                 layout.queueCardWidth() - PAD * 2, font.lineHeight, Component.literal("Upcoming (next 5):"), font);
         queueHeader.setMaxWidth(layout.queueCardWidth() - PAD * 2);
         queueHeader.visible = false;
+
+        PlaybackRateSlider rateSlider = mode == Mode.EXPANDED
+                ? new PlaybackRateSlider(layout.rateX(), layout.rateY(), layout.rateWidth()) : null;
 
         StringWidget[] queueItems = new StringWidget[5];
         for (int i = 0; i < 5; i++) {
@@ -757,9 +858,12 @@ public final class PauseMusicWidget {
         for (StringWidget item : queueItems) {
             widgets.add(item);
         }
+        if (rateSlider != null) {
+            widgets.add(rateSlider);
+        }
 
         Panel panel = new Panel(client, screen, title, artist, slider, previous, playPause, next, end,
-                queueButton, minimizeButton, queueHeader, queueItems);
+                queueButton, minimizeButton, queueHeader, queueItems, rateSlider);
         panelHolder[0] = panel;
         ATTACHED_PANELS.put(screen, panel);
 

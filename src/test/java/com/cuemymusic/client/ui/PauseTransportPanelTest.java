@@ -1,5 +1,7 @@
 package com.cuemymusic.client.ui;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 import com.cuemymusic.client.music.MusicDirector;
@@ -64,6 +66,12 @@ class PauseTransportPanelTest {
                 PauseMusicWidget.formatUpcoming(1, new MusicDirector.TrackInfo("Sweden", "C418")));
         assertEquals("2. Chrysopoeia",
                 PauseMusicWidget.formatUpcoming(2, new MusicDirector.TrackInfo("Chrysopoeia", null)));
+    }
+
+    @Test void queueLinesShowAnExplicitEmptyState() {
+        assertEquals(List.of("No upcoming tracks"), PauseMusicWidget.queueLines(List.of()));
+        assertEquals(List.of("1. Sweden - C418"), PauseMusicWidget.queueLines(List.of(
+                new MusicDirector.TrackInfo("Sweden", "C418"))));
     }
 
     @Test void playerCardPutsTitleArtistLeftScrubberRight() {
@@ -181,6 +189,14 @@ class PauseTransportPanelTest {
                 300, 209, 60, 40, 9, true, false, PauseMusicWidget.Mode.EXPANDED);
         assertEquals(PauseMusicWidget.QueuePlacement.BELOW, narrow.queuePlacement());
         assertTrue(narrow.queueCardY() >= narrow.boxY() + narrow.playerCardHeight());
+    }
+
+    @Test void playbackRateSliderMapsAndSnapsTheApprovedRange() {
+        assertEquals(0.50, PauseMusicWidget.PlaybackRateSlider.rateFor(0.0), 1e-9);
+        assertEquals(2.00, PauseMusicWidget.PlaybackRateSlider.rateFor(1.0), 1e-9);
+        assertEquals(1.00, PauseMusicWidget.PlaybackRateSlider.rateFor(
+                PauseMusicWidget.PlaybackRateSlider.valueFor(1.00)), 1e-9);
+        assertEquals(1.05, PauseMusicWidget.PlaybackRateSlider.snapRate(1.03), 1e-9);
     }
 
     @Test void endTooltipDescribesDelayVsImmediate() {

@@ -52,6 +52,49 @@ class PauseWidgetStateTest {
         assertEquals(List.of(PauseMusicWidget.FALLBACK_TEXT), PauseMusicWidget.displayLines(Optional.empty()));
     }
 
+    @Test void presentationDistinguishesNoTrackLoadingAndCooldown() {
+        var none = PauseMusicWidget.presentation(
+                MusicDirector.PlaybackStatus.NO_TRACK, Optional.empty(), false, 0);
+        assertEquals("No music playing", none.title());
+        assertFalse(none.scrubEnabled());
+        assertFalse(none.playPauseEnabled());
+
+        var loading = PauseMusicWidget.presentation(
+                MusicDirector.PlaybackStatus.LOADING,
+                Optional.of(new MusicDirector.TrackInfo("Sweden", "C418")), false, 0);
+        assertEquals("Sweden", loading.title());
+        assertEquals("Loading…", loading.endText());
+        assertFalse(loading.playPauseEnabled());
+
+        var cooldown = PauseMusicWidget.presentation(
+                MusicDirector.PlaybackStatus.COOLDOWN, Optional.empty(), false, 80);
+        assertEquals("0:04", cooldown.endText());
+        assertEquals("Skip cooldown", cooldown.endTooltip());
+    }
+
+    @Test void presentationDistinguishesPlayingPausedAndUnknownDuration() {
+        Optional<MusicDirector.TrackInfo> track = Optional.of(
+                new MusicDirector.TrackInfo("Sweden", "C418"));
+        var playing = PauseMusicWidget.presentation(
+                MusicDirector.PlaybackStatus.PLAYING, track, true, 0);
+        assertEquals(PauseMusicWidget.PAUSE_TEXT, playing.playPauseText());
+        assertTrue(playing.scrubEnabled());
+        assertTrue(playing.playPauseEnabled());
+
+        var paused = PauseMusicWidget.presentation(
+                MusicDirector.PlaybackStatus.PAUSED, track, false, 0);
+        assertEquals(PauseMusicWidget.PLAY_TEXT, paused.playPauseText());
+        assertFalse(paused.scrubEnabled(), "unknown duration must disable scrubbing");
+        assertTrue(paused.playPauseEnabled());
+    }
+
+    @Test void playbackRateCopyIsTechnicallyHonest() {
+        assertEquals("Playback Rate", PauseMusicWidget.RATE_LABEL);
+        assertTrue(PauseMusicWidget.RATE_TOOLTIP.toLowerCase().contains("speed"));
+        assertTrue(PauseMusicWidget.RATE_TOOLTIP.toLowerCase().contains("pitch"));
+        assertFalse(PauseMusicWidget.RATE_TOOLTIP.toLowerCase().contains("tempo"));
+    }
+
     @Test void eligibilityAllowsPauseScreenAndMenuOptions() {
         // pause true regardless of inWorld
         assertTrue(PauseMusicWidget.isEligible(PauseScreen.class, true));
