@@ -77,7 +77,11 @@ public final class PauseMusicWidget {
     private PauseMusicWidget() {
     }
 
-    /** Pure panel geometry: player card, transport row, and upcoming queue card. */
+    enum Mode { COMPACT, EXPANDED }
+
+    enum QueuePlacement { CLOSED, SIDE, BELOW }
+
+    /** Pure geometry for the one player composition in either presentation mode. */
     record PanelLayout(
             int boxX, int boxY, int boxWidth, int boxHeight,
             int playerCardHeight,
@@ -88,94 +92,104 @@ public final class PauseMusicWidget {
             int buttonsY, int previousX, int playPauseX, int nextX,
             int endX, int endWidth, int queueX,
             int queueCardX, int queueCardY, int queueCardWidth, int queueCardHeight,
-            int queueHeaderY, int queueListY) {
+            int queueHeaderY, int queueListY,
+            int rateX, int rateY, int rateWidth, boolean effectsVisible,
+            QueuePlacement queuePlacement) {
     }
 
     static PanelLayout panelLayout(int screenWidth, int screenHeight, int titleTextWidth, int artistTextWidth,
-            int lineHeight, boolean queueOpen, boolean optionsScreen, boolean centered) {
-        int playerCardHeight = PAD * 2 + BUTTON_SIZE * 2 + GAP;
-        int queueCardWidth;
-        int boxWidth;
-        int boxX;
-        if (centered && queueOpen) {
-            int available = Math.max(0, screenWidth - MARGIN * 2 - GAP);
-            if (available >= PLAYER_SCREEN_WIDTH + FIXED_WIDTH) {
-                boxWidth = PLAYER_SCREEN_WIDTH;
-                queueCardWidth = FIXED_WIDTH;
-            } else {
-                boxWidth = Math.min(available, Math.max(MIN_WIDTH,
-                        available * PLAYER_SCREEN_WIDTH / (PLAYER_SCREEN_WIDTH + FIXED_WIDTH)));
-                queueCardWidth = available - boxWidth;
-            }
-            boxX = (screenWidth - boxWidth - GAP - queueCardWidth) / 2;
-        } else {
-            boxWidth = centered
-                    ? Math.min(PLAYER_SCREEN_WIDTH, screenWidth - MARGIN * 2)
-                    : Math.min(FIXED_WIDTH, Math.max(MIN_WIDTH, availablePanelWidth(screenWidth, optionsScreen)));
-            boxX = centered ? (screenWidth - boxWidth) / 2 : Math.max(0, screenWidth - MARGIN - boxWidth);
-            queueCardWidth = boxWidth;
-        }
-        int boxY = centered ? Math.max(MARGIN, (screenHeight - playerCardHeight) / 2) : MARGIN;
+            int lineHeight, boolean queueOpen, boolean optionsScreen, Mode mode) {
+        boolean expanded = mode == Mode.EXPANDED;
+        int lineStep = lineHeight + LINE_GAP;
+        int queueCardHeight = queueOpen ? PAD * 2 + lineStep * 6 : 0;
+        int boxWidth = expanded
+                ? Math.min(PLAYER_SCREEN_WIDTH, screenWidth - MARGIN * 2)
+                : Math.min(FIXED_WIDTH, Math.max(MIN_WIDTH, availablePanelWidth(screenWidth, optionsScreen)));
+        QueuePlacement placement = !queueOpen ? QueuePlacement.CLOSED
+                : expanded && screenWidth - MARGIN * 2 >= boxWidth + GAP + MIN_WIDTH
+                        ? QueuePlacement.SIDE : QueuePlacement.BELOW;
+        int queueCardWidth = placement == QueuePlacement.SIDE
+                ? Math.min(FIXED_WIDTH, screenWidth - MARGIN * 2 - GAP - boxWidth)
+                : boxWidth;
+        int combinedWidth = placement == QueuePlacement.SIDE ? boxWidth + GAP + queueCardWidth : boxWidth;
+        int boxX = expanded ? (screenWidth - combinedWidth) / 2
+                : Math.max(0, screenWidth - MARGIN - boxWidth);
+
+        int compactHeight = PAD * 2 + BUTTON_SIZE * 2 + GAP;
+        int expandedHeight = PAD + lineStep * 2 + SLIDER_HEIGHT + GAP + BUTTON_SIZE + GAP + SLIDER_HEIGHT + PAD;
+        int playerCardHeight = expanded ? expandedHeight : compactHeight;
+        int totalHeight = placement == QueuePlacement.BELOW
+                ? playerCardHeight + GAP + queueCardHeight
+                : Math.max(playerCardHeight, queueCardHeight);
+        int expandedBottom = screenHeight - MARGIN - BUTTON_SIZE - GAP;
+        int boxY = expanded ? Math.max(MARGIN, MARGIN + (expandedBottom - MARGIN - totalHeight) / 2) : MARGIN;
 
         int innerX = boxX + PAD;
         int innerY = boxY + PAD;
         int innerWidth = boxWidth - PAD * 2;
-
-        int minimizeWidth = BUTTON_SIZE;
-        int minimizeHeight = BUTTON_SIZE;
-        int minimizeX = innerX + innerWidth - minimizeWidth;
+        int minimizeX = innerX + innerWidth - BUTTON_SIZE;
         int minimizeY = innerY;
-
-        int availableWidth = innerWidth - minimizeWidth - GAP;
-        int content = availableWidth - GAP;
-        int sliderWidth = Math.min(84, content / 2);
-        int titleWidth = content - sliderWidth;
 
         int titleX = innerX;
         int titleY = innerY;
         int artistX = innerX;
-        int artistY = innerY + lineHeight + LINE_GAP;
-        int artistWidth = titleWidth;
+        int artistY = innerY + lineStep;
+        int titleWidth;
+        int artistWidth;
+        int sliderX;
+        int sliderY;
+        int sliderWidth;
+        int buttonsY;
+        if (expanded) {
+            titleWidth = innerWidth - BUTTON_SIZE - GAP;
+            artistWidth = titleWidth;
+            sliderX = innerX;
+            sliderY = artistY + lineStep;
+            sliderWidth = innerWidth;
+            buttonsY = sliderY + SLIDER_HEIGHT + GAP;
+        } else {
+            int content = innerWidth - BUTTON_SIZE - GAP * 2;
+            sliderWidth = Math.min(84, content / 2);
+            titleWidth = content - sliderWidth;
+            artistWidth = titleWidth;
+            sliderX = titleX + titleWidth + GAP;
+            sliderY = innerY;
+            buttonsY = innerY + BUTTON_SIZE + GAP;
+        }
 
-        int sliderX = titleX + titleWidth + GAP;
-        int sliderY = innerY;
-
-        int buttonsY = innerY + BUTTON_SIZE + GAP;
         int previousX = innerX;
         int playPauseX = previousX + BUTTON_SIZE + GAP;
         int nextX = playPauseX + BUTTON_SIZE + GAP;
         int queueX = innerX + innerWidth - QUEUE_WIDTH;
         int endX = nextX + BUTTON_SIZE + GAP;
         int endWidth = Math.max(20, queueX - GAP - endX);
+        int rateX = innerX;
+        int rateY = buttonsY + BUTTON_SIZE + GAP;
+        int rateWidth = innerWidth;
 
-        int queueCardX = centered ? boxX + boxWidth + GAP : boxX;
-        int queueCardY = centered ? boxY : boxY + playerCardHeight + GAP;
-        int lineStep = lineHeight + LINE_GAP;
-        int queueCardHeight = queueOpen ? (PAD * 2 + lineStep * 6) : 0;
+        int queueCardX = placement == QueuePlacement.SIDE ? boxX + boxWidth + GAP : boxX;
+        int queueCardY = placement == QueuePlacement.BELOW ? boxY + playerCardHeight + GAP : boxY;
         int queueHeaderY = queueCardY + PAD;
         int queueListY = queueHeaderY + lineStep;
 
-        int boxHeight = centered
-                ? Math.max(playerCardHeight, queueCardHeight)
-                : playerCardHeight + (queueOpen ? GAP + queueCardHeight : 0);
-
         return new PanelLayout(
-                boxX, boxY, boxWidth, boxHeight,
+                boxX, boxY, boxWidth, totalHeight,
                 playerCardHeight,
                 titleX, titleY, titleWidth,
                 artistX, artistY, artistWidth,
                 sliderX, sliderY, sliderWidth,
-                minimizeX, minimizeY, minimizeWidth, minimizeHeight,
+                minimizeX, minimizeY, BUTTON_SIZE, BUTTON_SIZE,
                 buttonsY, previousX, playPauseX, nextX,
                 endX, endWidth, queueX,
                 queueCardX, queueCardY, queueCardWidth, queueCardHeight,
-                queueHeaderY, queueListY);
+                queueHeaderY, queueListY,
+                rateX, rateY, rateWidth, expanded, placement);
     }
 
     static PanelLayout panelLayout(int screenWidth, int screenHeight, int titleTextWidth, int artistTextWidth,
             int lineHeight, boolean queueOpen, boolean optionsScreen) {
         return panelLayout(screenWidth, screenHeight, titleTextWidth, artistTextWidth, lineHeight, queueOpen,
-                optionsScreen, false);
+                optionsScreen, Mode.COMPACT);
     }
 
     static PanelLayout panelLayout(int screenWidth, int screenHeight, int titleTextWidth, int artistTextWidth,
@@ -409,8 +423,9 @@ public final class PauseMusicWidget {
             List<String> lines = displayLines(director.nowPlaying());
             int titleWidth = font.width(lines.get(0));
             int artistWidth = lines.size() > 1 ? font.width(lines.get(1)) : 0;
+            Mode mode = screen instanceof MusicPlayerScreen ? Mode.EXPANDED : Mode.COMPACT;
             return panelLayout(screen.width, screen.height, titleWidth, artistWidth, font.lineHeight, queueOpen,
-                    screen instanceof OptionsScreen, screen instanceof MusicPlayerScreen);
+                    screen instanceof OptionsScreen, mode);
         }
 
         void toggleMinimize() {
@@ -621,8 +636,9 @@ public final class PauseMusicWidget {
         }
 
         var font = client.font;
+        Mode mode = screen instanceof MusicPlayerScreen ? Mode.EXPANDED : Mode.COMPACT;
         PanelLayout layout = panelLayout(screen.width, screen.height, font.width(FALLBACK_TEXT), 0,
-                font.lineHeight, false, screen instanceof OptionsScreen, screen instanceof MusicPlayerScreen);
+                font.lineHeight, false, screen instanceof OptionsScreen, mode);
 
         StringWidget title = new StringWidget(layout.titleX(), layout.titleY(), layout.titleWidth(),
                 font.lineHeight, Component.literal(FALLBACK_TEXT), font);

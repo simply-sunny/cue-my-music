@@ -118,12 +118,17 @@ class PauseTransportPanelTest {
 
     @Test void modMenuPlayerIsFiftyPercentWiderWithQueueOnRight() {
         PauseMusicWidget.PanelLayout closed =
-                PauseMusicWidget.panelLayout(692, 423, 60, 40, 9, false, false, true);
+                PauseMusicWidget.panelLayout(692, 423, 60, 40, 9, false, false,
+                        PauseMusicWidget.Mode.EXPANDED);
         PauseMusicWidget.PanelLayout open =
-                PauseMusicWidget.panelLayout(692, 423, 60, 40, 9, true, false, true);
+                PauseMusicWidget.panelLayout(692, 423, 60, 40, 9, true, false,
+                        PauseMusicWidget.Mode.EXPANDED);
         assertEquals(306, closed.boxWidth());
         assertEquals(193, closed.boxX());
-        assertEquals(185, closed.boxY());
+        int availableBottom = 423 - PauseMusicWidget.MARGIN - PauseMusicWidget.BUTTON_SIZE - PauseMusicWidget.GAP;
+        assertEquals(PauseMusicWidget.MARGIN
+                + (availableBottom - PauseMusicWidget.MARGIN - closed.playerCardHeight()) / 2,
+                closed.boxY());
         assertEquals(open.boxX() + open.boxWidth() + PauseMusicWidget.GAP, open.queueCardX());
         assertEquals(open.boxY(), open.queueCardY());
         assertEquals(204, open.queueCardWidth());
@@ -133,10 +138,12 @@ class PauseTransportPanelTest {
 
     @Test void narrowModMenuPlayerAndRightQueueFitScreen() {
         PauseMusicWidget.PanelLayout open =
-                PauseMusicWidget.panelLayout(300, 209, 60, 40, 9, true, false, true);
+                PauseMusicWidget.panelLayout(300, 209, 60, 40, 9, true, false,
+                        PauseMusicWidget.Mode.EXPANDED);
         assertTrue(open.boxWidth() >= PauseMusicWidget.MIN_WIDTH);
         assertTrue(open.boxX() >= PauseMusicWidget.MARGIN);
-        assertEquals(open.boxX() + open.boxWidth() + PauseMusicWidget.GAP, open.queueCardX());
+        assertEquals(PauseMusicWidget.QueuePlacement.BELOW, open.queuePlacement());
+        assertTrue(open.queueCardY() >= open.boxY() + open.playerCardHeight());
         assertTrue(open.queueCardWidth() > 0);
         assertTrue(open.queueCardX() + open.queueCardWidth() <= 300 - PauseMusicWidget.MARGIN);
     }
@@ -145,6 +152,35 @@ class PauseTransportPanelTest {
         PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(220, 0, 0, 9);
         assertTrue(layout.previousX() >= 0, "transport row must stay on-screen");
         assertTrue(layout.boxHeight() <= 72);
+    }
+
+    @Test void compactModeStaysTopRightWithoutEffects() {
+        PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(
+                692, 423, 60, 40, 9, false, true, PauseMusicWidget.Mode.COMPACT);
+        assertEquals(PauseMusicWidget.MARGIN, layout.boxY());
+        assertFalse(layout.effectsVisible());
+    }
+
+    @Test void expandedModeCentersTheCohesiveHierarchy() {
+        PauseMusicWidget.PanelLayout layout = PauseMusicWidget.panelLayout(
+                692, 423, 60, 40, 9, false, false, PauseMusicWidget.Mode.EXPANDED);
+        assertTrue(layout.boxX() > PauseMusicWidget.MARGIN);
+        assertTrue(layout.sliderY() > layout.artistY());
+        assertTrue(layout.buttonsY() > layout.sliderY());
+        assertTrue(layout.rateY() > layout.buttonsY());
+        assertTrue(layout.effectsVisible());
+    }
+
+    @Test void expandedDrawerUsesSideOnlyWhenBothRegionsFit() {
+        var wide = PauseMusicWidget.panelLayout(
+                854, 508, 60, 40, 9, true, false, PauseMusicWidget.Mode.EXPANDED);
+        assertEquals(PauseMusicWidget.QueuePlacement.SIDE, wide.queuePlacement());
+        assertTrue(wide.queueCardX() > wide.boxX() + wide.boxWidth());
+
+        var narrow = PauseMusicWidget.panelLayout(
+                300, 209, 60, 40, 9, true, false, PauseMusicWidget.Mode.EXPANDED);
+        assertEquals(PauseMusicWidget.QueuePlacement.BELOW, narrow.queuePlacement());
+        assertTrue(narrow.queueCardY() >= narrow.boxY() + narrow.playerCardHeight());
     }
 
     @Test void endTooltipDescribesDelayVsImmediate() {
