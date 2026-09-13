@@ -92,4 +92,48 @@ class TransportClockTest {
         assertEquals(10.0, TransportClock.clampSeekTarget(Double.NaN, 10.0, 183.0), 1e-9);
         assertEquals(10.0, TransportClock.clampSeekTarget(Double.POSITIVE_INFINITY, 10.0, 183.0), 1e-9);
     }
+
+    @Test void playbackRateScalesSourcePosition() {
+        TransportClock slow = new TransportClock();
+        slow.setPlaybackRate(0.5, 0L);
+        slow.noteStarted(10.0, 0L);
+        assertEquals(12.0, slow.positionSeconds(4_000_000_000L, Double.NaN), 1e-9);
+
+        TransportClock fast = new TransportClock();
+        fast.setPlaybackRate(2.0, 0L);
+        fast.noteStarted(10.0, 0L);
+        assertEquals(18.0, fast.positionSeconds(4_000_000_000L, Double.NaN), 1e-9);
+    }
+
+    @Test void playbackRateClampsAndRejectsNonFiniteValues() {
+        assertEquals(0.5, TransportClock.clampRate(0.1), 1e-9);
+        assertEquals(2.0, TransportClock.clampRate(4.0), 1e-9);
+        assertEquals(1.0, TransportClock.clampRate(Double.NaN), 1e-9);
+        assertEquals(1.0, TransportClock.clampRate(Double.POSITIVE_INFINITY), 1e-9);
+    }
+
+    @Test void changingRateWhileRunningKeepsPositionContinuous() {
+        TransportClock clock = new TransportClock();
+        clock.noteStarted(10.0, 0L);
+        clock.setPlaybackRate(2.0, 4_000_000_000L);
+        assertEquals(14.0, clock.positionSeconds(4_000_000_000L, Double.NaN), 1e-9);
+        assertEquals(18.0, clock.positionSeconds(6_000_000_000L, Double.NaN), 1e-9);
+    }
+
+    @Test void changingRateWhilePausedKeepsFrozenPosition() {
+        TransportClock clock = new TransportClock();
+        clock.noteStarted(10.0, 0L);
+        clock.notePaused(4_000_000_000L);
+        clock.setPlaybackRate(2.0, 50_000_000_000L);
+        assertEquals(14.0, clock.positionSeconds(99_000_000_000L, Double.NaN), 1e-9);
+        clock.noteResumed(100_000_000_000L);
+        assertEquals(18.0, clock.positionSeconds(102_000_000_000L, Double.NaN), 1e-9);
+    }
+
+    @Test void transportResetRetainsSessionRate() {
+        TransportClock clock = new TransportClock();
+        clock.setPlaybackRate(1.5, 0L);
+        clock.reset();
+        assertEquals(1.5, clock.playbackRate(), 1e-9);
+    }
 }

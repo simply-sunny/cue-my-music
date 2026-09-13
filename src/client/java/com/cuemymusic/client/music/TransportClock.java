@@ -11,11 +11,16 @@ package com.cuemymusic.client.music;
  * the same source; the class itself takes them as arguments and is pure.
  */
 public final class TransportClock {
+    public static final double RATE_MIN = 0.5;
+    public static final double RATE_MAX = 2.0;
+    public static final double RATE_DEFAULT = 1.0;
+
     private double offsetSeconds;
     private long anchorNanos;
     private boolean anchored;
     private boolean paused;
     private double frozenPosition;
+    private double playbackRate = RATE_DEFAULT;
 
     public TransportClock() {
         this.offsetSeconds = 0.0;
@@ -73,6 +78,27 @@ public final class TransportClock {
         return paused;
     }
 
+    public synchronized double playbackRate() {
+        return playbackRate;
+    }
+
+    public synchronized void setPlaybackRate(double rate, long nowNanos) {
+        double next = clampRate(rate);
+        if (next == playbackRate) {
+            return;
+        }
+        if (!paused) {
+            offsetSeconds = rawPosition(nowNanos, Double.NaN);
+            anchorNanos = nowNanos;
+            anchored = true;
+        }
+        playbackRate = next;
+    }
+
+    public static double clampRate(double rate) {
+        return Double.isFinite(rate) ? Math.clamp(rate, RATE_MIN, RATE_MAX) : RATE_DEFAULT;
+    }
+
     /**
      * Current audible position in seconds, clamped to {@code [0, duration]}
      * when the duration is known, or {@code [0, +inf)} when unknown.
@@ -89,7 +115,7 @@ public final class TransportClock {
             return clamp(offsetSeconds, durationSeconds);
         }
         double elapsed = (nowNanos - anchorNanos) / 1_000_000_000.0;
-        return clamp(offsetSeconds + Math.max(0.0, elapsed), durationSeconds);
+        return clamp(offsetSeconds + Math.max(0.0, elapsed) * playbackRate, durationSeconds);
     }
 
     private static double clamp(double value, double durationSeconds) {
