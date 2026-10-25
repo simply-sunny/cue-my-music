@@ -30,7 +30,7 @@ public final class Catalog {
     public static final Album CHASE_THE_SKIES = new Album("Chase the Skies", "block/blue_ice");
     public static final Album CHAOS_CUBED = new Album("Chaos Cubed", "block/chiseled_sulfur");
     /** For tracks added by resource packs. */
-    public static final Album UNKNOWN_ALBUM = new Album("Resource pack", "block/note_block");
+    public static final Album UNKNOWN_ALBUM = new Album("Minecraft", "block/note_block");
 
     public static final String C418 = "C418";
     public static final String LENA_RAINE = "Lena Raine";

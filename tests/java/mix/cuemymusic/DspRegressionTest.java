@@ -4,6 +4,7 @@ import java.util.Random;
 
 import mix.cuemymusic.dsp.PitchTempoProcessor;
 import mix.cuemymusic.dsp.Equalizer;
+import mix.cuemymusic.library.PackNames;
 
 public final class DspRegressionTest {
     private static final float RATE = 48000;
@@ -88,6 +89,26 @@ public final class DspRegressionTest {
             for (float v : noise) require(Float.isFinite(v) && Math.abs(v) < 20, "unstable: " + v);
         });
 
+        run("pack names read like titles", () -> {
+            same(PackNames.prettify("file/true-ending-dragon-music-v1.zip"), "True Ending Dragon Music v1");
+            same(PackNames.prettify("golden-days-music-1.20.x"), "Golden Days Music 1.20.x");
+            same(PackNames.prettify("[V1.2] Original Pokemon Battle Music.zip"), "[V1.2] Original Pokemon Battle Music");
+            same(PackNames.prettify("§6C4Music"), "C4Music");
+        });
+        run("pack initials skip versions and small words", () -> {
+            same(PackNames.initials("True Ending Dragon Music v1"), "TE");
+            same(PackNames.initials("Golden Days Music 1.20.x"), "GDM");
+            same(PackNames.initials("[V1.2] Original Pokemon Battle Music"), "OP");
+            same(PackNames.initials("The End Music"), "EM");
+            same(PackNames.initials("v2"), "?");
+        });
+        run("pack credits come from the description", () -> {
+            same(PackNames.author("New Ender Dragon boss music\nBy: limesplatus"), "limesplatus");
+            same(PackNames.author("§6Golden Days §8- §bMusic \n§8by PoeticRainbow"), "PoeticRainbow");
+            same(PackNames.author("Original Pokemon Battle Music, In Cobblemon! By §a@realDunkin"), "realDunkin");
+            same(PackNames.author("§cRemoves background music not made by C418 from playing in-game"), null);
+        });
+
         System.out.println(checks - failures + "/" + checks + " checks passed");
         if (failures > 0) System.exit(1);
     }
@@ -165,6 +186,10 @@ public final class DspRegressionTest {
     private static void near(double actual, double expected, double relative) {
         require(Math.abs(actual - expected) <= Math.max(Math.abs(expected) * relative, 0.3),
                 String.format("expected %.4f, got %.4f", expected, actual));
+    }
+
+    private static void same(Object actual, Object expected) {
+        require(java.util.Objects.equals(actual, expected), "expected " + expected + ", got " + actual);
     }
 
     private static void require(boolean ok, String message) {

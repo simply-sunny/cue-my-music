@@ -42,18 +42,20 @@ Version name format: `Cue My Music 1.0.0 (26.3)`.
 
 A music player for Minecraft's own soundtrack, with pitch, speed and an equalizer.
 
-Pick any game track and play it, or let the game keep choosing. Drop the music 2 semitones, play it at 1.2× speed, or both. Pitch and speed are separate settings, so changing one doesn't change the other.
+Pick any game track and play it, queue up what's next, or let the game keep choosing and see what it picked and when. Drop the music 2 semitones, play it at 1.2× speed, or both. Pitch and speed are separate settings, so changing one doesn't change the other.
 
 ## Features
 
 - **Player:** opens from Mod Menu. Library on the left, track list in the middle, now playing on the right, controls at the bottom.
 - **Artist pages:** C418, Lena Raine, Aaron Cherof, Kumi Tanioka, Amos Roddy and fingerspit, with only their in-game tracks.
-- **Controls:** play any track, pause, seek, next and previous.
+- **Controls:** play any track, pause, seek, next and previous. Space pauses. Media keys F7–F9 on macOS.
+- **Queue:** add songs, drag to reorder. After your queue it shows the game's next song and how long until it plays.
+- **Sorting:** by title, album or length.
 - **Pitch:** −12 to +12 semitones, same speed.
 - **Speed:** 0.5× to 2.0×, same pitch.
 - **Equalizer:** 6 bands with presets, for every song.
 - **Live:** changes apply to the song that's already playing.
-- **Resource packs:** extra music tracks show up under Unknown artist.
+- **Resource packs:** each pack that adds music gets its own page, with its name, icon and author.
 
 ## Installation
 

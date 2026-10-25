@@ -11,6 +11,7 @@ import it.unimi.dsi.fastutil.floats.FloatConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.AudioStream;
 import net.minecraft.client.sounds.FloatSampleSource;
 import net.minecraft.resources.Identifier;
@@ -40,16 +41,16 @@ public final class CueStream implements FloatSampleSource {
     private boolean closed;
 
     /** Wraps a 16-bit PCM music stream; anything else is returned as is. */
-    public static AudioStream wrap(AudioStream stream, Identifier sound, double startSeconds) {
+    public static AudioStream wrap(AudioStream stream, Identifier sound, double startSeconds, SoundInstance instance) {
         AudioFormat f = stream.getFormat();
         if (f.getSampleSizeInBits() != 16 || f.getEncoding() != AudioFormat.Encoding.PCM_SIGNED || f.isBigEndian()) {
             LOG.warn("Not processing {}: unsupported format {}", sound, f);
             return stream;
         }
-        return new CueStream(stream, sound, startSeconds);
+        return new CueStream(stream, sound, startSeconds, instance);
     }
 
-    private CueStream(AudioStream source, Identifier sound, double startSeconds) {
+    private CueStream(AudioStream source, Identifier sound, double startSeconds, SoundInstance instance) {
         this.source = source;
         this.format = source.getFormat();
         this.channels = format.getChannels();
@@ -74,7 +75,7 @@ public final class CueStream implements FloatSampleSource {
             LOG.warn("Couldn't seek {} to {}s", sound, startSeconds, e);
         }
         Identifier track = sound.withPath(p -> p.replaceFirst("^sounds/", "").replaceFirst("\\.ogg$", ""));
-        CuePlayer.INSTANCE.streamStarted(id, track, startSeconds);
+        CuePlayer.INSTANCE.streamStarted(id, track, startSeconds, instance);
     }
 
     @Override

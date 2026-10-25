@@ -4,6 +4,8 @@
 	"package": "mix.cuemymusic.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
+		"MusicFrequencyInvoker",
+		"MusicManagerAccessor",
 		"MusicManagerMixin",
 		"SoundEngineMixin",
 		"WeighedSoundEventsAccessor"

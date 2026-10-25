@@ -7,14 +7,18 @@ public final class Track {
     private final Identifier location;
     private final String title;
     private final String artist;
-    private final Catalog.Album album;
+    private final String album;
+    private final Art art;
+    private final String packId;
     private volatile double seconds;
 
-    Track(Identifier location, String title, String artist, Catalog.Album album, double seconds) {
+    Track(Identifier location, String title, String artist, String album, Art art, String packId, double seconds) {
         this.location = location;
         this.title = title;
         this.artist = artist;
         this.album = album;
+        this.art = art;
+        this.packId = packId;
         this.seconds = seconds;
     }
 
@@ -30,8 +34,18 @@ public final class Track {
         return artist;
     }
 
-    public Catalog.Album album() {
+    /** The album for game music, or the resource pack's name for pack music. */
+    public String album() {
         return album;
+    }
+
+    public Art art() {
+        return art;
+    }
+
+    /** The resource pack the file comes from, or null for the game's own files. */
+    public String packId() {
+        return packId;
     }
 
     /** Length in seconds, or NaN while it's still being measured. */
