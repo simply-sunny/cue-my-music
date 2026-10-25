@@ -7,7 +7,7 @@ def minecraftTargets = [
 	'26.3': [
 		minecraft: '26.3', java: 25,
 		loader: '0.20.1', fabricApi: '0.165.0+26.3',
-		clothConfig: '26.3.159', modMenu: '21.0.0'
+		modMenu: '21.0.0'
 	]
 ]
 
@@ -27,7 +27,6 @@ subprojects {
 	}
 
 	repositories {
-		maven { url = 'https://maven.shedaniel.me/' }
 		maven { url = 'https://maven.terraformersmc.com/releases/' }
 	}
 
@@ -35,12 +34,8 @@ subprojects {
 		minecraft "com.mojang:minecraft:${target.minecraft}"
 		implementation "net.fabricmc:fabric-loader:${target.loader}"
 		implementation "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
-		api("me.shedaniel.cloth:cloth-config-fabric:${target.clothConfig}") {
-			exclude group: 'net.fabricmc.fabric-api'
-		}
-		// Optional: only used for the Mod Menu settings button.
-		compileOnly "com.terraformersmc:modmenu:${target.modMenu}"
-		localRuntime "com.terraformersmc:modmenu:${target.modMenu}"
+		// Required: the player screen lives behind the Mod Menu settings button.
+		implementation "com.terraformersmc:modmenu:${target.modMenu}"
 	}
 
 	sourceSets {

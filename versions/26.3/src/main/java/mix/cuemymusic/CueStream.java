@@ -3,7 +3,6 @@ package mix.cuemymusic;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.ArrayDeque;
 import java.util.Arrays;
 
 import javax.sound.sampled.AudioFormat;
@@ -15,80 +14,67 @@ import org.slf4j.LoggerFactory;
 import net.minecraft.client.sounds.AudioStream;
 import net.minecraft.client.sounds.FloatSampleSource;
 import net.minecraft.resources.Identifier;
-import net.minecraft.sounds.SoundSource;
 
+import mix.cuemymusic.dsp.Equalizer;
 import mix.cuemymusic.dsp.PitchTempoProcessor;
-import mix.cuemymusic.dsp.TempoDetector;
 
 /**
- * Wraps a streamed song and runs it through {@link PitchTempoProcessor},
- * reading the settings on every chunk so changes apply to the playing song.
+ * Wraps a streamed music track: skips to its start offset, then runs it
+ * through {@link PitchTempoProcessor} and {@link Equalizer}, reading the
+ * settings on every chunk so changes apply to the playing track.
  */
 public final class CueStream implements FloatSampleSource {
     private static final Logger LOG = LoggerFactory.getLogger("cuemymusic");
     private static final int CHUNK_FRAMES = 2048;
 
-    /** Most recently started song, for the settings screen. */
-    public static volatile NowPlaying nowPlaying;
-
-    public record NowPlaying(String track, SoundSource source, TempoDetector detector) {
-    }
-
     private final AudioStream source;
-    private final SoundSource category;
     private final AudioFormat format;
     private final int channels;
+    private final long id = CuePlayer.nextStreamId();
     private final PitchTempoProcessor processor;
-    private final TempoDetector detector;
-    private final ArrayDeque<float[]> pending = new ArrayDeque<>();
-    private float[] out = new float[CHUNK_FRAMES * 2];
+    private final Equalizer eq;
+    private float[] pendingFirst;
+    private final float[] out = new float[CHUNK_FRAMES * 8];
     private boolean sourceDone;
     private boolean flushed;
+    private boolean closed;
 
-    /** Wraps music and jukebox streams in 16-bit PCM; everything else is returned as is. */
-    public static AudioStream wrap(AudioStream stream, SoundSource category, Identifier sound) {
-        if (category != SoundSource.MUSIC && category != SoundSource.RECORDS) return stream;
+    /** Wraps a 16-bit PCM music stream; anything else is returned as is. */
+    public static AudioStream wrap(AudioStream stream, Identifier sound, double startSeconds) {
         AudioFormat f = stream.getFormat();
         if (f.getSampleSizeInBits() != 16 || f.getEncoding() != AudioFormat.Encoding.PCM_SIGNED || f.isBigEndian()) {
             LOG.warn("Not processing {}: unsupported format {}", sound, f);
             return stream;
         }
-        return new CueStream(stream, category, sound);
+        return new CueStream(stream, sound, startSeconds);
     }
 
-    private CueStream(AudioStream source, SoundSource category, Identifier sound) {
+    private CueStream(AudioStream source, Identifier sound, double startSeconds) {
         this.source = source;
-        this.category = category;
         this.format = source.getFormat();
         this.channels = format.getChannels();
         this.processor = new PitchTempoProcessor(channels, format.getSampleRate());
-        this.detector = new TempoDetector(channels, format.getSampleRate());
-        String track = sound.getPath().replaceFirst("^sounds/", "").replaceFirst("\\.ogg$", "");
-        nowPlaying = new NowPlaying(track, category, detector);
+        this.eq = new Equalizer(channels, format.getSampleRate());
 
-        // BPM mode needs the tempo before the first note; decode ahead to find it.
-        // This runs on the stream-loading thread, not the sound thread.
-        CueConfig cfg = CueConfig.INSTANCE;
-        if (cfg.enabled && cfg.tempoMode == CueConfig.TempoMode.BPM && applies()) {
-            try {
-                while (!detector.isDone()) {
-                    float[] chunk = pull();
-                    if (chunk == null) break;
-                    detector.feed(chunk, 0, chunk.length / channels);
-                    pending.add(chunk);
+        // Decode and drop everything before the start offset. Runs on the stream-loading thread.
+        long skip = (long) (startSeconds * format.getSampleRate()) * channels;
+        try {
+            while (skip > 0) {
+                float[] chunk = pull();
+                if (chunk == null) {
+                    sourceDone = true;
+                    break;
                 }
-            } catch (IOException e) {
-                LOG.warn("Couldn't pre-read {}", sound, e);
+                if (chunk.length > skip) {
+                    pendingFirst = Arrays.copyOfRange(chunk, (int) (skip - skip % channels), chunk.length);
+                }
+                skip -= chunk.length;
             }
-            if (!detector.isDone()) detector.finish();
-            LOG.info("{}: {}", track, Double.isNaN(detector.bpm()) ? "no clear beat"
-                    : String.format("%.1f BPM", detector.bpm()));
+        } catch (IOException e) {
+            LOG.warn("Couldn't seek {} to {}s", sound, startSeconds, e);
         }
-    }
-
-    private boolean applies() {
-        CueConfig cfg = CueConfig.INSTANCE;
-        return category == SoundSource.MUSIC ? cfg.music : cfg.records;
+        Identifier track = sound.withPath(p -> p.replaceFirst("^sounds/", "").replaceFirst("\\.ogg$", ""));
+        CuePlayer.INSTANCE.streamStarted(id, track, startSeconds);
     }
 
     @Override
@@ -100,15 +86,12 @@ public final class CueStream implements FloatSampleSource {
     public boolean readChunk(FloatConsumer consumer) throws IOException {
         while (true) {
             CueConfig cfg = CueConfig.INSTANCE;
-            if (cfg.enabled && applies()) {
-                processor.setParams(cfg.pitchRatio(), cfg.tempoFor(detector.bpm()));
-            } else {
-                processor.setParams(1, 1);
-            }
+            processor.setParams(cfg.pitchRatio(), cfg.tempo());
+            eq.setGains(cfg.activeEq());
 
             if (processor.available() > 0) {
                 int frames = processor.take(out, 0, CHUNK_FRAMES);
-                emit(consumer, out, frames * channels);
+                emit(consumer, out, frames);
                 return true;
             }
             if (sourceDone) {
@@ -118,24 +101,24 @@ public final class CueStream implements FloatSampleSource {
                 continue;
             }
 
-            float[] chunk = pending.isEmpty() ? pull() : pending.poll();
+            float[] chunk = pendingFirst != null ? pendingFirst : pull();
+            pendingFirst = null;
             if (chunk == null) {
                 sourceDone = true;
-                detector.finish();
                 continue;
             }
             int frames = chunk.length / channels;
-            detector.feed(chunk, 0, frames);
             if (processor.isIdentity() && processor.isEmpty()) {
-                emit(consumer, chunk, chunk.length);
+                emit(consumer, chunk, frames);
                 return true;
             }
             processor.put(chunk, 0, frames);
         }
     }
 
-    private static void emit(FloatConsumer consumer, float[] samples, int count) {
-        for (int i = 0; i < count; i++) consumer.accept(samples[i]);
+    private void emit(FloatConsumer consumer, float[] samples, int frames) {
+        eq.process(samples, 0, frames);
+        for (int i = 0; i < frames * channels; i++) consumer.accept(samples[i]);
     }
 
     /** Next block of interleaved samples from the source, or null at end of stream. */
@@ -157,6 +140,10 @@ public final class CueStream implements FloatSampleSource {
 
     @Override
     public void close() throws IOException {
+        if (!closed) {
+            closed = true;
+            CuePlayer.INSTANCE.streamClosed(id);
+        }
         source.close();
     }
 

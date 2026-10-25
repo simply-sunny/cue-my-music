@@ -4,7 +4,9 @@
 	"package": "mix.cuemymusic.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
-		"SoundEngineMixin"
+		"MusicManagerMixin",
+		"SoundEngineMixin",
+		"WeighedSoundEventsAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1

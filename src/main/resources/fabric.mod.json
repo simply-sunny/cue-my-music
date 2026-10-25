@@ -3,7 +3,7 @@
 	"id": "cuemymusic",
 	"version": "${version}",
 	"name": "Cue My Music",
-	"description": "Change the pitch and speed of in-game music and music discs, independently.",
+	"description": "A music player for the game's own soundtrack, with pitch, speed and an equalizer. Jukeboxes are left alone.",
 	"authors": ["simply-sunny"],
 	"contact": {
 		"sources": "https://github.com/simply-sunny/cue-my-music",
@@ -21,9 +21,6 @@
 		"minecraft": "~26.3",
 		"java": ">=25",
 		"fabric-api": "*",
-		"cloth-config2": "*"
-	},
-	"suggests": {
 		"modmenu": "*"
 	}
 }

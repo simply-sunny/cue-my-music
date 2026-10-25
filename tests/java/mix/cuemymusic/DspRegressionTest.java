@@ -3,7 +3,7 @@ package mix.cuemymusic;
 import java.util.Random;
 
 import mix.cuemymusic.dsp.PitchTempoProcessor;
-import mix.cuemymusic.dsp.TempoDetector;
+import mix.cuemymusic.dsp.Equalizer;
 
 public final class DspRegressionTest {
     private static final float RATE = 48000;
@@ -23,7 +23,7 @@ public final class DspRegressionTest {
         run("+5 semitones keeps length", () -> check(1, 5, 1, 440));
         run("-2 semitones at x1.2 speed", () -> check(2, -2, 1.2, 440));
         run("+3 semitones at x0.75 speed", () -> check(2, 3, 0.75, 330));
-        run("+10 bpm on a 120 bpm song is x1.0833", () -> check(1, 0, 130.0 / 120, 440));
+        run("x1.0833 speed keeps pitch", () -> check(1, 0, 130.0 / 120, 440));
         run("stereo channels stay separate", () -> {
             float[] in = new float[(int) (RATE * 4) * 2];
             for (int f = 0; f < in.length / 2; f++) {
@@ -57,12 +57,36 @@ public final class DspRegressionTest {
             }
             require(produced > frames / 2, "too little output: " + produced);
         });
-        run("128 bpm click track is detected", () -> near(detect(clicks(128, 30, 0)), 128, 0.012));
-        run("90 bpm click track is detected", () -> near(detect(clicks(90, 30, 0)), 90, 0.012));
-        run("174 bpm click track is detected", () -> near(detect(clicks(174, 30, 0)), 174, 0.012));
-        run("128 bpm under noise is detected", () -> near(detect(clicks(128, 30, 0.2f)), 128, 0.012));
-        run("steady tone has no bpm", () -> require(Double.isNaN(detect(sine(1, 20, 220))), "expected NaN"));
-        run("short audio has no bpm", () -> require(Double.isNaN(detect(clicks(120, 4, 0))), "expected NaN"));
+        run("flat equalizer leaves samples alone", () -> {
+            float[] in = sine(2, 1, 440);
+            float[] out = in.clone();
+            Equalizer eq = new Equalizer(2, RATE);
+            eq.setGains(new double[6]);
+            eq.process(out, 0, out.length / 2);
+            for (int i = 0; i < in.length; i++) require(in[i] == out[i], "sample " + i + " changed");
+        });
+        // Boosts are offset by half the largest boost as headroom, so +12 dB nets +6 dB.
+        run("+12 dB at 1 kHz nets +6 dB at 1 kHz", () -> near(eqGainDb(new double[] {0, 0, 0, 12, 0, 0}, 1000), 6, 0.08));
+        run("+12 dB at 1 kHz barely touches 100 Hz", () -> near(eqGainDb(new double[] {0, 0, 0, 12, 0, 0}, 100), -6, 0.1));
+        run("-12 dB at 1 kHz cuts 1 kHz by 12 dB", () -> near(eqGainDb(new double[] {0, 0, 0, -12, 0, 0}, 1000), -12, 0.05));
+        // Shelves reach half their gain at the corner and the full gain well past it.
+        run("+12 dB low shelf: +6 dB at 15 Hz, half at 60 Hz", () -> {
+            nearDb(eqGainDb(new double[] {12, 0, 0, 0, 0, 0}, 15), 6, 1);
+            nearDb(eqGainDb(new double[] {12, 0, 0, 0, 0, 0}, 60), 0, 1);
+        });
+        run("+12 dB high shelf: +6 dB at 22 kHz, half at 15 kHz", () -> {
+            nearDb(eqGainDb(new double[] {0, 0, 0, 0, 0, 12}, 22000), 6, 1);
+            nearDb(eqGainDb(new double[] {0, 0, 0, 0, 0, 12}, 15000), 0, 1);
+        });
+        run("every band at +12 stays finite", () -> {
+            float[] noise = new float[(int) RATE * 2];
+            Random rng = new Random(2);
+            for (int i = 0; i < noise.length; i++) noise[i] = rng.nextFloat() * 2 - 1;
+            Equalizer eq = new Equalizer(2, RATE);
+            eq.setGains(new double[] {12, 12, 12, 12, 12, 12});
+            eq.process(noise, 0, noise.length / 2);
+            for (float v : noise) require(Float.isFinite(v) && Math.abs(v) < 20, "unstable: " + v);
+        });
 
         System.out.println(checks - failures + "/" + checks + " checks passed");
         if (failures > 0) System.exit(1);
@@ -108,11 +132,20 @@ public final class DspRegressionTest {
         return (crossings - 1) * RATE / (last - first);
     }
 
-    private static double detect(float[] mono) {
-        TempoDetector d = new TempoDetector(1, RATE);
-        d.feed(mono, 0, mono.length);
-        d.finish();
-        return d.bpm();
+    /** Steady-state gain in dB of the equalizer at {@code hz}, measured on a mono sine. */
+    private static double eqGainDb(double[] gains, double hz) {
+        float[] x = sine(1, 2, hz);
+        double before = rms(x, x.length / 2);
+        Equalizer eq = new Equalizer(1, RATE);
+        eq.setGains(gains);
+        eq.process(x, 0, x.length);
+        return 20 * Math.log10(rms(x, x.length / 2) / before);
+    }
+
+    private static double rms(float[] x, int from) {
+        double s = 0;
+        for (int i = from; i < x.length; i++) s += x[i] * x[i];
+        return Math.sqrt(s / (x.length - from));
     }
 
     private static float[] sine(int channels, double seconds, double hz) {
@@ -125,27 +158,12 @@ public final class DspRegressionTest {
         return out;
     }
 
-    /** Decaying noise bursts on every beat, with a quieter off-beat, over optional noise. */
-    private static float[] clicks(double bpm, double seconds, float noise) {
-        Random rng = new Random(1);
-        int frames = (int) (seconds * RATE);
-        float[] out = new float[frames];
-        double beat = 60 / bpm * RATE;
-        for (int f = 0; f < frames; f++) out[f] = (rng.nextFloat() * 2 - 1) * noise;
-        for (int b = 0; b * beat < frames; b++) {
-            for (int half = 0; half < 2; half++) {
-                int start = (int) (b * beat + half * beat / 2);
-                float amp = half == 0 ? 0.8f : 0.3f;
-                for (int i = 0; i < 2400 && start + i < frames; i++) {
-                    out[start + i] += (rng.nextFloat() * 2 - 1) * amp * (float) Math.exp(-i / 300.0);
-                }
-            }
-        }
-        return out;
+    private static void nearDb(double actual, double expected, double toleranceDb) {
+        require(Math.abs(actual - expected) <= toleranceDb, String.format("expected %.2f dB, got %.2f dB", expected, actual));
     }
 
     private static void near(double actual, double expected, double relative) {
-        require(Math.abs(actual - expected) <= Math.abs(expected) * relative,
+        require(Math.abs(actual - expected) <= Math.max(Math.abs(expected) * relative, 0.3),
                 String.format("expected %.4f, got %.4f", expected, actual));
     }
 

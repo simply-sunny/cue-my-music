@@ -8,10 +8,17 @@ First release.
 
 ### Added
 
+- Player screen in Mod Menu: library sidebar, track list, now playing and play controls.
+- Pages for **All game music** and for each artist, with resource pack tracks under **Unknown artist**.
+- Play any track, pause, seek, next and previous. The game's own music comes back after your track ends.
 - Pitch shift from −12 to +12 semitones that doesn't change speed.
-- Speed change as a multiplier (0.5–2.0×) or a BPM offset (−60 to +60) that doesn't change pitch.
-- BPM detection from each song's first 30 seconds, with a `fallbackBpm` for songs with no clear beat.
-- Separate toggles for background music and music discs.
-- Cloth Config settings screen, through Mod Menu or an **Open settings** key, showing the last song and its BPM.
-- **Turn on/off** key.
-- 16 headless DSP checks.
+- Speed from 0.5× to 2.0× that doesn't change pitch.
+- 6-band equalizer with presets, for every song.
+- Built-in lengths for vanilla tracks. Resource pack tracks are measured from the file.
+- **Open player** and **Turn effects on/off** keys.
+- 17 headless DSP checks.
+
+### Notes
+
+- Mod Menu is required.
+- Jukeboxes and sound effects aren't affected.

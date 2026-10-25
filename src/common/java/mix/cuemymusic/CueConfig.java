@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 
 import net.fabricmc.loader.api.FabricLoader;
 
+import mix.cuemymusic.dsp.Equalizer;
 import mix.cuemymusic.dsp.PitchTempoProcessor;
 
 /** Settings, stored as {@code config/cuemymusic.json}. Read live by the audio thread. */
@@ -22,38 +23,40 @@ public final class CueConfig {
     private static final Logger LOG = LoggerFactory.getLogger("cuemymusic");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    public enum TempoMode { SPEED, BPM }
-
     public volatile boolean enabled = true;
-    public volatile boolean music = true;
-    public volatile boolean records = true;
     public volatile int pitchSemitones = 0;
-    public volatile TempoMode tempoMode = TempoMode.SPEED;
     public volatile double speed = 1.0;
-    public volatile int bpmOffset = 0;
-    /** BPM assumed when a song has no clear beat. JSON only. */
-    public volatile double fallbackBpm = 120;
+    public volatile boolean eqEnabled = false;
+    /** dB per band, see {@link Equalizer#FREQUENCIES}. Replaced whole, never mutated in place. */
+    public volatile double[] eqGains = new double[Equalizer.FREQUENCIES.length];
+    public volatile String eqPreset = "flat";
 
     private CueConfig() {
     }
 
     public double pitchRatio() {
-        return PitchTempoProcessor.semitonesToRatio(pitchSemitones);
+        return enabled ? PitchTempoProcessor.semitonesToRatio(pitchSemitones) : 1;
     }
 
-    /** Speed factor for a song with the given detected BPM (NaN if none or not known yet). */
-    public double tempoFor(double detectedBpm) {
-        if (tempoMode == TempoMode.SPEED) return speed;
-        double bpm = Double.isNaN(detectedBpm) ? fallbackBpm : detectedBpm;
-        return Math.clamp((bpm + bpmOffset) / bpm, 0.5, 2.0);
+    public double tempo() {
+        return enabled ? speed : 1;
+    }
+
+    /** Band gains to apply right now, or null for none. */
+    public double[] activeEq() {
+        return enabled && eqEnabled ? eqGains : null;
     }
 
     public void clamp() {
         pitchSemitones = Math.clamp(pitchSemitones, -12, 12);
-        speed = Math.clamp(Double.isFinite(speed) ? speed : 1, 0.5, 2.0);
-        bpmOffset = Math.clamp(bpmOffset, -60, 60);
-        fallbackBpm = Math.clamp(Double.isFinite(fallbackBpm) ? fallbackBpm : 120, 40, 300);
-        if (tempoMode == null) tempoMode = TempoMode.SPEED;
+        speed = Math.clamp(Double.isFinite(speed) ? Math.round(speed * 100) / 100.0 : 1, 0.5, 2.0);
+        double[] g = new double[Equalizer.FREQUENCIES.length];
+        for (int i = 0; i < g.length; i++) {
+            double v = eqGains != null && i < eqGains.length && Double.isFinite(eqGains[i]) ? eqGains[i] : 0;
+            g[i] = Math.clamp(v, -Equalizer.MAX_GAIN_DB, Equalizer.MAX_GAIN_DB);
+        }
+        eqGains = g;
+        if (eqPreset == null) eqPreset = "custom";
     }
 
     private static Path path() {
@@ -89,12 +92,10 @@ public final class CueConfig {
 
     private void copyFrom(CueConfig o) {
         enabled = o.enabled;
-        music = o.music;
-        records = o.records;
         pitchSemitones = o.pitchSemitones;
-        tempoMode = o.tempoMode;
         speed = o.speed;
-        bpmOffset = o.bpmOffset;
-        fallbackBpm = o.fallbackBpm;
+        eqEnabled = o.eqEnabled;
+        eqGains = o.eqGains;
+        eqPreset = o.eqPreset;
     }
 }

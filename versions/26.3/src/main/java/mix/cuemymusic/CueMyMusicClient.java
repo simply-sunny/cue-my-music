@@ -13,7 +13,7 @@ import net.minecraft.resources.Identifier;
 public final class CueMyMusicClient implements ClientModInitializer {
     public static final String MODID = "cuemymusic";
 
-    private static KeyMapping openSettings;
+    private static KeyMapping openPlayer;
     private static KeyMapping toggle;
 
     @Override
@@ -21,8 +21,8 @@ public final class CueMyMusicClient implements ClientModInitializer {
         CueConfig.INSTANCE.load();
 
         KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MODID, "keys"));
-        openSettings = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.cuemymusic.open_settings", InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), category));
+        openPlayer = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.cuemymusic.open_player", InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), category));
         toggle = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.cuemymusic.toggle", InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), category));
 
@@ -30,8 +30,9 @@ public final class CueMyMusicClient implements ClientModInitializer {
     }
 
     private static void tick(Minecraft client) {
-        while (openSettings.consumeClick()) {
-            client.gui.setScreen(CueConfigScreen.create(client.gui.screen()));
+        CuePlayer.INSTANCE.tick();
+        while (openPlayer.consumeClick()) {
+            client.gui.setScreen(new CueScreen(client.gui.screen()));
         }
         while (toggle.consumeClick()) {
             CueConfig cfg = CueConfig.INSTANCE;

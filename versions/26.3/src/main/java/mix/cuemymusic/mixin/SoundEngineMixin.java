@@ -13,17 +13,23 @@ import net.minecraft.client.sounds.AudioStream;
 import net.minecraft.client.sounds.SoundBufferLibrary;
 import net.minecraft.client.sounds.SoundEngine;
 import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundSource;
 
 import mix.cuemymusic.CueStream;
+import mix.cuemymusic.TrackSoundInstance;
 
 @Mixin(SoundEngine.class)
 abstract class SoundEngineMixin {
+    /** Wraps background-music streams. Jukeboxes (the record category) are left alone. */
     @WrapOperation(
             method = "play",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/sounds/SoundBufferLibrary;getStream(Lnet/minecraft/resources/Identifier;Z)Ljava/util/concurrent/CompletableFuture;"))
     private CompletableFuture<AudioStream> cuemymusic$wrapStream(SoundBufferLibrary library, Identifier sound, boolean looping,
             Operation<CompletableFuture<AudioStream>> original, @Local(argsOnly = true) SoundInstance instance) {
-        // Async: in BPM mode, wrapping decodes ahead, which must not run on the client thread.
-        return original.call(library, sound, looping).thenApplyAsync(stream -> CueStream.wrap(stream, instance.getSource(), sound));
+        CompletableFuture<AudioStream> stream = original.call(library, sound, looping);
+        if (instance.getSource() != SoundSource.MUSIC) return stream;
+        double start = instance instanceof TrackSoundInstance t ? t.startSeconds() : 0;
+        // Async: seeking decodes ahead, which must not run on the client or sound thread.
+        return stream.thenApplyAsync(s -> CueStream.wrap(s, sound, start));
     }
 }

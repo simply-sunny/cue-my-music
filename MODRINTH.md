@@ -10,7 +10,7 @@ This file is the source of truth for the Modrinth project settings, version meta
 | Slug | `cue-my-music` |
 | Project type | Mod |
 | Project ID | *(not created yet)* |
-| Summary | Change the pitch and speed of in-game music and music discs, independently. Fabric and Quilt 26.3, client-side. |
+| Summary | A music player for Minecraft's soundtrack, with pitch, speed and an equalizer. Fabric and Quilt 26.3, client-side. |
 | License | MIT |
 | Environment | Client-side only (`client_only`) |
 | Featured categories | `utility`, `decoration` |
@@ -36,34 +36,35 @@ Version name format: `Cue My Music 1.0.0 (26.3)`.
 | Project | ID | Type |
 | --- | --- | --- |
 | Fabric API | `P7dR8mSH` | Required |
-| Cloth Config API | `9s6osm5g` | Required |
-| Mod Menu | `mOgUt4GM` | Optional |
+| Mod Menu | `mOgUt4GM` | Required |
 
 ---
 
-Change the pitch and speed of in-game music, independently.
+A music player for Minecraft's own soundtrack, with pitch, speed and an equalizer.
 
-Drop the music 2 semitones, play it at 1.2× speed, or add 10 BPM to every song. Pitch and speed are separate settings, so changing one doesn't change the other. Works on background music and music discs.
+Pick any game track and play it, or let the game keep choosing. Drop the music 2 semitones, play it at 1.2× speed, or both. Pitch and speed are separate settings, so changing one doesn't change the other.
 
 ## Features
 
+- **Player:** opens from Mod Menu. Library on the left, track list in the middle, now playing on the right, controls at the bottom.
+- **Artist pages:** C418, Lena Raine, Aaron Cherof, Kumi Tanioka, Amos Roddy and fingerspit, with only their in-game tracks.
+- **Controls:** play any track, pause, seek, next and previous.
 - **Pitch:** −12 to +12 semitones, same speed.
-- **Speed:** a multiplier (0.5–2.0×) or a BPM offset, same pitch.
-- **BPM offset:** each song's tempo is detected when it starts, so `+10` means 10 BPM faster than that song.
+- **Speed:** 0.5× to 2.0×, same pitch.
+- **Equalizer:** 6 bands with presets, for every song.
 - **Live:** changes apply to the song that's already playing.
-- **Pick what's affected:** background music, music discs, or both. Sound effects are never touched.
-- **Settings screen:** Cloth Config, through Mod Menu or a key.
+- **Resource packs:** extra music tracks show up under Unknown artist.
 
 ## Installation
 
-1. Install Fabric Loader, Fabric API and Cloth Config for 26.3. Mod Menu is optional.
+1. Install Fabric Loader, Fabric API and Mod Menu for 26.3.
 2. Put the jar in `mods`.
 
 ## Compatibility
 
 - **Minecraft:** 26.3 on Fabric and Quilt. Java 25.
 - **Client-side only.** Servers don't need it.
-- **Ambient tracks:** many vanilla tracks have no clear beat. In BPM offset mode they're treated as 120 BPM.
+- **Background music only.** Jukeboxes and sound effects aren't touched.
 - **Other music mods** that replace the music stream may bypass it.
 
 Full settings and troubleshooting notes are on [GitHub](https://github.com/simply-sunny/cue-my-music#readme).
