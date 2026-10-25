@@ -1,0 +1,53 @@
+name: Bug report
+description: Something doesn't work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [troubleshooting table](https://github.com/simply-sunny/cue-my-music#troubleshooting) first.
+  - type: input
+    id: minecraft
+    attributes:
+      label: Minecraft version
+      placeholder: "26.3"
+    validations:
+      required: true
+  - type: input
+    id: mod-version
+    attributes:
+      label: Cue My Music version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: loader
+    attributes:
+      label: Loader and version
+      placeholder: "Fabric Loader 0.20.1"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Set pitch to -2
+        2. ...
+  - type: textarea
+    id: mods
+    attributes:
+      label: Other mods
+      description: Especially other sound or music mods.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log or crash report
+      description: Attach `logs/latest.log` or the crash report, or paste a link.

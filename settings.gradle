@@ -1,0 +1,23 @@
+pluginManagement {
+	repositories {
+		maven {
+			name = 'Fabric'
+			url = 'https://maven.fabricmc.net/'
+		}
+		mavenCentral()
+		gradlePluginPortal()
+	}
+}
+
+rootProject.name = 'cue-my-music'
+
+def targets = ['26.3']
+def onlyTarget = gradle.startParameter.projectProperties['onlyTarget']
+if (onlyTarget && !targets.contains(onlyTarget)) {
+	throw new GradleException("Unknown Minecraft target: ${onlyTarget}")
+}
+
+(onlyTarget ? [onlyTarget] : targets).each { target ->
+	include target
+	project(":${target}").projectDir = file("versions/${target}")
+}

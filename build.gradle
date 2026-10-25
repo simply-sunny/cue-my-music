@@ -1,0 +1,113 @@
+plugins {
+	id 'base'
+	id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
+}
+
+def minecraftTargets = [
+	'26.3': [
+		minecraft: '26.3', java: 25,
+		loader: '0.20.1', fabricApi: '0.165.0+26.3',
+		clothConfig: '26.3.159', modMenu: '21.0.0'
+	]
+]
+
+subprojects {
+	def target = minecraftTargets[project.name]
+	if (target == null) {
+		throw new GradleException("Unknown Minecraft target: ${project.path}")
+	}
+
+	apply plugin: 'net.fabricmc.fabric-loom'
+
+	version = rootProject.property('mod_version')
+	group = rootProject.maven_group
+
+	base {
+		archivesName = "${rootProject.archives_base_name}-${target.releaseName ?: target.minecraft}"
+	}
+
+	repositories {
+		maven { url = 'https://maven.shedaniel.me/' }
+		maven { url = 'https://maven.terraformersmc.com/releases/' }
+	}
+
+	dependencies {
+		minecraft "com.mojang:minecraft:${target.minecraft}"
+		implementation "net.fabricmc:fabric-loader:${target.loader}"
+		implementation "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
+		api("me.shedaniel.cloth:cloth-config-fabric:${target.clothConfig}") {
+			exclude group: 'net.fabricmc.fabric-api'
+		}
+		// Optional: only used for the Mod Menu settings button.
+		compileOnly "com.terraformersmc:modmenu:${target.modMenu}"
+		localRuntime "com.terraformersmc:modmenu:${target.modMenu}"
+	}
+
+	sourceSets {
+		main {
+			java.setSrcDirs([rootProject.file('src/common/java'), project.file('src/main/java')])
+			resources.setSrcDirs([rootProject.file('src/main/resources'), project.file('src/main/resources')])
+		}
+	}
+
+	processResources {
+		inputs.property 'version', project.version
+		filesMatching('fabric.mod.json') {
+			expand version: project.version
+		}
+	}
+
+	tasks.withType(JavaCompile).configureEach {
+		options.release = target.java
+	}
+
+	java {
+		withSourcesJar()
+		sourceCompatibility = JavaVersion.toVersion(target.java)
+		targetCompatibility = JavaVersion.toVersion(target.java)
+	}
+
+	jar {
+		inputs.property 'archivesName', project.base.archivesName
+		from(rootProject.file('LICENSE')) {
+			rename { "${it}_${inputs.properties.archivesName}" }
+		}
+	}
+}
+
+// Headless checks run the real DSP code; nothing from Minecraft is needed.
+def regressionProject = subprojects.first()
+def compileRegressionTests = regressionProject.tasks.register('compileRegressionTests', JavaCompile) {
+	source rootProject.file('src/common/java/mix/cuemymusic/dsp'), rootProject.file('tests/java')
+	classpath = files()
+	destinationDirectory = rootProject.layout.buildDirectory.dir('classes/regression')
+	options.release = minecraftTargets[regressionProject.name].java
+}
+
+def regressionTest = regressionProject.tasks.register('regressionTest', JavaExec) {
+	dependsOn compileRegressionTests
+	classpath = files(compileRegressionTests.flatMap { it.destinationDirectory })
+	mainClass = 'mix.cuemymusic.DspRegressionTest'
+}
+
+tasks.register('test') {
+	dependsOn regressionTest
+}
+
+tasks.named('check') {
+	dependsOn regressionTest
+}
+
+tasks.register('buildAll', Sync) {
+	dependsOn regressionTest
+	group = 'build'
+	description = 'Builds every supported Minecraft version and collects the release JARs.'
+
+	dependsOn subprojects.collect { it.tasks.named('build') }
+	from subprojects.collect { it.tasks.named('jar') }
+	into layout.buildDirectory.dir('libs')
+}
+
+tasks.named('clean') {
+	dependsOn subprojects.collect { "${it.path}:clean" }
+}
