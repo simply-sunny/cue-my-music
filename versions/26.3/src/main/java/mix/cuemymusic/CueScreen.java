@@ -235,14 +235,14 @@ public final class CueScreen extends Screen {
         if (view == View.PACK && pack == null) view = View.PLAYLIST;
         int contentBottom = switch (view) {
             case SETTINGS -> drawSettings(g, x0, contentTop, x1, mx, my);
-            case ARTIST -> drawTrackPage(g, x0, contentTop, x1, mx, my, MusicLibrary.byArtist(key),
+            case ARTIST -> drawTrackPage(g, x0, contentTop, x1, mx, my, "artist:" + key, MusicLibrary.byArtist(key),
                     Art.block(Catalog.ARTIST_ART.getOrDefault(key, Catalog.UNKNOWN_ALBUM).texture()), tr("cuemymusic.artist"),
                     key, null, artistColor(key));
-            case PACK -> drawTrackPage(g, x0, contentTop, x1, mx, my, MusicLibrary.byPack(key), pack.art(),
+            case PACK -> drawTrackPage(g, x0, contentTop, x1, mx, my, "pack:" + key, MusicLibrary.byPack(key), pack.art(),
                     tr("cuemymusic.pack"), pack.name(), pack.author(), PackNames.gradient(pack.name())[1]);
-            case PLAYLIST -> drawTrackPage(g, x0, contentTop, x1, mx, my, MusicLibrary.all(), PLAYLIST_ART,
+            case PLAYLIST -> drawTrackPage(g, x0, contentTop, x1, mx, my, CuePlayer.ALL, MusicLibrary.all(), PLAYLIST_ART,
                     tr("cuemymusic.playlist"), tr("cuemymusic.playlist.title"), null, 0xFF1E3A2A);
-            case LIKED -> drawTrackPage(g, x0, contentTop, x1, mx, my, liked(), LIKED_ART,
+            case LIKED -> drawTrackPage(g, x0, contentTop, x1, mx, my, "liked", liked(), LIKED_ART,
                     tr("cuemymusic.playlist"), tr("cuemymusic.liked.title"), null, 0xFF3A2E6E);
         };
         g.disableScissor();
@@ -250,7 +250,8 @@ public final class CueScreen extends Screen {
         scroll = Math.clamp(scroll, 0, scrollMax);
     }
 
-    private int drawTrackPage(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my, List<Track> unsorted,
+    /** A list of songs. {@code listKey} names it to the player, so its big button knows when it's the one playing. */
+    private int drawTrackPage(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my, String listKey, List<Track> unsorted,
             Art art, String kind, String title, String byline, int color) {
         List<Track> tracks = sorted(unsorted);
 
@@ -267,16 +268,29 @@ public final class CueScreen extends Screen {
         g.text(font, clip(summary, x1 - tx - 8), tx, y + 48, DIM, false);
         y += headerH;
 
-        // Big play button for the whole list.
+        // Big play button for the whole list: pauses and resumes it once it's the one playing.
         int pb = 18;
-        boolean listActive = player.current() != null && tracks.contains(player.current()) && player.isPlaying();
+        boolean thisList = player.current() != null && player.isPlayingList(listKey);
         roundButton(g, x0 + 10, y + 6, pb, GREEN);
-        if (listActive) pauseIcon(g, x0 + 10 + 6, y + 6 + 5, 8, BLACK);
+        if (thisList && player.isPlaying()) pauseIcon(g, x0 + 10 + 6, y + 6 + 5, 8, BLACK);
         else playIcon(g, x0 + 10 + 7, y + 6 + 5, 8, BLACK);
         nextHits.add(new Hit(x0 + 10, y + 6, x0 + 10 + pb, y + 6 + pb, () -> {
-            if (listActive || (player.current() != null && tracks.contains(player.current()))) player.togglePause();
-            else if (!tracks.isEmpty()) player.play(tracks.getFirst(), 0, tracks);
+            if (thisList) player.togglePause();
+            else if (!tracks.isEmpty()) player.play(listKey, tracks, 0);
         }));
+        // Add the whole list to the queue, in the order shown.
+        if (!tracks.isEmpty()) {
+            int qx = x0 + 10 + pb + 10, qy = y + 6;
+            String label = tr("cuemymusic.queue.add_all");
+            int qw = 13 + font.width(label);
+            boolean qHover = mx >= qx - 2 && mx < qx + qw + 2 && my >= qy && my < qy + pb;
+            plusIcon(g, qx, qy + 5, qHover ? WHITE : DIM);
+            g.text(font, label, qx + 13, qy + 6, qHover ? WHITE : DIM, false);
+            nextHits.add(new Hit(qx - 2, qy, qx + qw + 2, qy + pb, () -> {
+                player.enqueueAll(tracks);
+                showToast(tr("cuemymusic.queue.added_all", tracks.size()));
+            }));
+        }
         y += pb + 12;
 
         // Column headings; title, album and time sort.
@@ -298,6 +312,7 @@ public final class CueScreen extends Screen {
         Track current = player.current();
         for (int i = 0; i < tracks.size(); i++) {
             Track t = tracks.get(i);
+            int index = i;
             boolean visible = y + ROW > centerY0 && y < centerY1;
             if (visible) {
                 boolean hover = mx >= x0 && mx < x1 && my >= y && my < y + ROW && my >= centerY0 && my < centerY1;
@@ -314,7 +329,7 @@ public final class CueScreen extends Screen {
                 String len = Double.isNaN(t.seconds()) ? "-:--" : time(t.seconds());
                 g.text(font, len, colTime - font.width(len), y + 6, DIM, false);
                 int top = Math.max(y, centerY0), bottom = Math.min(y + ROW, centerY1);
-                nextHits.add(new Hit(x0, top, x1, bottom, () -> player.play(t, 0, tracks)));
+                nextHits.add(new Hit(x0, top, x1, bottom, () -> player.play(listKey, tracks, index)));
                 // Like: always shown once liked, otherwise on hover, left of add to queue.
                 boolean liked = isLiked(t);
                 if (hover || liked) {
@@ -408,6 +423,8 @@ public final class CueScreen extends Screen {
         y = sliderRow(g, left, y, right, tr("cuemymusic.option.speed"),
                 tr("cuemymusic.option.speed.value", String.format("%.2f", cfg.speed)), (cfg.speed - 0.5) / 1.5,
                 f -> cfg.speed = Math.round((0.5 + f * 1.5) * 20) / 20.0, (1.0 - 0.5) / 1.5);
+        y = toggleRow(g, left, y, right, tr("cuemymusic.option.travel"), tr("cuemymusic.option.travel.desc"), cfg.pauseOnTravel,
+                () -> cfg.pauseOnTravel = !cfg.pauseOnTravel);
         y += 10;
 
         g.text(font, tr("cuemymusic.settings.equalizer"), left, y, WHITE, false);
@@ -552,6 +569,14 @@ public final class CueScreen extends Screen {
                     : tr("cuemymusic.queue.after_break", wait);
         }
 
+        Track listNext = player.listNext();
+        if (queue.isEmpty() && listNext != null) {
+            if (y + 12 + ROW > y1) return;
+            g.text(font, tr("cuemymusic.queue.next_up"), left, y, WHITE, false);
+            nextRow(g, listNext, listNext.artist(), x0, y + 12, x1, mx, my, player::next);
+            return;
+        }
+
         if (queue.isEmpty()) {
             if (game == null || y + 12 + ROW > y1) {
                 if (y + 20 < y1) {
@@ -624,12 +649,17 @@ public final class CueScreen extends Screen {
 
     /** The game's next song. Clicking it plays it now. */
     private void gameRow(GuiGraphicsExtractor g, Track t, String when, int x0, int y, int x1, int mx, int my) {
+        nextRow(g, t, when, x0, y, x1, mx, my, player::playUpcoming);
+    }
+
+    /** The song that plays next, with a line below it; clicking plays it now. */
+    private void nextRow(GuiGraphicsExtractor g, Track t, String below, int x0, int y, int x1, int mx, int my, Runnable play) {
         boolean hover = queueDrag < 0 && mx >= x0 && mx < x1 && my >= y && my < y + ROW;
         if (hover) g.fill(x0 + 4, y, x1 - 4, y + ROW, ROW_HOVER);
         // The wait can be wider than the panel, so it scrolls like the song names.
         queueRow(g, t, x0 + 8, y, x1 - x0 - 16, DIM, "");
-        marquee(g, when, x0 + 28, y + 11, x1 - x0 - 36, DIM, 1);
-        nextHits.add(new Hit(x0, y, x1, y + ROW, player::playUpcoming));
+        marquee(g, below, x0 + 28, y + 11, x1 - x0 - 36, DIM, 1);
+        nextHits.add(new Hit(x0, y, x1, y + ROW, play));
     }
 
     private void queueRow(GuiGraphicsExtractor g, Track t, int x, int y, int w, int titleColor, String below) {

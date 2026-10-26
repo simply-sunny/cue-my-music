@@ -42,17 +42,20 @@ All keys are rebindable under **Options → Controls → Key Binds → Cue My Mu
 
 - Open the player from the music button on the title screen or pause menu, from **Mod Menu → Cue My Music**, or with **Open player**. The same key closes it.
 - The library on the left has **All game music**, **Liked Songs**, one page per artist, one page per resource pack that adds music, and **Settings**.
-- Click a song to play it. Hover it and click the heart to like it, or **+** to add it to the queue.
+- Click a song to play it. The rest of the page plays after it, in the order shown. The big green button plays the page from the top, or pauses it while it's playing.
+- Hover a song and click the heart to like it, or **+** to add it to the queue. **Add all to queue** adds the whole page.
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
 - Space plays and pauses while the player is open. Click or drag the progress bar to seek.
 
 ### The queue
 
-Queued songs play one after another, as soon as the current song ends. Drag a song to reorder it, click × to remove it, or double-click it to play it now. A long queue scrolls.
+Queued songs play one after another, as soon as the current song ends, and before the page you're playing carries on. The page then picks up after the song the queue interrupted. A song queued while nothing is playing starts at once. Drag a song to reorder it, click × to remove it, or double-click it to play it now. A long queue scrolls.
 
-After the queue comes the game's own music. The game still decides when music plays: a random break of up to 20 minutes between songs on the default **Music Frequency**, and different music on the title screen, underwater, in the Nether, and so on. The queue shows the game's next song with **In 0:42** while waiting, or **After a 12:30 break** while a song plays. Click it to play it now.
+**Next** plays the queue's next song, then the page's, then the game's. **Previous** goes back through the page only, and restarts the song after its first 3 seconds.
 
-Songs the game starts play exactly as in vanilla: the same weighted pick from `sounds.json`, the same break, each file's own volume and pitch, and the same "Now playing" toast. They still stop when you change dimension or when music that replaces them starts, such as the dragon fight. Songs you pick or queue yourself aren't cut off, and while a song is paused the game's music stays quiet.
+After the queue and the page comes the game's own music. The game still decides when music plays: a random break of up to 20 minutes between songs on the default **Music Frequency**, and different music on the title screen, underwater, in the Nether, and so on. The queue shows the game's next song with **In 0:42** while waiting, or **After a 12:30 break** while a song plays. Click it to play it now.
+
+Songs the game starts play exactly as in vanilla: the same weighted pick from `sounds.json`, the same break, each file's own volume and pitch, and the same "Now playing" toast. They still stop when you change dimension or when music that replaces them starts, such as the dragon fight. Songs you pick or queue yourself aren't cut off: they carry on through dimension changes and menus, and while a song is paused the game's music stays quiet.
 
 ### Resource packs
 
@@ -67,6 +70,7 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 | Effects | On | Turns pitch, speed, and EQ off together. |
 | Pitch | 0 | −12 to +12 semitones. 12 is one octave. |
 | Speed | ×1.00 | 0.5 to 2.0, in steps of 0.05. |
+| Pause during travel | Off | On: your song pauses while a new dimension loads, then resumes from the same spot. Off: it keeps playing, with a brief gap. |
 | Use equalizer | Off | Moving a band or picking a preset turns it on. |
 | EQ bands | 0 dB | 60, 150, 400, 1k, 2.4k, and 15k Hz, ±12 dB each. |
 
@@ -92,7 +96,7 @@ Requires JDK 25.
 ./gradlew clean buildAll
 ```
 
-This runs the headless checks (pitch and length on test tones, EQ response on sine waves, and pack names, initials, and credits) and builds every target. Jars land in `build/libs/`. To build one target:
+This runs the headless checks (pitch and length on test tones, EQ response on sine waves, pack names, initials, and credits, and the queue and play order rules) and builds every target. Jars land in `build/libs/`. To build one target:
 
 ```bash
 ./gradlew :26.3:build
