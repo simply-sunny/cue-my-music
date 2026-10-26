@@ -5,6 +5,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntSupplier;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.LevelLoadingScreen;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.resources.sounds.Sound;
 import net.minecraft.client.resources.sounds.SoundInstance;
@@ -64,6 +65,10 @@ public final class CuePlayer {
     private final PlayOrder<Track> order = new PlayOrder<>();
     /** True while the current track is paused for a dimension change, to resume once the new level has loaded. */
     private boolean travelHold;
+    /** When the new level was first seen ready after a dimension change, or 0. */
+    private long travelReadySince;
+    private static final long TRAVEL_SETTLE_NANOS = 500_000_000L;
+    private static final double TRAVEL_FADE_SECONDS = 0.75;
     private long lastNanos;
     /** The song an automixed song blends into, or null; read by the stream. */
     private volatile Track automixNext;
@@ -199,10 +204,18 @@ public final class CuePlayer {
             return;
         }
         if (travelHold) {
-            ClientPacketListener connection = Minecraft.getInstance().getConnection();
-            if (connection != null && connection.hasClientLoaded()) {
+            // Wait until the new level is on screen and has stayed so for a moment, then fade back in.
+            if (!levelReady()) {
+                travelReadySince = 0;
+            } else if (travelReadySince == 0) {
+                travelReadySince = now;
+            } else if (now - travelReadySince >= TRAVEL_SETTLE_NANOS) {
                 travelHold = false;
-                if (paused && current != null) start(current, position, event, picked);
+                travelReadySince = 0;
+                if (paused && current != null) {
+                    CueStream.fadeInNext(TRAVEL_FADE_SECONDS);
+                    start(current, position, event, picked);
+                }
             }
         }
         TrackSoundInstance o = ours;
@@ -481,6 +494,20 @@ public final class CuePlayer {
         } else {
             start(t, at, event, true);
         }
+    }
+
+    /**
+     * The new level is on screen and can be heard: the player's chunk has
+     * loaded and the loading screen has closed. The game marks the player loaded a moment
+     * before the loading screen goes, so that alone resumes too early.
+     */
+    private static boolean levelReady() {
+        Minecraft mc = Minecraft.getInstance();
+        ClientPacketListener connection = mc.getConnection();
+        return connection != null && connection.hasClientLoaded() && mc.level != null && mc.player != null
+                && !(mc.gui.screen() instanceof LevelLoadingScreen)
+                // In the background with pause on lost focus, it waits for the window instead of starting and pausing at once.
+                && (mc.isWindowActive() || !mc.options.pauseOnLostFocus);
     }
 
     /** Picks the next song and break again when the game's music or the time between songs changes. */

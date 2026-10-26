@@ -106,11 +106,23 @@ public final class CueStream implements FloatSampleSource {
         return new CueStream(stream, sound, startSeconds, instance);
     }
 
+    /** Seconds the next stream to start fades in over; 0 for none. */
+    private static volatile double pendingFadeIn;
+    private long fadeInFrames;
+    private long fadedFrames;
+
+    /** Makes the next stream to start fade in over {@code seconds}, as after a dimension change. */
+    static void fadeInNext(double seconds) {
+        pendingFadeIn = seconds;
+    }
+
     private CueStream(AudioStream source, Identifier sound, double startSeconds, SoundInstance instance) {
         this.source = new Reader(source);
         this.format = source.getFormat();
         this.channels = format.getChannels();
         this.rate = format.getSampleRate();
+        fadeInFrames = (long) (pendingFadeIn * rate);
+        pendingFadeIn = 0;
         this.processor = new PitchTempoProcessor(channels, format.getSampleRate());
         this.eq = new Equalizer(channels, format.getSampleRate());
         Identifier track = sound.withPath(p -> p.replaceFirst("^sounds/", "").replaceFirst("\\.ogg$", ""));
@@ -212,6 +224,10 @@ public final class CueStream implements FloatSampleSource {
 
     private void emit(FloatConsumer consumer, float[] samples, int frames) {
         eq.process(samples, 0, frames);
+        for (int f = 0; f < frames && fadedFrames < fadeInFrames; f++, fadedFrames++) {
+            double s = Math.sin(Math.PI / 2 * fadedFrames / fadeInFrames);
+            for (int c = 0; c < channels; c++) samples[f * channels + c] *= (float) (s * s);
+        }
         if (outside) {
             OutsideAudio.play(id, samples, frames * channels);
             for (int i = 0; i < frames * channels; i++) consumer.accept(0);

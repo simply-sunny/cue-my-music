@@ -94,7 +94,29 @@ public final class CueScreen extends Screen {
         }
     }
 
-    private record MenuItem(String label, Runnable action) {
+    private enum MenuIcon { NONE, PLUS, LIKE, LIKED, DISLIKE, DISLIKED, QUEUE, ARTIST, REMOVE, DELETE }
+
+    /** Adding to a playlist from the menu: the playlist to leave out (the one open), what adding does, and New playlist. */
+    private record PlaylistPick(String exclude, Consumer<CueConfig.Playlist> add, Runnable addNew) {
+    }
+
+    /** A menu row: its icon, label and what clicking does. A divider has no label; {@code pick} opens the playlist submenu. */
+    private record MenuItem(MenuIcon icon, String label, Runnable action, PlaylistPick pick) {
+        static final MenuItem DIVIDER = new MenuItem(MenuIcon.NONE, null, null, null);
+        /** The submenu's search box. */
+        static final MenuItem FIELD = new MenuItem(MenuIcon.NONE, "", null, null);
+
+        MenuItem(String label, Runnable action) {
+            this(MenuIcon.NONE, label, action, null);
+        }
+
+        MenuItem(MenuIcon icon, String label, Runnable action) {
+            this(icon, label, action, null);
+        }
+
+        static MenuItem playlists(String label, PlaylistPick pick) {
+            return new MenuItem(MenuIcon.PLUS, label, null, pick);
+        }
     }
 
     /** Where an add-on page's text field was drawn, for clicks. */
@@ -153,6 +175,10 @@ public final class CueScreen extends Screen {
     private List<RowHit> rowHits = new ArrayList<>();
     private List<RowHit> nextRowHits = new ArrayList<>();
     private Menu menu;
+    /** What's typed in the menu's playlist search, whether that submenu is open, and how far it's scrolled. */
+    private String menuFilter = "";
+    private boolean subOpen;
+    private int subScroll;
     /** The name box while a playlist is being renamed, else null. */
     private EditBox renameBox;
     private String renamingId;
@@ -452,81 +478,294 @@ public final class CueScreen extends Screen {
         setFocused(null);
     }
 
-    /** Right-click menu for a song: queue, like, and the playlists. */
+    /** Right-click menu for a song, laid out like Spotify's: playlists, liked, queue, then where to go, then removing. */
     private void openMenu(Track t, int x, int y) {
         String song = t.location().toString();
         List<MenuItem> items = new ArrayList<>();
-        items.add(new MenuItem(tr("cuemymusic.menu.queue"), () -> {
+        String exclude = view == View.LIST ? key : null;
+        items.add(MenuItem.playlists(tr("cuemymusic.menu.add_to_playlist"), new PlaylistPick(exclude,
+                p -> showToast(cfg.addToPlaylist(p.id(), song) ? tr("cuemymusic.playlists.added", p.name()) : tr("cuemymusic.playlists.already", p.name())),
+                () -> {
+                    String id = cfg.createPlaylist(tr("cuemymusic.playlists.default_name", cfg.playlists.size() + 1));
+                    cfg.addToPlaylist(id, song);
+                    open(View.LIST, id);
+                    startRename(id);
+                })));
+        boolean liked = isLiked(t);
+        items.add(new MenuItem(liked ? MenuIcon.LIKED : MenuIcon.LIKE, tr(liked ? "cuemymusic.menu.unlike" : "cuemymusic.menu.like"), () -> toggleLiked(t)));
+        items.add(new MenuItem(MenuIcon.QUEUE, tr("cuemymusic.menu.queue"), () -> {
             player.enqueue(t);
             showToast(tr("cuemymusic.queue.added"));
         }));
-        items.add(new MenuItem(tr(isLiked(t) ? "cuemymusic.menu.unlike" : "cuemymusic.menu.like"), () -> toggleLiked(t)));
         if (MusicLibrary.isGameMusic(t)) {
-            items.add(new MenuItem(tr(isDisliked(t) ? "cuemymusic.menu.undislike" : "cuemymusic.menu.dislike"), () -> toggleDisliked(t)));
+            boolean disliked = isDisliked(t);
+            items.add(new MenuItem(disliked ? MenuIcon.DISLIKED : MenuIcon.DISLIKE,
+                    tr(disliked ? "cuemymusic.menu.undislike" : "cuemymusic.menu.dislike"), () -> toggleDisliked(t)));
         }
-        for (CueConfig.Playlist p : cfg.playlists) {
-            if (view == View.LIST && p.id().equals(key)) continue;
-            items.add(new MenuItem(tr("cuemymusic.menu.add_to", clip(p.name(), 120)), () -> showToast(cfg.addToPlaylist(p.id(), song)
-                    ? tr("cuemymusic.playlists.added", p.name()) : tr("cuemymusic.playlists.already", p.name()))));
+        if (!t.artist().isBlank() && !(view == View.ARTIST && t.artist().equals(key))) {
+            items.add(MenuItem.DIVIDER);
+            items.add(new MenuItem(MenuIcon.ARTIST, tr("cuemymusic.menu.go_artist"), () -> open(View.ARTIST, t.artist())));
         }
-        items.add(new MenuItem(tr("cuemymusic.menu.add_new"), () -> {
-            String id = cfg.createPlaylist(tr("cuemymusic.playlists.default_name", cfg.playlists.size() + 1));
-            cfg.addToPlaylist(id, song);
-            open(View.LIST, id);
-            startRename(id);
-        }));
+        List<MenuItem> removing = new ArrayList<>();
         if (view == View.LIST) {
             String listId = key;
-            items.add(new MenuItem(tr("cuemymusic.menu.remove"), () -> {
+            removing.add(new MenuItem(MenuIcon.REMOVE, tr("cuemymusic.menu.remove"), () -> {
                 cfg.removeFromPlaylist(listId, song);
                 showToast(tr("cuemymusic.playlists.removed"));
             }));
         }
         CuePanel panel = view == View.PANEL ? CuePanels.get(key) : null;
         if (panel != null) {
-            for (CuePanel.Action a : panel.songActions(t)) items.add(new MenuItem(a.label(), a.run()));
+            for (CuePanel.Action a : panel.songActions(t)) removing.add(new MenuItem(a.label(), a.run()));
             CuePanel.Action delete = panel.deleteAction(List.of(t));
-            if (delete != null) items.add(new MenuItem(delete.label(), delete.run()));
+            if (delete != null) removing.add(new MenuItem(MenuIcon.DELETE, delete.label(), delete.run()));
         }
-        menu = new Menu(x, y, items);
+        if (!removing.isEmpty()) {
+            items.add(MenuItem.DIVIDER);
+            items.addAll(removing);
+        }
+        showMenu(new Menu(x, y, items));
     }
 
-    private static final int MENU_ROW = 13;
-
-    private int menuWidth() {
-        int w = 0;
-        for (MenuItem i : menu.items()) w = Math.max(w, font.width(i.label()));
-        return w + 12;
+    private void showMenu(Menu m) {
+        menu = m;
+        menuFilter = "";
+        subOpen = false;
+        subScroll = 0;
     }
 
-    /** Where the menu sits: at the click, moved in so it stays on screen. */
-    private int[] menuOrigin() {
-        int w = menuWidth(), h = menu.items().size() * MENU_ROW + 4;
-        return new int[] {Math.min(menu.x(), width - w - 2), Math.min(menu.y(), height - h - 2), w, h};
+    private static final int MENU_ROW = 18;
+    private static final int MENU_DIVIDER = 7;
+    private static final int MENU_PAD = 4;
+    private static final int SUB_WIDTH = 160;
+    private static final int SUB_ROWS = 8;
+    private static final int MENU_BG = 0xFF282828;
+    private static final int MENU_HOVER = 0xFF3E3E3E;
+    private static final int MENU_LINE = 0xFF3A3A3A;
+
+    /** One row of the menu or its playlist list, where it was laid out. */
+    private record MenuRow(int y0, int y1, MenuItem item) {
+    }
+
+    private record MenuLayout(int x, int y, int w, int h, List<MenuRow> rows) {
+        MenuRow at(double mx, double my) {
+            if (mx < x || mx >= x + w) return null;
+            for (MenuRow r : rows) {
+                if (my >= r.y0() && my < r.y1()) return r;
+            }
+            return null;
+        }
+
+        boolean contains(double mx, double my) {
+            return mx >= x && mx < x + w && my >= y && my < y + h;
+        }
+    }
+
+    /** The menu, at the click, moved in so it stays on screen. */
+    private MenuLayout menuLayout() {
+        int w = 0, h = MENU_PAD * 2;
+        for (MenuItem i : menu.items()) {
+            if (i.label() != null) w = Math.max(w, font.width(i.label()) + (i.pick() != null ? 18 : 0));
+            h += i.label() == null ? MENU_DIVIDER : MENU_ROW;
+        }
+        w += 36;
+        int x = Math.max(2, Math.min(menu.x(), width - w - 2)), y = Math.max(2, Math.min(menu.y(), height - h - 2));
+        List<MenuRow> rows = new ArrayList<>();
+        int ry = y + MENU_PAD;
+        for (MenuItem i : menu.items()) {
+            int rh = i.label() == null ? MENU_DIVIDER : MENU_ROW;
+            rows.add(new MenuRow(ry, ry + rh, i));
+            ry += rh;
+        }
+        return new MenuLayout(x, y, w, h, rows);
+    }
+
+    /** The playlists the menu's submenu offers, matching what's typed in its search box. */
+    private List<CueConfig.Playlist> pickable(PlaylistPick pick) {
+        String q = normalize(menuFilter.strip());
+        return cfg.playlists.stream()
+                .filter(p -> !p.id().equals(pick.exclude()))
+                .filter(p -> q.isEmpty() || normalize(p.name()).contains(q))
+                .toList();
+    }
+
+    /**
+     * The playlist submenu beside the menu row that opened it: a search box,
+     * New playlist, then the playlists, {@link #SUB_ROWS} at a time.
+     */
+    private MenuLayout subLayout(MenuLayout main) {
+        MenuRow from = null;
+        for (MenuRow r : main.rows()) {
+            if (r.item().pick() != null) from = r;
+        }
+        if (from == null) return null;
+        PlaylistPick pick = from.item().pick();
+        List<CueConfig.Playlist> lists = pickable(pick);
+        subScroll = Math.clamp(subScroll, 0, Math.max(0, lists.size() - SUB_ROWS));
+        int shown = Math.min(SUB_ROWS, lists.size() - subScroll);
+        int h = MENU_PAD * 2 + 20 + MENU_ROW + MENU_DIVIDER + Math.max(1, shown) * MENU_ROW;
+        int x = main.x() + main.w() + 2;
+        if (x + SUB_WIDTH > width - 2) x = main.x() - SUB_WIDTH - 2;
+        int y = Math.max(2, Math.min(from.y0() - MENU_PAD, height - h - 2));
+        List<MenuRow> rows = new ArrayList<>();
+        int ry = y + MENU_PAD;
+        rows.add(new MenuRow(ry, ry + 20, MenuItem.FIELD));
+        ry += 20;
+        rows.add(new MenuRow(ry, ry + MENU_ROW, new MenuItem(MenuIcon.PLUS, tr("cuemymusic.menu.new_playlist"), pick.addNew())));
+        ry += MENU_ROW;
+        rows.add(new MenuRow(ry, ry + MENU_DIVIDER, MenuItem.DIVIDER));
+        ry += MENU_DIVIDER;
+        if (lists.isEmpty()) {
+            rows.add(new MenuRow(ry, ry + MENU_ROW, new MenuItem(MenuIcon.NONE, tr("cuemymusic.menu.no_playlists"), null)));
+        }
+        for (int i = subScroll; i < subScroll + shown; i++) {
+            CueConfig.Playlist p = lists.get(i);
+            rows.add(new MenuRow(ry, ry + MENU_ROW, new MenuItem(MenuIcon.NONE, p.name(), () -> pick.add().accept(p))));
+            ry += MENU_ROW;
+        }
+        return new MenuLayout(x, y, SUB_WIDTH, h, rows);
     }
 
     private void drawMenu(GuiGraphicsExtractor g, int mx, int my) {
         if (menu == null) return;
-        int[] o = menuOrigin();
-        int x = o[0], y = o[1], w = o[2], h = o[3];
-        g.fill(x - 1, y - 1, x + w + 1, y + h + 1, 0xFF3A3A3A);
-        g.fill(x, y, x + w, y + h, 0xFF282828);
-        for (int i = 0; i < menu.items().size(); i++) {
-            int ry = y + 2 + i * MENU_ROW;
-            boolean hover = mx >= x && mx < x + w && my >= ry && my < ry + MENU_ROW;
-            if (hover) g.fill(x + 2, ry, x + w - 2, ry + MENU_ROW, 0xFF3E3E3E);
-            g.text(font, menu.items().get(i).label(), x + 6, ry + 3, WHITE, false);
+        MenuLayout main = menuLayout();
+        MenuLayout sub = subOpen ? subLayout(main) : null;
+        // Hovering a row opens or closes the submenu; moving into the submenu keeps it open.
+        MenuRow over = main.at(mx, my);
+        if (over != null && over.item().label() != null && (sub == null || !sub.contains(mx, my))) {
+            boolean open = over.item().pick() != null;
+            if (open != subOpen) {
+                subOpen = open;
+                sub = open ? subLayout(main) : null;
+            }
+        }
+        drawMenuBox(g, main);
+        for (MenuRow r : main.rows()) {
+            MenuItem i = r.item();
+            if (i.label() == null) {
+                g.fill(main.x() + 6, r.y0() + 3, main.x() + main.w() - 6, r.y0() + 4, MENU_LINE);
+                continue;
+            }
+            boolean hover = r == over || (i.pick() != null && subOpen);
+            if (hover) g.fill(main.x() + 3, r.y0(), main.x() + main.w() - 3, r.y1(), MENU_HOVER);
+            menuIcon(g, i.icon(), main.x() + 9, r.y0() + 4, i.icon() == MenuIcon.LIKED ? GREEN : WHITE);
+            g.text(font, i.label(), main.x() + 26, r.y0() + 5, i.icon() == MenuIcon.DELETE ? RED : WHITE, false);
+            if (i.pick() != null) {
+                int ax = main.x() + main.w() - 11, ay = r.y0() + 5;
+                for (int k = 0; k < 4; k++) g.fill(ax + k, ay + k, ax + k + 1, ay + 8 - k, WHITE);
+            }
+        }
+        if (sub == null) return;
+        drawMenuBox(g, sub);
+        MenuRow subOver = sub.at(mx, my);
+        for (MenuRow r : sub.rows()) {
+            MenuItem i = r.item();
+            if (i == MenuItem.FIELD) {
+                g.fill(sub.x() + 4, r.y0() + 1, sub.x() + sub.w() - 4, r.y1() - 2, 0xFF3A3A3A);
+                searchIcon(g, sub.x() + 8, r.y0() + 5, DIM);
+                boolean empty = menuFilter.isEmpty();
+                String text = empty ? tr("cuemymusic.menu.find_playlist") : clip(menuFilter, sub.w() - 34);
+                g.text(font, text, sub.x() + 22, r.y0() + 6, empty ? FAINT : WHITE, false);
+                if (System.currentTimeMillis() / 500 % 2 == 0) {
+                    int cx = sub.x() + 22 + (empty ? 0 : font.width(text));
+                    g.fill(cx, r.y0() + 5, cx + 1, r.y0() + 14, WHITE);
+                }
+            } else if (i.label() == null) {
+                g.fill(sub.x() + 6, r.y0() + 3, sub.x() + sub.w() - 6, r.y0() + 4, MENU_LINE);
+            } else {
+                if (r == subOver && i.action() != null) g.fill(sub.x() + 3, r.y0(), sub.x() + sub.w() - 3, r.y1(), MENU_HOVER);
+                int tx = sub.x() + (i.icon() == MenuIcon.NONE ? 9 : 26);
+                if (i.icon() != MenuIcon.NONE) menuIcon(g, i.icon(), sub.x() + 9, r.y0() + 4, WHITE);
+                g.text(font, clip(i.label(), sub.x() + sub.w() - 8 - tx), tx, r.y0() + 5, i.action() == null ? FAINT : WHITE, false);
+            }
+        }
+        // Where the list is when there are more playlists than fit.
+        List<CueConfig.Playlist> lists = pickable(main.rows().stream().filter(r -> r.item().pick() != null).findFirst().orElseThrow().item().pick());
+        if (lists.size() > SUB_ROWS) {
+            int top = sub.rows().get(3).y0(), bottom = sub.y() + sub.h() - MENU_PAD, barH = bottom - top;
+            int thumbH = Math.max(6, barH * SUB_ROWS / lists.size());
+            int thumbY = top + (barH - thumbH) * subScroll / (lists.size() - SUB_ROWS);
+            g.fill(sub.x() + sub.w() - 4, thumbY, sub.x() + sub.w() - 2, thumbY + thumbH, 0xFF6A6A6A);
         }
     }
 
-    /** A click while the menu is open: runs the item under it, and closes the menu either way. */
+    private static void drawMenuBox(GuiGraphicsExtractor g, MenuLayout l) {
+        int x = l.x(), y = l.y(), w = l.w(), h = l.h();
+        // Rounded by knocking the corners off, with a soft shadow.
+        g.fill(x + 2, y + 3, x + w + 3, y + h + 3, 0x66000000);
+        g.fill(x + 1, y, x + w - 1, y + h, MENU_BG);
+        g.fill(x, y + 1, x + w, y + h - 1, MENU_BG);
+    }
+
+    /** A 9×9 icon for a menu row. */
+    private static void menuIcon(GuiGraphicsExtractor g, MenuIcon icon, int x, int y, int color) {
+        switch (icon) {
+            case NONE -> {
+            }
+            case PLUS -> plusIcon(g, x, y, color);
+            case LIKE -> heartIcon(g, x + 1, y + 2, false, color);
+            case LIKED -> heartIcon(g, x + 1, y + 2, true, color);
+            case DISLIKE -> dislikeIcon(g, x, y, false, color);
+            case DISLIKED -> dislikeIcon(g, x, y, true, color);
+            case QUEUE -> pixels(g, x, y, color, ".X.......", "XXX.XXXXX", ".X.......", ".........", "XXXXXXXXX", ".........", ".........",
+                    "XXXXXXXXX", ".........");
+            case ARTIST -> pixels(g, x, y, color, "...XXX...", "..X...X..", "..X...X..", "..X...X..", "...XXX...", ".........",
+                    ".XXXXXXX.", "X.......X", "X.......X");
+            case REMOVE -> pixels(g, x, y, color, "..XXXXX..", ".X.....X.", "X.......X", "X.......X", "X.XXXXX.X", "X.......X",
+                    "X.......X", ".X.....X.", "..XXXXX..");
+            case DELETE -> pixels(g, x, y, RED, "...XXX...", "XXXXXXXXX", ".X.....X.", ".X.X.X.X.", ".X.X.X.X.", ".X.X.X.X.",
+                    ".X.X.X.X.", ".X.....X.", "..XXXXX..");
+        }
+    }
+
+    private static void pixels(GuiGraphicsExtractor g, int x, int y, int color, String... rows) {
+        for (int r = 0; r < rows.length; r++) {
+            for (int c = 0; c < rows[r].length(); c++) {
+                if (rows[r].charAt(c) == 'X') g.fill(x + c, y + r, x + c + 1, y + r + 1, color);
+            }
+        }
+    }
+
+    /** A click while the menu is open: runs the row under it, or opens the playlist submenu. Anywhere else closes it. */
     private void menuClicked(double mx, double my) {
-        int[] o = menuOrigin();
-        Menu m = menu;
-        menu = null;
-        if (mx < o[0] || mx >= o[0] + o[2]) return;
-        int i = (int) ((my - o[1] - 2) / MENU_ROW);
-        if (my >= o[1] + 2 && i >= 0 && i < m.items().size()) m.items().get(i).action().run();
+        MenuLayout main = menuLayout();
+        MenuLayout sub = subOpen ? subLayout(main) : null;
+        if (sub != null && sub.contains(mx, my)) {
+            MenuRow r = sub.at(mx, my);
+            if (r != null && r.item().action() != null && r.item() != MenuItem.FIELD) {
+                menu = null;
+                r.item().action().run();
+            }
+            return;
+        }
+        MenuRow r = main.at(mx, my);
+        if (r == null) {
+            menu = null;
+            return;
+        }
+        if (r.item().pick() != null) {
+            subOpen = true;
+        } else if (r.item().action() != null) {
+            menu = null;
+            r.item().action().run();
+        }
+    }
+
+    /** Typing while the menu is open searches its playlists. */
+    private boolean menuTyped(CharacterEvent event) {
+        if (menuLayout().rows().stream().noneMatch(r -> r.item().pick() != null) || !event.isAllowedChatCharacter()) return false;
+        subOpen = true;
+        menuFilter += event.codepointAsString();
+        subScroll = 0;
+        return true;
+    }
+
+    /** Scrolls the playlist submenu when the wheel is over it. */
+    private boolean menuScrolled(double mx, double my, double amount) {
+        MenuLayout sub = subOpen ? subLayout(menuLayout()) : null;
+        if (sub == null || !sub.contains(mx, my)) return false;
+        subScroll -= (int) Math.signum(amount);
+        return true;
     }
 
     // ----------------------------------------------------------------- center
@@ -1204,7 +1443,7 @@ public final class CueScreen extends Screen {
                         cfg.save();
                     }));
                 }
-                menu = new Menu(bx, y + 16, items);
+                showMenu(new Menu(bx, y + 16, items));
             }));
         }
         return y + 20;
@@ -2238,20 +2477,20 @@ public final class CueScreen extends Screen {
         return switch (view) {
             case LIST -> {
                 String listId = key;
-                yield new MenuItem(tr("cuemymusic.bulk.remove", n), () -> {
+                yield new MenuItem(MenuIcon.REMOVE, tr("cuemymusic.bulk.remove", n), () -> {
                     for (Track t : tracks) cfg.removeFromPlaylist(listId, id(t));
                     showToast(tr("cuemymusic.bulk.removed", n));
                     done.run();
                 });
             }
-            case LIKED -> new MenuItem(tr("cuemymusic.bulk.unlike", n), () -> {
+            case LIKED -> new MenuItem(MenuIcon.LIKED, tr("cuemymusic.bulk.unlike", n), () -> {
                 for (Track t : tracks) {
                     if (isLiked(t)) cfg.toggleLiked(id(t));
                 }
                 showToast(tr("cuemymusic.bulk.unliked", n));
                 done.run();
             });
-            case DISLIKED -> new MenuItem(tr("cuemymusic.bulk.undislike", n), () -> {
+            case DISLIKED -> new MenuItem(MenuIcon.DISLIKED, tr("cuemymusic.bulk.undislike", n), () -> {
                 for (Track t : tracks) {
                     if (isDisliked(t)) player.toggleDisliked(t);
                 }
@@ -2261,7 +2500,7 @@ public final class CueScreen extends Screen {
             case PANEL -> {
                 CuePanel panel = CuePanels.get(key);
                 CuePanel.Action a = panel != null ? panel.deleteAction(tracks) : null;
-                yield a == null ? null : new MenuItem(a.label(), () -> {
+                yield a == null ? null : new MenuItem(MenuIcon.DELETE, a.label(), () -> {
                     a.run().run();
                     done.run();
                 });
@@ -2274,48 +2513,50 @@ public final class CueScreen extends Screen {
     private void openBulkMenu(List<Track> tracks, int x, int y) {
         int n = tracks.size();
         List<MenuItem> items = new ArrayList<>();
-        items.add(new MenuItem(tr("cuemymusic.bulk.queue", n), () -> {
-            player.enqueueAll(tracks);
-            showToast(tr("cuemymusic.queue.added_all", n));
-        }));
+        items.add(MenuItem.playlists(tr("cuemymusic.bulk.add_to_playlist", n), new PlaylistPick(view == View.LIST ? key : null,
+                p -> {
+                    int added = 0;
+                    for (Track t : tracks) {
+                        if (cfg.addToPlaylist(p.id(), id(t))) added++;
+                    }
+                    showToast(tr("cuemymusic.bulk.added", added, p.name()));
+                },
+                () -> {
+                    String listId = cfg.createPlaylist(tr("cuemymusic.playlists.default_name", cfg.playlists.size() + 1));
+                    for (Track t : tracks) cfg.addToPlaylist(listId, id(t));
+                    open(View.LIST, listId);
+                    startRename(listId);
+                })));
         boolean allLiked = tracks.stream().allMatch(this::isLiked);
         if (view != View.LIKED || !allLiked) {
-            items.add(new MenuItem(tr(allLiked ? "cuemymusic.bulk.unlike" : "cuemymusic.bulk.like", n), () -> {
+            items.add(new MenuItem(allLiked ? MenuIcon.LIKED : MenuIcon.LIKE, tr(allLiked ? "cuemymusic.bulk.unlike" : "cuemymusic.bulk.like", n), () -> {
                 for (Track t : tracks) {
                     if (isLiked(t) == allLiked) cfg.toggleLiked(id(t));
                 }
                 showToast(tr(allLiked ? "cuemymusic.bulk.unliked" : "cuemymusic.bulk.liked", n));
             }));
         }
+        items.add(new MenuItem(MenuIcon.QUEUE, tr("cuemymusic.bulk.queue", n), () -> {
+            player.enqueueAll(tracks);
+            showToast(tr("cuemymusic.queue.added_all", n));
+        }));
         List<Track> game = tracks.stream().filter(MusicLibrary::isGameMusic).toList();
         boolean allDisliked = !game.isEmpty() && game.stream().allMatch(this::isDisliked);
         if (!game.isEmpty() && view != View.DISLIKED) {
-            items.add(new MenuItem(tr(allDisliked ? "cuemymusic.bulk.undislike" : "cuemymusic.bulk.dislike", game.size()), () -> {
+            items.add(new MenuItem(allDisliked ? MenuIcon.DISLIKED : MenuIcon.DISLIKE,
+                    tr(allDisliked ? "cuemymusic.bulk.undislike" : "cuemymusic.bulk.dislike", game.size()), () -> {
                 for (Track t : game) {
                     if (isDisliked(t) == allDisliked) player.toggleDisliked(t);
                 }
                 showToast(tr(allDisliked ? "cuemymusic.bulk.undisliked" : "cuemymusic.bulk.disliked", game.size()));
             }));
         }
-        for (CueConfig.Playlist p : cfg.playlists) {
-            if (view == View.LIST && p.id().equals(key)) continue;
-            items.add(new MenuItem(tr("cuemymusic.bulk.add_to", n, clip(p.name(), 120)), () -> {
-                int added = 0;
-                for (Track t : tracks) {
-                    if (cfg.addToPlaylist(p.id(), id(t))) added++;
-                }
-                showToast(tr("cuemymusic.bulk.added", added, p.name()));
-            }));
-        }
-        items.add(new MenuItem(tr("cuemymusic.bulk.add_new", n), () -> {
-            String listId = cfg.createPlaylist(tr("cuemymusic.playlists.default_name", cfg.playlists.size() + 1));
-            for (Track t : tracks) cfg.addToPlaylist(listId, id(t));
-            open(View.LIST, listId);
-            startRename(listId);
-        }));
         MenuItem delete = deleteItem(tracks);
-        if (delete != null) items.add(delete);
-        menu = new Menu(x, y, items);
+        if (delete != null && delete.icon() != MenuIcon.LIKED && delete.icon() != MenuIcon.DISLIKED) {
+            items.add(MenuItem.DIVIDER);
+            items.add(delete);
+        }
+        showMenu(new Menu(x, y, items));
     }
 
     /** While songs are selected: how many, and what to do with them. */
@@ -2515,6 +2756,13 @@ public final class CueScreen extends Screen {
             menu = null;
             return true;
         }
+        if (menu != null && event.key() == InputConstants.KEY_BACKSPACE && !menuFilter.isEmpty()) {
+            menuFilter = menuFilter.substring(0, menuFilter.offsetByCodePoints(menuFilter.length(), -1));
+            subScroll = 0;
+            return true;
+        }
+        // While a menu is open, keys type into its playlist search rather than playing, pausing or seeking.
+        if (menu != null) return true;
         if (event.key() == InputConstants.KEY_F && event.hasControlDownWithQuirk()) {
             if (view == View.SEARCH) focusSearch = true;
             else openSearch();
@@ -2537,6 +2785,7 @@ public final class CueScreen extends Screen {
     public boolean charTyped(CharacterEvent event) {
         if (renameBox != null) return renameBox.charTyped(event);
         if (focusedField != null) return focusedField.charTyped(event);
+        if (menu != null && menuTyped(event)) return true;
         return super.charTyped(event);
     }
 
@@ -2658,6 +2907,7 @@ public final class CueScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        if (menu != null && menuScrolled(x, y, vertical)) return true;
         if (queueFit > 0 && x >= queueX0 && x < queueX1 && y >= queueTop && y < queueTop + queueFit * QROW) {
             queueScroll -= vertical;
             return true;

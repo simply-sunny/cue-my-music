@@ -47,7 +47,7 @@ All keys are rebindable under **Options → Controls → Key Binds → Cue My Mu
 - **Search**: click the magnifying glass next to **Library**, or press Cmd+F (Ctrl+F on Windows and Linux) anywhere in the player. Type part of a song's title, artist or album, in any order and without accents. Matching artists show as chips that open their page; matching songs list below, titles that start with what you typed first. Enter plays the results from the top.
 - Click a song to play it. The rest of the page plays after it, in the order shown. The big green button plays the page from the top, or pauses it while it's playing.
 - Hover a song and click the heart to like it, or **+** to add it to the queue. **Add all to queue** adds the whole page.
-- Right-click a song to queue it, like or dislike it, or add it to a playlist.
+- Right-click a song to add it to a playlist, Liked Songs or the queue, dislike it, or go to its artist. **Add to playlist** opens a list of your playlists beside the menu. Start typing to find one, or pick **New playlist**.
 - **Dislike** (the thumbs down left of the heart on a hovered row, next to the heart under the song that's playing, or right-click) keeps the game from ever picking a song for its own music. Songs an add-on keeps on its own page never play by themselves, so they don't have it. If the game is playing it, it skips to another. You can still play it yourself, and it still plays through a page you started. Disliked songs are greyed with a red thumbs down, and listed on **Disliked Songs**. Click it again to bring one back. Liking a song takes its dislike away, and the other way round.
 - The repeat button next to play cycles through off, repeat all (the page starts over at its end), and repeat one (the song plays again). Next and previous still move on.
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
@@ -74,7 +74,7 @@ A partial title works if only one song matches, such as `/cmm play subwoofer`.
 
 ### Playlists
 
-Click **New playlist** in the library, then right-click songs anywhere and pick **Add to** the playlist, or **Add to new playlist** to make one with that song. On a playlist's page, click its name or **Rename** to rename it, and click **Delete** twice to delete it. Right-click a song there to remove it. Playlists are saved with your settings.
+Click **New playlist** in the library, then right-click songs anywhere and pick **Add to playlist**, then the playlist, or **New playlist** to make one with that song. On a playlist's page, click its name or **Rename** to rename it, and click **Delete** twice to delete it. Right-click a song there to remove it. Playlists are saved with your settings.
 
 ### Your stats
 
@@ -138,7 +138,7 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 | Effects | On | Turns pitch, speed, and EQ off together. |
 | Pitch | 0 | −12 to +12 semitones. 12 is one octave. |
 | Speed | ×1.00 | 0.5 to 2.0, in steps of 0.05. |
-| Pause during travel | Off | On: your song pauses while a new dimension loads, then resumes from the same spot. Off: it keeps playing, with a brief gap. |
+| Pause during travel | Off | On: your song pauses while a new dimension loads, then fades back in from the same spot once the loading screen has gone. Off: it keeps playing, with a brief gap. |
 | Use equalizer | Off | Moving a band or picking a preset turns it on. |
 | EQ bands | 0 dB | 60, 150, 400, 1k, 2.4k, and 15k Hz, ±12 dB each. |
 | Automix add-on songs | On | Shown with an add-on page. Songs on add-on pages play at the same loudness, without silence at their ends, and blend into the next song when one follows another in a page or the queue (see [Mixing](#mixing)). Songs need the same sample rate to blend; otherwise they play one after the other. |
