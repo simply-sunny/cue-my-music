@@ -795,7 +795,7 @@ public final class CueScreen extends Screen {
                 }
                 yield canvas.y + 8;
             }
-            case ARTIST -> drawTrackPage(g, x0, contentTop, x1, mx, my, "artist:" + key, MusicLibrary.byArtist(key),
+            case ARTIST -> drawTrackPage(g, x0, contentTop, x1, mx, my, "artist:" + key, MusicLibrary.songsBy(key),
                     Art.block(Catalog.ARTIST_ART.getOrDefault(key, Catalog.UNKNOWN_ALBUM).texture()), tr("cuemymusic.artist"),
                     key, null, artistColor(key));
             case PACK -> drawTrackPage(g, x0, contentTop, x1, mx, my, "pack:" + key, MusicLibrary.byPack(key), pack.art(),

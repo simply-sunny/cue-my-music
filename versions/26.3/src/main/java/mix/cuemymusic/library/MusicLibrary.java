@@ -153,6 +153,11 @@ public final class MusicLibrary {
         return all().stream().filter(t -> t.packId() == null && t.artist().equals(artist)).toList();
     }
 
+    /** Every song credited to {@code artist}, from the game or any pack: an artist's page. */
+    public static synchronized List<Track> songsBy(String artist) {
+        return all().stream().filter(t -> t.artist().equals(artist)).toList();
+    }
+
     public static synchronized List<Track> byPack(String packId) {
         return all().stream().filter(t -> packId.equals(t.packId())).toList();
     }
