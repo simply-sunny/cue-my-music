@@ -5,6 +5,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
+import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
 
 import com.mojang.blaze3d.platform.InputConstants;
@@ -19,6 +21,9 @@ import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
+import mix.cuemymusic.api.CuePanel;
+import mix.cuemymusic.api.CuePanels;
+import mix.cuemymusic.api.PanelCanvas;
 import mix.cuemymusic.dsp.Equalizer;
 import mix.cuemymusic.library.Art;
 import mix.cuemymusic.library.Catalog;
@@ -67,8 +72,8 @@ public final class CueScreen extends Screen {
         PRESETS.put("small_speakers", new double[] {-6, -2, 1, 2, 2, -1});
     }
 
-    /** PLAYLIST is all game music; LIST is one of the player's own playlists. */
-    private enum View { PLAYLIST, LIKED, LIST, ARTIST, PACK, SETTINGS }
+    /** PLAYLIST is all game music; LIST is one of the player's own playlists; PANEL is an add-on's page. */
+    private enum View { PLAYLIST, LIKED, LIST, ARTIST, PACK, SETTINGS, PANEL }
 
     /** A track row that opens the song menu when right-clicked. */
     private record RowHit(int x0, int y0, int x1, int y1, Track track) {
@@ -78,6 +83,13 @@ public final class CueScreen extends Screen {
     }
 
     private record MenuItem(String label, Runnable action) {
+    }
+
+    /** Where an add-on page's text field was drawn, for clicks. */
+    private record FieldHit(int x0, int y0, int x1, int y1, String key) {
+        boolean contains(double x, double y) {
+            return x >= x0 && x < x1 && y >= y0 && y < y1;
+        }
     }
 
     /** The right-click menu for a song, drawn over everything else. */
@@ -134,6 +146,13 @@ public final class CueScreen extends Screen {
     private String renamingId;
     /** Until when a second click on Delete removes the playlist. */
     private long deleteArmedUntil;
+    // An add-on page's text fields, by key, and the one being typed in.
+    private final Map<String, EditBox> fields = new LinkedHashMap<>();
+    private final Map<String, Consumer<String>> fieldSubmits = new HashMap<>();
+    private EditBox focusedField;
+    private List<FieldHit> fieldHits = new ArrayList<>();
+    private List<FieldHit> nextFieldHits = new ArrayList<>();
+    private float partialTick;
 
     // Queue panel layout from the last frame, and the row being dragged.
     private int queueX0, queueX1, queueTop, queueRows;
@@ -169,6 +188,8 @@ public final class CueScreen extends Screen {
         nextHits = new ArrayList<>();
         nextDrags = new ArrayList<>();
         nextRowHits = new ArrayList<>();
+        nextFieldHits = new ArrayList<>();
+        this.partialTick = partialTick;
 
         int sideW = Math.clamp(width / 5, 92, 150);
         int rightW = width >= 400 ? Math.clamp(width / 5, 96, 150) : 0;
@@ -195,6 +216,7 @@ public final class CueScreen extends Screen {
         hits = nextHits;
         drags = nextDrags;
         rowHits = nextRowHits;
+        fieldHits = nextFieldHits;
     }
 
     // ---------------------------------------------------------------- library
@@ -206,11 +228,13 @@ public final class CueScreen extends Screen {
         List<Track> all = MusicLibrary.all();
         List<String> artists = new ArrayList<>(Catalog.ARTISTS.stream().filter(a -> !MusicLibrary.byArtist(a).isEmpty()).toList());
         if (MusicLibrary.hasUnknown()) artists.add(Catalog.UNKNOWN_ARTIST);
-        List<PackInfo> packs = MusicLibrary.packs();
+        List<CuePanel> panels = CuePanels.all();
+        List<PackInfo> packs = MusicLibrary.packs().stream()
+                .filter(p -> panels.stream().noneMatch(panel -> p.id().equals(panel.packId()))).toList();
 
         // Rows shrink to a single line when the window is short, so every entry still fits.
         List<CueConfig.Playlist> playlists = cfg.playlists;
-        int rows = artists.size() + packs.size() + playlists.size() + 4;
+        int rows = artists.size() + packs.size() + playlists.size() + panels.size() + 4;
         int h = Math.clamp((y1 - y0 - 24) / rows, 12, 22);
         int last = y1 - h - 2;
         int y = y0 + 20;
@@ -227,6 +251,11 @@ public final class CueScreen extends Screen {
         if (y + h <= last) {
             y = libraryItem(g, x0, y, x1, h, NEW_PLAYLIST_ART, tr("cuemymusic.playlists.new"), tr("cuemymusic.playlists.new.subtitle"),
                     false, mx, my, this::newPlaylist);
+        }
+        for (CuePanel panel : panels) {
+            if (y + h > last) break;
+            y = libraryItem(g, x0, y, x1, h, panel.icon(), panel.title(), panel.subtitle(),
+                    view == View.PANEL && panel.id().equals(key), mx, my, () -> open(View.PANEL, panel.id()));
         }
         for (String a : artists) {
             if (y + h > last) break;
@@ -264,6 +293,11 @@ public final class CueScreen extends Screen {
 
     private void open(View v, String k) {
         finishRename(true);
+        if (v != view || !java.util.Objects.equals(k, key)) {
+            fields.clear();
+            fieldSubmits.clear();
+            unfocusField();
+        }
         view = v;
         key = k;
         scroll = 0;
@@ -327,6 +361,10 @@ public final class CueScreen extends Screen {
                 showToast(tr("cuemymusic.playlists.removed"));
             }));
         }
+        CuePanel panel = view == View.PANEL ? CuePanels.get(key) : null;
+        if (panel != null) {
+            for (CuePanel.Action a : panel.songActions(t)) items.add(new MenuItem(a.label(), a.run()));
+        }
         menu = new Menu(x, y, items);
     }
 
@@ -377,8 +415,20 @@ public final class CueScreen extends Screen {
         int contentTop = y0 - (int) scroll;
         PackInfo pack = view == View.PACK ? MusicLibrary.pack(key) : null;
         if (view == View.PACK && pack == null) view = View.PLAYLIST;
+        CuePanel panel = view == View.PANEL ? CuePanels.get(key) : null;
+        if (view == View.PANEL && panel == null) view = View.PLAYLIST;
         int contentBottom = switch (view) {
             case SETTINGS -> drawSettings(g, x0, contentTop, x1, mx, my);
+            case PANEL -> {
+                Canvas canvas = new Canvas(g, x0, contentTop, x1, mx, my);
+                try {
+                    panel.draw(canvas);
+                } catch (RuntimeException e) {
+                    org.slf4j.LoggerFactory.getLogger("cuemymusic").error("The {} panel failed to draw", panel.id(), e);
+                    view = View.PLAYLIST;
+                }
+                yield canvas.y + 8;
+            }
             case ARTIST -> drawTrackPage(g, x0, contentTop, x1, mx, my, "artist:" + key, MusicLibrary.byArtist(key),
                     Art.block(Catalog.ARTIST_ART.getOrDefault(key, Catalog.UNKNOWN_ALBUM).texture()), tr("cuemymusic.artist"),
                     key, null, artistColor(key));
@@ -406,9 +456,16 @@ public final class CueScreen extends Screen {
     /** A list of songs. {@code listKey} names it to the player, so its big button knows when it's the one playing. */
     private int drawTrackPage(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my, String listKey, List<Track> unsorted,
             Art art, String kind, String title, String byline, int color) {
-        List<Track> tracks = sorted(unsorted);
+        double total = unsorted.stream().mapToDouble(t -> Double.isNaN(t.seconds()) ? 0 : t.seconds()).sum();
+        String summary = tr("cuemymusic.page.summary", unsorted.size(), longDuration(total));
+        if (byline != null) summary = tr("cuemymusic.page.byline", byline, summary);
+        y = drawHeader(g, x0, y, x1, art, kind, title, summary, color);
+        return drawTrackList(g, x0, y, x1, mx, my, listKey, unsorted);
+    }
 
-        // Header: art, kind, big title, count and length.
+    /** A page's header: art, kind, big title, and a summary line. Returns the y below it. */
+    private int drawHeader(GuiGraphicsExtractor g, int x0, int y, int x1, Art art, String kind, String title, String summary,
+            int color) {
         int headerH = 70;
         g.fillGradient(x0, y, x1, y + headerH, color, PANEL);
         art(g, art, x0 + 10, y + 12, 48);
@@ -426,11 +483,13 @@ public final class CueScreen extends Screen {
                 nextHits.add(new Hit(tx, Math.max(y + 24, centerY0), x1 - 8, y + 44, () -> startRename(id)));
             }
         }
-        double total = tracks.stream().mapToDouble(t -> Double.isNaN(t.seconds()) ? 0 : t.seconds()).sum();
-        String summary = tr("cuemymusic.page.summary", tracks.size(), longDuration(total));
-        if (byline != null) summary = tr("cuemymusic.page.byline", byline, summary);
         g.text(font, clip(summary, x1 - tx - 8), tx, y + 48, DIM, false);
-        y += headerH;
+        return y + headerH;
+    }
+
+    /** The big play button, add all to queue, the column headings, and the songs. Returns the y below them. */
+    private int drawTrackList(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my, String listKey, List<Track> unsorted) {
+        List<Track> tracks = sorted(unsorted);
 
         // Big play button for the whole list: pauses and resumes it once it's the one playing.
         int pb = 18;
@@ -971,6 +1030,164 @@ public final class CueScreen extends Screen {
         g.text(font, toast, x + 8, y + 4, BLACK, false);
     }
 
+    // ------------------------------------------------------------- add-on pages
+
+    private void unfocusField() {
+        if (focusedField == null) return;
+        focusedField.setFocused(false);
+        focusedField = null;
+        setFocused(null);
+    }
+
+    private void submitField() {
+        for (Map.Entry<String, EditBox> e : fields.entrySet()) {
+            if (e.getValue() == focusedField) {
+                Consumer<String> submit = fieldSubmits.get(e.getKey());
+                if (submit != null) submit.accept(focusedField.getValue());
+                return;
+            }
+        }
+    }
+
+    /** Draws an add-on's page with the player's own pieces. Each call draws at {@link #y} and moves it down. */
+    private final class Canvas implements PanelCanvas {
+        private static final int PAD = 10;
+        private static final int BUTTON_H = 18;
+        private final GuiGraphicsExtractor g;
+        private final int x0, x1, mx, my;
+        private int y;
+
+        Canvas(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my) {
+            this.g = g;
+            this.x0 = x0;
+            this.x1 = x1;
+            this.y = y;
+            this.mx = mx;
+            this.my = my;
+        }
+
+        @Override public int left() { return x0 + PAD; }
+        @Override public int right() { return x1 - PAD; }
+        @Override public int y() { return y; }
+        @Override public void space(int pixels) { y += pixels; }
+        @Override public int mouseX() { return mx; }
+        @Override public int mouseY() { return my; }
+        @Override public net.minecraft.client.gui.Font font() { return font; }
+        @Override public GuiGraphicsExtractor graphics() { return g; }
+        @Override public int buttonHeight() { return BUTTON_H; }
+
+        @Override
+        public void header(Art art, String kind, String title, String summary, int color) {
+            y = drawHeader(g, x0, y, x1, art, kind, title, summary, color) + 8;
+        }
+
+        @Override
+        public void heading(String text) {
+            g.text(font, clip(text, right() - left()), left(), y, WHITE, false);
+            y += 14;
+        }
+
+        @Override
+        public void text(Component text, int color) {
+            int w = right() - left();
+            g.textWithWordWrap(font, text, left(), y, w, color, false);
+            y += font.wordWrapHeight(text, w) + 2;
+        }
+
+        @Override
+        public String textField(String key, Component hint, int width, Consumer<String> onSubmit) {
+            EditBox box = fields.computeIfAbsent(key, k -> {
+                EditBox b = new EditBox(font, 0, 0, 100, 9, hint);
+                b.setBordered(false);
+                b.setMaxLength(2048);
+                b.setHint(hint.copy().withColor(FAINT));
+                b.setTextShadow(false);
+                return b;
+            });
+            fieldSubmits.put(key, onSubmit);
+            int fx0 = left(), fx1 = Math.min(right(), left() + width);
+            boolean focused = box == focusedField;
+            boolean hover = mx >= fx0 && mx < fx1 && my >= y && my < y + BUTTON_H;
+            g.fill(fx0, y, fx1, y + BUTTON_H, focused ? WHITE : hover ? 0xFF8A8A8A : 0xFF3A3A3A);
+            g.fill(fx0 + 1, y + 1, fx1 - 1, y + BUTTON_H - 1, 0xFF242424);
+            box.setX(fx0 + 6);
+            box.setY(y + (BUTTON_H - 8) / 2);
+            box.setWidth(fx1 - fx0 - 12);
+            box.extractRenderState(g, mx, my, partialTick);
+            int top = Math.max(y, centerY0), bottom = Math.min(y + BUTTON_H, centerY1);
+            if (bottom > top) nextFieldHits.add(new FieldHit(fx0, top, fx1, bottom, key));
+            return box.getValue();
+        }
+
+        @Override
+        public void setText(String key, String text) {
+            EditBox box = fields.get(key);
+            if (box != null) box.setValue(text);
+        }
+
+        @Override
+        public int buttonWidth(String label) {
+            return font.width(label) + 20;
+        }
+
+        @Override
+        public int button(int x, String label, ButtonStyle style, boolean enabled, Runnable click) {
+            int w = buttonWidth(label), bx1 = x + w;
+            boolean hover = enabled && mx >= x && mx < bx1 && my >= y && my < y + BUTTON_H && my >= centerY0 && my < centerY1;
+            int fg;
+            switch (style) {
+                case PRIMARY -> {
+                    int bg = !enabled ? 0xFF2F5E40 : hover ? 0xFF3BE477 : GREEN;
+                    g.fill(x + 1, y, bx1 - 1, y + BUTTON_H, bg);
+                    g.fill(x, y + 1, bx1, y + BUTTON_H - 1, bg);
+                    fg = enabled ? BLACK : 0xFF1B3324;
+                }
+                default -> {
+                    int edge = !enabled ? 0xFF3A3A3A : style == ButtonStyle.DANGER ? 0xFFFF6B6B : hover ? WHITE : 0xFF8A8A8A;
+                    g.fill(x, y, bx1, y + BUTTON_H, edge);
+                    g.fill(x + 1, y + 1, bx1 - 1, y + BUTTON_H - 1, hover ? 0xFF2A2A2A : PANEL);
+                    fg = !enabled ? FAINT : style == ButtonStyle.DANGER ? 0xFFFF6B6B : WHITE;
+                }
+            }
+            g.text(font, label, x + 10, y + (BUTTON_H - 8) / 2, fg, false);
+            if (enabled) {
+                int top = Math.max(y, centerY0), bottom = Math.min(y + BUTTON_H, centerY1);
+                if (bottom > top) nextHits.add(new Hit(x, top, bx1, bottom, click));
+            }
+            return w;
+        }
+
+        @Override
+        public void progress(double fraction, String label) {
+            if (label != null && !label.isEmpty()) {
+                g.text(font, clip(label, right() - left()), left(), y, DIM, false);
+                y += 11;
+            }
+            int bx0 = left(), bx1 = right(), w = bx1 - bx0;
+            g.fill(bx0, y, bx1, y + 4, TRACK_BG);
+            if (fraction >= 0) {
+                g.fill(bx0, y, bx0 + (int) Math.round(w * Math.min(1, fraction)), y + 4, GREEN);
+            } else {
+                // Unknown progress: a segment sweeping across.
+                int seg = Math.max(20, w / 4);
+                double t = (System.currentTimeMillis() % 1400) / 1400.0;
+                int sx = bx0 - seg + (int) ((w + seg) * t);
+                g.fill(Math.max(bx0, sx), y, Math.min(bx1, sx + seg), y + 4, GREEN);
+            }
+            y += 10;
+        }
+
+        @Override
+        public void tracks(String listKey, List<Track> tracks) {
+            y = drawTrackList(g, x0, y, x1, mx, my, listKey, tracks);
+        }
+
+        @Override
+        public void toast(String text) {
+            showToast(text);
+        }
+    }
+
     // ------------------------------------------------------------------ input
 
     @Override
@@ -982,6 +1199,16 @@ public final class CueScreen extends Screen {
                 finishRename(false);
             } else {
                 renameBox.keyPressed(event);
+            }
+            return true;
+        }
+        if (focusedField != null) {
+            if (event.key() == InputConstants.KEY_RETURN || event.key() == InputConstants.KEY_NUMPADENTER) {
+                submitField();
+            } else if (event.key() == InputConstants.KEY_ESCAPE) {
+                unfocusField();
+            } else {
+                focusedField.keyPressed(event);
             }
             return true;
         }
@@ -1004,6 +1231,7 @@ public final class CueScreen extends Screen {
     @Override
     public boolean charTyped(CharacterEvent event) {
         if (renameBox != null) return renameBox.charTyped(event);
+        if (focusedField != null) return focusedField.charTyped(event);
         return super.charTyped(event);
     }
 
@@ -1018,6 +1246,20 @@ public final class CueScreen extends Screen {
             if (renameBox.isMouseOver(event.x(), event.y())) return renameBox.mouseClicked(event, doubleClick);
             finishRename(true);
         }
+        for (FieldHit f : fieldHits) {
+            EditBox box = fields.get(f.key());
+            if (box != null && f.contains(event.x(), event.y()) && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+                if (focusedField != box) {
+                    unfocusField();
+                    focusedField = box;
+                    box.setFocused(true);
+                    setFocused(box);
+                }
+                box.mouseClicked(event, doubleClick);
+                return true;
+            }
+        }
+        unfocusField();
         if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
             for (RowHit r : rowHits) {
                 if (r.contains(event.x(), event.y())) {
