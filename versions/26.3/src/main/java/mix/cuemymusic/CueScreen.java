@@ -1,9 +1,16 @@
 package mix.cuemymusic;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.function.Consumer;
@@ -56,6 +63,7 @@ public final class CueScreen extends Screen {
     private static final int QROW = 13;
     private static final Art PLAYLIST_ART = Art.block("block/jukebox_top");
     private static final Art SETTINGS_ART = Art.block("block/crafting_table_top");
+    private static final Art STATS_ART = Art.block("block/note_block");
     private static final Art LIKED_ART = new Art.Sprite(Identifier.withDefaultNamespace("hud/heart/full"), 0xFF5A3BD6, 0xFF8FB6E0);
     private static final Art DISLIKED_ART = new Art.Initials("\u2298", 0xFF5A2A2A, 0xFF3A1E1E);
     private static final int LIB_ROW = 12;
@@ -77,10 +85,10 @@ public final class CueScreen extends Screen {
     }
 
     /** PLAYLIST is all game music; LIST is one of the player's own playlists; PANEL is an add-on's page. */
-    private enum View { PLAYLIST, LIKED, DISLIKED, LIST, ARTIST, PACK, SETTINGS, PANEL }
+    private enum View { PLAYLIST, LIKED, DISLIKED, LIST, ARTIST, PACK, STATS, SETTINGS, PANEL }
 
     /** A track row that opens the song menu when right-clicked. */
-    private record RowHit(int x0, int y0, int x1, int y1, Track track) {
+    private record RowHit(int x0, int y0, int x1, int y1, Track track, int index) {
         boolean contains(double x, double y) {
             return x >= x0 && x < x1 && y >= y0 && y < y1;
         }
@@ -150,6 +158,8 @@ public final class CueScreen extends Screen {
     private String renamingId;
     /** Until when a second click on Delete removes the playlist. */
     private long deleteArmedUntil;
+    /** When Reset stats was first clicked; a second click soon after resets. */
+    private long resetArmedAt;
     // An add-on page's text fields, by key, and the one being typed in.
     private final Map<String, EditBox> fields = new LinkedHashMap<>();
     private final Map<String, Consumer<String>> fieldSubmits = new HashMap<>();
@@ -157,6 +167,13 @@ public final class CueScreen extends Screen {
     private List<FieldHit> fieldHits = new ArrayList<>();
     private List<FieldHit> nextFieldHits = new ArrayList<>();
     private float partialTick;
+    // Selected songs in the page's track list, by sound file id, and the rows a shift-selection runs between.
+    private final java.util.LinkedHashSet<String> selected = new java.util.LinkedHashSet<>();
+    private int anchor = -1, focusRow = -1;
+    private boolean selectDragging;
+    /** The page's track list as shown last frame, and the y of its first row. */
+    private List<Track> shownTracks = List.of();
+    private int shownTop;
     // The library's scroll, and where its scrolling part was drawn last frame.
     private double libraryScroll;
     private int libraryScrollMax;
@@ -183,6 +200,7 @@ public final class CueScreen extends Screen {
     @Override
     public void onClose() {
         cfg.save();
+        StatsFile.save();
         minecraft.gui.setScreen(parent);
     }
 
@@ -218,6 +236,7 @@ public final class CueScreen extends Screen {
         }
         drawBottomBar(g, 0, bottom, width, height, mouseX, mouseY);
         if (renameBox != null) renameBox.extractRenderState(g, mouseX, mouseY, partialTick);
+        drawSelectionBar(g);
         drawMenu(g, mouseX, mouseY);
         drawToast(g);
 
@@ -242,13 +261,14 @@ public final class CueScreen extends Screen {
         List<CueConfig.Playlist> playlists = cfg.playlists;
         List<Track> disliked = disliked();
 
-        // Settings stays at the bottom; everything above it scrolls.
+        // Stats and Settings stay at the bottom; everything above them scrolls.
         int big = y1 - y0 > 200 ? 22 : 14;
         int settingsY = y1 - big - 2;
+        int statsY = settingsY - big;
         libraryX0 = x0;
         libraryX1 = x1;
         libraryTop = y0 + 18;
-        libraryBottom = settingsY - 2;
+        libraryBottom = statsY - 2;
         g.enableScissor(x0, libraryTop, x1, libraryBottom);
         int y = libraryTop + 2 - (int) libraryScroll;
         int start = y;
@@ -307,6 +327,8 @@ public final class CueScreen extends Screen {
 
         libraryTop = y0;
         libraryBottom = y1;
+        libraryItem(g, x0, statsY, x1, big, STATS_ART, tr("cuemymusic.stats.title"), tr("cuemymusic.stats.subtitle"),
+                view == View.STATS, mx, my, () -> open(View.STATS, null));
         libraryItem(g, x0, settingsY, x1, big, SETTINGS_ART, tr("cuemymusic.settings"), tr("cuemymusic.settings.subtitle"),
                 view == View.SETTINGS, mx, my, () -> open(View.SETTINGS, null));
     }
@@ -361,6 +383,7 @@ public final class CueScreen extends Screen {
 
     private void open(View v, String k) {
         finishRename(true);
+        clearSelection();
         if (v != view || !java.util.Objects.equals(k, key)) {
             fields.clear();
             fieldSubmits.clear();
@@ -435,6 +458,8 @@ public final class CueScreen extends Screen {
         CuePanel panel = view == View.PANEL ? CuePanels.get(key) : null;
         if (panel != null) {
             for (CuePanel.Action a : panel.songActions(t)) items.add(new MenuItem(a.label(), a.run()));
+            CuePanel.Action delete = panel.deleteAction(List.of(t));
+            if (delete != null) items.add(new MenuItem(delete.label(), delete.run()));
         }
         menu = new Menu(x, y, items);
     }
@@ -481,6 +506,7 @@ public final class CueScreen extends Screen {
 
     private void drawCenter(GuiGraphicsExtractor g, int mx, int my) {
         int x0 = centerX0, y0 = centerY0, x1 = centerX1, y1 = centerY1;
+        shownTracks = List.of();
         g.fill(x0, y0, x1, y1, PANEL);
         g.enableScissor(x0, y0, x1, y1);
         int contentTop = y0 - (int) scroll;
@@ -490,6 +516,7 @@ public final class CueScreen extends Screen {
         if (view == View.PANEL && panel == null) view = View.PLAYLIST;
         int contentBottom = switch (view) {
             case SETTINGS -> drawSettings(g, x0, contentTop, x1, mx, my);
+            case STATS -> drawStats(g, x0, contentTop, x1, mx, my);
             case PANEL -> {
                 Canvas canvas = new Canvas(g, x0, contentTop, x1, mx, my);
                 try {
@@ -627,6 +654,8 @@ public final class CueScreen extends Screen {
         g.fill(x0 + 8, y, x1 - 8, y + 1, 0xFF2A2A2A);
         y += 4;
 
+        shownTracks = tracks;
+        shownTop = y;
         Track current = player.current();
         for (int i = 0; i < tracks.size(); i++) {
             Track t = tracks.get(i);
@@ -635,7 +664,9 @@ public final class CueScreen extends Screen {
             if (visible) {
                 boolean hover = mx >= x0 && mx < x1 && my >= y && my < y + ROW && my >= centerY0 && my < centerY1;
                 boolean isCurrent = t.equals(current);
-                if (hover) g.fill(x0 + 4, y, x1 - 4, y + ROW, ROW_HOVER);
+                boolean isSelected = selected.contains(t.location().toString());
+                if (isSelected) g.fill(x0 + 4, y, x1 - 4, y + ROW, hover ? 0xFF3A4A40 : 0xFF2C3A31);
+                else if (hover) g.fill(x0 + 4, y, x1 - 4, y + ROW, ROW_HOVER);
                 if (isCurrent && player.isPlaying()) equalizerIcon(g, x0 + 9, y + 6, GREEN);
                 else g.text(font, Integer.toString(i + 1), x0 + 10, y + 6, isCurrent ? GREEN : DIM, false);
                 art(g, t.art(), colTitle, y + 2, 16);
@@ -645,21 +676,21 @@ public final class CueScreen extends Screen {
                 g.text(font, clip(t.title(), titleW), textX, y + 2, isCurrent ? GREEN : disliked ? FAINT : WHITE, false);
                 g.text(font, clip(t.artist(), titleW), textX, y + 11, DIM, false);
                 // Stops short of the dislike, heart and + when they show.
-                int albumEnd = hover || disliked ? colTime - 74 : isLiked(t) ? colTime - 60 : colTime - 48;
+                int albumEnd = hover || disliked ? colTime - 76 : isLiked(t) ? colTime - 60 : colTime - 48;
                 if (showAlbum) g.text(font, clip(t.album(), albumEnd - colAlbum), colAlbum, y + 6, DIM, false);
                 String len = Double.isNaN(t.seconds()) ? "-:--" : time(t.seconds());
                 g.text(font, len, colTime - font.width(len), y + 6, DIM, false);
                 int top = Math.max(y, centerY0), bottom = Math.min(y + ROW, centerY1);
                 nextHits.add(new Hit(x0, top, x1, bottom, () -> player.play(listKey, tracks, index)));
-                nextRowHits.add(new RowHit(x0, top, x1, bottom, t));
+                nextRowHits.add(new RowHit(x0, top, x1, bottom, t, index));
                 // Like: always shown once liked, otherwise on hover, left of add to queue.
                 boolean liked = isLiked(t);
                 // Dislike: always shown once disliked, otherwise on hover, left of the heart. Only for songs the game plays.
                 if ((hover || disliked) && MusicLibrary.isGameMusic(t)) {
-                    int dx = colTime - 70, dy = y + 6;
-                    boolean dislikeHover = hover && mx >= dx - 2 && mx < dx + 9 && my >= dy - 2 && my < dy + 9;
-                    dislikeIcon(g, dx, dy, disliked ? RED : dislikeHover ? WHITE : DIM);
-                    if (hover) nextHits.add(new Hit(dx - 2, Math.max(dy - 2, centerY0), dx + 9, Math.min(dy + 9, centerY1),
+                    int dx = colTime - 72, dy = y + 5;
+                    boolean dislikeHover = hover && mx >= dx - 2 && mx < dx + 11 && my >= dy - 2 && my < dy + 11;
+                    dislikeIcon(g, dx, dy, disliked, disliked ? RED : dislikeHover ? WHITE : DIM);
+                    if (hover) nextHits.add(new Hit(dx - 2, Math.max(dy - 2, centerY0), dx + 11, Math.min(dy + 11, centerY1),
                             () -> toggleDisliked(t)));
                 }
                 if (hover || liked) {
@@ -748,6 +779,390 @@ public final class CueScreen extends Screen {
         if (by == null) return tracks;
         // Stable sort, so tracks with the same album keep their listed order.
         return tracks.stream().sorted(ascending ? by : by.reversed()).toList();
+    }
+
+    // ------------------------------------------------------------------ stats
+
+    /** A Minecraft day, sunrise to sunrise. */
+    private static final double MINECRAFT_DAY = 20 * 60;
+    /** C418's Sweden is 3:35. */
+    private static final double SWEDEN = 215;
+    /** Calendar cells from no listening to the most in a day. */
+    private static final int[] HEAT = {0xFF242424, 0xFF0E4429, 0xFF006D32, 0xFF26A641, 0xFF39D353};
+    private static final int GAME_BLUE = 0xFF5A8DEE;
+    private static final int GOLD = 0xFFFFC94A;
+    private static final int ARTIST_PURPLE = 0xFF9B7BFF;
+    private static final long RESET_MILLIS = 3000;
+
+    private int drawStats(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my) {
+        ListeningStats s = ListeningStats.INSTANCE;
+        String summary = s.isEmpty() ? tr("cuemymusic.stats.summary.empty")
+                : tr("cuemymusic.stats.summary", longDuration(s.totalSeconds()),
+                        Instant.ofEpochMilli(s.since()).atZone(ZoneId.systemDefault()).toLocalDate()
+                                .format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault())));
+        y = drawHeader(g, x0, y, x1, STATS_ART, tr("cuemymusic.stats.kind"), tr("cuemymusic.stats.title"), summary, 0xFF1E3A5A) + 8;
+        int left = x0 + 12, right = x1 - 12, w = right - left;
+        if (s.isEmpty()) {
+            Component empty = Component.translatable("cuemymusic.stats.empty");
+            g.textWithWordWrap(font, empty, left, y, w, DIM, false);
+            return y + font.wordWrapHeight(empty, w) + 8;
+        }
+        LocalDate today = LocalDate.now();
+        Map<String, ListeningStats.Song> songs = s.songs();
+
+        y = statTiles(g, left, y, right, s, songs.size(), today) + 8;
+        Component fun = Component.translatable("cuemymusic.stats.fun", String.format("%.1f", s.totalSeconds() / MINECRAFT_DAY),
+                String.format("%.1f", s.totalSeconds() / SWEDEN));
+        g.textWithWordWrap(font, fun, left, y, w, FAINT, false);
+        y += font.wordWrapHeight(fun, w) + 14;
+
+        // Two columns when there's room, one under the other when there isn't.
+        boolean wide = w >= 300;
+        int clockW = 128;
+        if (wide) {
+            int a = topSongs(g, left, y, right - clockW - 16, mx, my, s, songs);
+            int b = listeningClock(g, right - clockW, y, right, s);
+            y = Math.max(a, b) + 14;
+        } else {
+            y = topSongs(g, left, y, right, mx, my, s, songs) + 14;
+            y = listeningClock(g, left + (w - clockW) / 2, y, left + (w + clockW) / 2, s) + 14;
+        }
+        y = calendar(g, left, y, right, mx, my, s, today) + 14;
+        if (wide) {
+            int half = (w - 16) / 2;
+            int a = topArtists(g, left, y, left + half, songs);
+            int b = whereAndWho(g, left + half + 16, y, right, s);
+            y = Math.max(a, b) + 14;
+        } else {
+            y = topArtists(g, left, y, right, songs) + 14;
+            y = whereAndWho(g, left, y, right, s) + 14;
+        }
+
+        Canvas c = new Canvas(g, x0, y, x1, mx, my);
+        Track skipped = statsTrack(s.mostSkipped());
+        if (skipped != null) {
+            c.heading(tr("cuemymusic.stats.skipped"));
+            art(g, skipped.art(), left, c.y, 16);
+            String count = tr("cuemymusic.stats.skips", songs.get(skipped.location().toString()).skips);
+            int tw = right - left - 22 - font.width(count) - 8;
+            g.text(font, clip(skipped.title(), tw), left + 22, c.y, WHITE, false);
+            g.text(font, clip(skipped.artist(), tw), left + 22, c.y + 9, DIM, false);
+            g.text(font, count, right - font.width(count), c.y + 4, DIM, false);
+            c.y += 22;
+            if (MusicLibrary.isGameMusic(skipped) && !isDisliked(skipped)) {
+                c.text(Component.translatable("cuemymusic.stats.skipped.hint"), FAINT);
+                c.space(2);
+                c.button(left, tr("cuemymusic.menu.dislike"), PanelCanvas.ButtonStyle.SECONDARY, true, () -> toggleDisliked(skipped));
+                c.space(c.buttonHeight());
+            }
+            c.space(14);
+        }
+        boolean armed = System.currentTimeMillis() - resetArmedAt < RESET_MILLIS;
+        c.button(left, tr(armed ? "cuemymusic.stats.reset.confirm" : "cuemymusic.stats.reset"),
+                armed ? PanelCanvas.ButtonStyle.DANGER : PanelCanvas.ButtonStyle.SECONDARY, true, () -> {
+                    if (System.currentTimeMillis() - resetArmedAt < RESET_MILLIS) {
+                        resetArmedAt = 0;
+                        ListeningStats.INSTANCE.reset();
+                        StatsFile.save();
+                        showToast(tr("cuemymusic.stats.reset.done"));
+                    } else {
+                        resetArmedAt = System.currentTimeMillis();
+                    }
+                });
+        return c.y + c.buttonHeight();
+    }
+
+    /** The song a stats id names, or null if it's gone (its pack was taken out). */
+    private static Track statsTrack(String id) {
+        Identifier location = id == null ? null : Identifier.tryParse(id);
+        return location == null ? null : MusicLibrary.get(location);
+    }
+
+    /** Four tiles: time, plays, songs, and the streak. Two rows of two when narrow. */
+    private int statTiles(GuiGraphicsExtractor g, int x0, int y, int x1, ListeningStats s, int songCount, LocalDate today) {
+        String[] values = {longDuration(s.totalSeconds()), Integer.toString(s.totalPlays()), Integer.toString(songCount),
+                Integer.toString(s.currentStreak(today))};
+        String[] labels = {tr("cuemymusic.stats.tile.time"), tr("cuemymusic.stats.tile.plays"), tr("cuemymusic.stats.tile.songs"),
+                tr("cuemymusic.stats.tile.streak", s.longestStreak())};
+        int[] colors = {GREEN, WHITE, WHITE, 0xFFFFB347};
+        int cols = x1 - x0 >= 300 ? 4 : 2, gap = 6, th = 36;
+        int tw = (x1 - x0 - gap * (cols - 1)) / cols;
+        for (int i = 0; i < 4; i++) {
+            int tx = x0 + (i % cols) * (tw + gap), ty = y + (i / cols) * (th + gap);
+            g.fill(tx, ty, tx + tw, ty + th, 0xFF1C1C1C);
+            g.fill(tx, ty, tx + 2, ty + th, colors[i]);
+            float scale = font.width(values[i]) * 1.5f <= tw - 14 ? 1.5f : 1;
+            bigText(g, clip(values[i], (int) ((tw - 14) / scale)), tx + 8, ty + 7, scale, colors[i]);
+            g.text(font, clip(labels[i], tw - 14), tx + 8, ty + 23, DIM, false);
+        }
+        return y + (4 / cols) * (th + gap) - gap;
+    }
+
+    /** The five most played songs, each with a bar for its plays. Click one to play the five from there. */
+    private int topSongs(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my, ListeningStats s,
+            Map<String, ListeningStats.Song> songs) {
+        g.text(font, tr("cuemymusic.stats.top_songs"), x0, y, WHITE, false);
+        y += 14;
+        List<Track> top = new ArrayList<>();
+        for (String id : s.top(20)) {
+            Track t = statsTrack(id);
+            if (t != null && top.size() < 5) top.add(t);
+        }
+        if (top.isEmpty()) {
+            g.text(font, tr("cuemymusic.stats.none"), x0, y, FAINT, false);
+            return y + 12;
+        }
+        int max = songs.get(top.get(0).location().toString()).plays;
+        for (int i = 0; i < top.size(); i++) {
+            Track t = top.get(i);
+            int plays = songs.get(t.location().toString()).plays;
+            int ry = y + i * 22;
+            boolean hover = mx >= x0 && mx < x1 && my >= ry && my < ry + 20 && my >= centerY0 && my < centerY1;
+            if (hover) g.fill(x0 - 2, ry, x1 + 2, ry + 20, ROW_HOVER);
+            String rank = Integer.toString(i + 1);
+            g.text(font, rank, x0 + 4 - font.width(rank) / 2, ry + 6, i == 0 ? GOLD : DIM, false);
+            art(g, t.art(), x0 + 12, ry + 2, 16);
+            int tx = x0 + 32;
+            String label = hover ? t.artist() : tr("cuemymusic.stats.plays", plays);
+            int lw = font.width(label);
+            g.text(font, clip(t.title(), x1 - tx - lw - 6), tx, ry + 2, i == 0 ? GREEN : WHITE, false);
+            g.text(font, clip(label, x1 - tx), x1 - Math.min(lw, x1 - tx), ry + 2, DIM, false);
+            int bw = (int) Math.round((x1 - tx) * plays / (double) Math.max(1, max));
+            g.fill(tx, ry + 13, x1, ry + 16, 0xFF262626);
+            g.fill(tx, ry + 13, tx + bw, ry + 16, i == 0 ? GREEN : 0xFF1F7A43);
+            int index = i, top0 = Math.max(ry, centerY0), bottom = Math.min(ry + 20, centerY1);
+            if (bottom > top0) nextHits.add(new Hit(x0, top0, x1, bottom, () -> player.play("stats", top, index)));
+        }
+        return y + top.size() * 22;
+    }
+
+    /**
+     * A 24-hour clock with a petal for each hour, as long as the listening in that
+     * hour. Midnight is at the top. The busiest hour is green, and a white dot on
+     * the rim is the time now.
+     */
+    private int listeningClock(GuiGraphicsExtractor g, int x0, int y, int x1, ListeningStats s) {
+        g.text(font, tr("cuemymusic.stats.clock"), x0, y, WHITE, false);
+        y += 16;
+        double[] hours = s.hours();
+        double max = 0;
+        for (double h : hours) max = Math.max(max, h);
+        int peak = s.peakHour();
+        int r = Math.min(50, (x1 - x0) / 2 - 12), inner = Math.max(8, r / 4);
+        int cx = (x0 + x1) / 2, cy = y + r + 10;
+        for (int h = 0; h < 24; h++) {
+            int len = max > 0 ? (int) Math.round((r - inner) * hours[h] / max) : 0;
+            int color = h == peak ? GREEN : 0xFF2E7D4F;
+            if (len == 0) {
+                double a = (h + 0.5) / 24 * 2 * Math.PI - Math.PI / 2;
+                int px = cx + (int) Math.round(Math.cos(a) * inner), py = cy + (int) Math.round(Math.sin(a) * inner);
+                g.fill(px, py, px + 1, py + 1, 0xFF3A3A3A);
+                continue;
+            }
+            // Three rays across the hour make a petal.
+            for (int k = -1; k <= 1; k++) {
+                double a = (h + 0.5 + k * 0.28) / 24 * 2 * Math.PI - Math.PI / 2;
+                double cos = Math.cos(a), sin = Math.sin(a);
+                int reach = inner + (k == 0 ? len : len * 4 / 5);
+                for (int d = inner; d <= reach; d++) {
+                    int px = cx + (int) Math.round(cos * d), py = cy + (int) Math.round(sin * d);
+                    g.fill(px, py, px + 2, py + 2, color);
+                }
+            }
+        }
+        // The rim: a dot every hour, bigger every six.
+        for (int h = 0; h < 24; h++) {
+            double a = h / 24.0 * 2 * Math.PI - Math.PI / 2;
+            int px = cx + (int) Math.round(Math.cos(a) * (r + 4)), py = cy + (int) Math.round(Math.sin(a) * (r + 4));
+            int size = h % 6 == 0 ? 2 : 1;
+            g.fill(px, py, px + size, py + size, FAINT);
+        }
+        g.text(font, "0", cx - font.width("0") / 2 + 1, cy - r - 13, FAINT, false);
+        g.text(font, "12", cx - font.width("12") / 2 + 1, cy + r + 7, FAINT, false);
+        g.text(font, "6", cx + r + 8, cy - 3, FAINT, false);
+        g.text(font, "18", cx - r - 8 - font.width("18"), cy - 3, FAINT, false);
+        LocalTime now = LocalTime.now();
+        double a = (now.getHour() + now.getMinute() / 60.0) / 24 * 2 * Math.PI - Math.PI / 2;
+        int nx = cx + (int) Math.round(Math.cos(a) * (r + 4)), ny = cy + (int) Math.round(Math.sin(a) * (r + 4));
+        g.fill(nx - 1, ny - 1, nx + 2, ny + 2, WHITE);
+
+        y = cy + r + 20;
+        if (peak >= 0) {
+            String type = tr("cuemymusic.stats.type." + (peak < 5 || peak >= 22 ? "night" : peak < 11 ? "morning"
+                    : peak < 17 ? "day" : "evening"));
+            String when = tr("cuemymusic.stats.peak", LocalTime.of(peak, 0).format(DateTimeFormatter.ofPattern("h a", Locale.getDefault())));
+            g.text(font, type, cx - font.width(type) / 2, y, GREEN, false);
+            g.text(font, clip(when, x1 - x0), cx - Math.min(font.width(when), x1 - x0) / 2, y + 11, DIM, false);
+            y += 22;
+        }
+        return y;
+    }
+
+    /** A cell per day for the last weeks, Monday at the top, greener the more was heard. Hover a day for its time. */
+    private int calendar(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my, ListeningStats s, LocalDate today) {
+        g.text(font, tr("cuemymusic.stats.calendar"), x0, y, WHITE, false);
+        y += 14;
+        int cell = 7, step = 9, labelW = 12;
+        int weeks = Math.clamp((x1 - x0 - labelW) / step, 4, 30);
+        LocalDate first = today.minusDays(today.getDayOfWeek().getValue() - 1).minusWeeks(weeks - 1);
+        double max = 0;
+        for (LocalDate d = first; !d.isAfter(today); d = d.plusDays(1)) max = Math.max(max, s.day(d));
+        Locale locale = Locale.getDefault();
+        int gx = x0 + labelW, gy = y + 11;
+        LocalDate hovered = null;
+        int monthEnd = Integer.MIN_VALUE;
+        for (int w = 0; w < weeks; w++) {
+            LocalDate monday = first.plusWeeks(w);
+            int cx = gx + w * step;
+            if ((w == 0 || monday.getMonth() != monday.minusWeeks(1).getMonth()) && cx >= monthEnd) {
+                String month = monday.getMonth().getDisplayName(TextStyle.SHORT, locale);
+                g.text(font, month, cx, y, FAINT, false);
+                monthEnd = cx + font.width(month) + 4;
+            }
+            for (int d = 0; d < 7; d++) {
+                LocalDate date = monday.plusDays(d);
+                if (date.isAfter(today)) continue;
+                double sec = s.day(date);
+                int level = sec <= 0 || max <= 0 ? 0 : 1 + Math.min(3, (int) (sec / max * 4 - 1e-9));
+                int cy = gy + d * step;
+                boolean hover = mx >= cx && mx < cx + step && my >= cy && my < cy + step && my >= centerY0 && my < centerY1;
+                if (hover) hovered = date;
+                if (date.equals(today) || hover) g.fill(cx - 1, cy - 1, cx + cell + 1, cy + cell + 1, hover ? WHITE : DIM);
+                g.fill(cx, cy, cx + cell, cy + cell, HEAT[level]);
+            }
+        }
+        for (int d = 0; d < 7; d += 2) {
+            String day = java.time.DayOfWeek.of(d + 1).getDisplayName(TextStyle.NARROW, locale);
+            g.text(font, day, x0, gy + d * step, FAINT, false);
+        }
+        int bottom = gy + 7 * step + 2, gridRight = gx + weeks * step - 2;
+        if (hovered != null) {
+            double sec = s.day(hovered);
+            String label = hovered.format(DateTimeFormatter.ofPattern("EEE, MMM d", locale)) + "  "
+                    + (sec > 0 ? longDuration(Math.max(60, sec)) : tr("cuemymusic.stats.nothing"));
+            g.text(font, clip(label, x1 - gx), gx, bottom, WHITE, false);
+        } else {
+            // Less ■■■■■ More
+            String less = tr("cuemymusic.stats.less"), more = tr("cuemymusic.stats.more");
+            int lx = gridRight - font.width(more);
+            g.text(font, more, lx, bottom, FAINT, false);
+            for (int i = HEAT.length - 1; i >= 0; i--) {
+                lx -= step;
+                g.fill(lx, bottom, lx + cell, bottom + cell, HEAT[i]);
+            }
+            g.text(font, less, lx - 3 - font.width(less), bottom, FAINT, false);
+        }
+        return bottom + 10;
+    }
+
+    /** The five artists heard longest. */
+    private int topArtists(GuiGraphicsExtractor g, int x0, int y, int x1, Map<String, ListeningStats.Song> songs) {
+        g.text(font, tr("cuemymusic.stats.top_artists"), x0, y, WHITE, false);
+        y += 14;
+        Map<String, Double> byArtist = new HashMap<>();
+        songs.forEach((id, song) -> {
+            Track t = statsTrack(id);
+            if (t != null && song.seconds > 0) byArtist.merge(t.artist(), song.seconds, Double::sum);
+        });
+        List<Map.Entry<String, Double>> top = byArtist.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed()).limit(5).toList();
+        if (top.isEmpty()) {
+            g.text(font, tr("cuemymusic.stats.none"), x0, y, FAINT, false);
+            return y + 12;
+        }
+        double max = top.get(0).getValue();
+        for (int i = 0; i < top.size(); i++) {
+            String artist = top.get(i).getKey();
+            double sec = top.get(i).getValue();
+            Art art = Catalog.ARTIST_ART.containsKey(artist) ? Art.block(Catalog.ARTIST_ART.get(artist).texture()) : Art.initials(artist);
+            int ry = y + i * 20;
+            art(g, art, x0, ry + 1, 16);
+            int tx = x0 + 20;
+            String time = longDuration(sec);
+            int lw = font.width(time);
+            g.text(font, clip(artist, x1 - tx - lw - 6), tx, ry + 1, WHITE, false);
+            g.text(font, time, x1 - lw, ry + 1, DIM, false);
+            int bw = (int) Math.round((x1 - tx) * sec / max);
+            g.fill(tx, ry + 12, x1, ry + 15, 0xFF262626);
+            g.fill(tx, ry + 12, tx + bw, ry + 15, i == 0 ? ARTIST_PURPLE : 0xFF5C4A99);
+        }
+        return y + top.size() * 20;
+    }
+
+    /** Time per dimension as a bar of that dimension's blocks, then who picked the music: you or the game. */
+    private int whereAndWho(GuiGraphicsExtractor g, int x0, int y, int x1, ListeningStats s) {
+        g.text(font, tr("cuemymusic.stats.where"), x0, y, WHITE, false);
+        y += 14;
+        record Place(String name, Art art, double seconds) {
+        }
+        List<Place> places = new ArrayList<>();
+        double inWorlds = 0;
+        for (Map.Entry<String, Double> e : s.dimensions().entrySet()) {
+            String id = e.getKey();
+            String path = id.substring(id.indexOf(':') + 1);
+            String block = switch (id) {
+                case "minecraft:overworld" -> "block/moss_block";
+                case "minecraft:the_nether" -> "block/netherrack";
+                case "minecraft:the_end" -> "block/end_stone";
+                default -> "block/stone";
+            };
+            String name = id.startsWith("minecraft:") ? tr("cuemymusic.stats.dimension." + path)
+                    : Character.toUpperCase(path.charAt(0)) + path.substring(1).replace('_', ' ');
+            places.add(new Place(name, Art.block(block), e.getValue()));
+            inWorlds += e.getValue();
+        }
+        double menus = s.totalSeconds() - inWorlds;
+        if (menus > s.totalSeconds() * 0.01) places.add(new Place(tr("cuemymusic.stats.menus"), Art.block("block/oak_planks"), menus));
+        places.sort(Comparator.comparingDouble(Place::seconds).reversed());
+        double total = places.stream().mapToDouble(Place::seconds).sum();
+        int barH = 12;
+        g.fill(x0, y, x1, y + barH, 0xFF262626);
+        double sum = 0;
+        int px = x0;
+        for (Place p : places) {
+            sum += p.seconds;
+            int ex = x0 + (int) Math.round((x1 - x0) * sum / total);
+            if (ex <= px) continue;
+            g.enableScissor(px, y, ex, y + barH);
+            for (int tx = px; tx < ex; tx += barH) art(g, p.art, tx, y, barH);
+            g.disableScissor();
+            if (ex < x1) g.fill(ex, y, ex + 1, y + barH, BLACK);
+            px = ex;
+        }
+        y += barH + 4;
+        int lx = x0;
+        for (Place p : places) {
+            String label = p.name + " " + Math.round(100 * p.seconds / total) + "%";
+            int iw = 11 + font.width(label) + 8;
+            if (lx > x0 && lx + iw > x1) {
+                lx = x0;
+                y += 11;
+            }
+            art(g, p.art, lx, y, 8);
+            g.text(font, label, lx + 11, y, DIM, false);
+            lx += iw;
+        }
+        y += 18;
+
+        g.text(font, tr("cuemymusic.stats.who"), x0, y, WHITE, false);
+        y += 14;
+        double you = s.pickedSeconds(), game = s.gameSeconds();
+        double youShare = you + game > 0 ? you / (you + game) : 0;
+        int split = x0 + (int) Math.round((x1 - x0) * youShare);
+        g.fill(x0, y, x1, y + 8, GAME_BLUE);
+        g.fill(x0, y, split, y + 8, GREEN);
+        y += 11;
+        String youLabel = tr("cuemymusic.stats.who.you", Math.round(100 * youShare));
+        String gameLabel = tr("cuemymusic.stats.who.game", 100 - Math.round(100 * youShare));
+        g.text(font, youLabel, x0, y, GREEN, false);
+        g.text(font, gameLabel, x1 - font.width(gameLabel), y, GAME_BLUE, false);
+        y += 12;
+        if (s.effectSeconds() > 0) {
+            Component effects = Component.translatable("cuemymusic.stats.effects", longDuration(s.effectSeconds()));
+            g.textWithWordWrap(font, effects, x0, y, x1 - x0, FAINT, false);
+            y += font.wordWrapHeight(effects, x1 - x0);
+        }
+        return y;
     }
 
     private int drawSettings(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my) {
@@ -906,10 +1321,11 @@ public final class CueScreen extends Screen {
         heartIcon(g, hx, y + 1, liked, liked ? GREEN : heartHover ? WHITE : DIM);
         nextHits.add(new Hit(hx - 2, y - 2, hx + 9, y + 8, () -> toggleLiked(t)));
         if (MusicLibrary.isGameMusic(t)) {
-            int dx = hx - 13;
-            boolean dislikeHover = mx >= dx - 2 && mx < dx + 9 && my >= y - 2 && my < y + 9;
-            dislikeIcon(g, dx, y + 1, isDisliked(t) ? RED : dislikeHover ? WHITE : DIM);
-            nextHits.add(new Hit(dx - 2, y - 2, dx + 9, y + 9, () -> toggleDisliked(t)));
+            int dx = hx - 14;
+            boolean disliked = isDisliked(t);
+            boolean dislikeHover = mx >= dx - 2 && mx < dx + 11 && my >= y - 2 && my < y + 11;
+            dislikeIcon(g, dx, y, disliked, disliked ? RED : dislikeHover ? WHITE : DIM);
+            nextHits.add(new Hit(dx - 2, y - 2, dx + 11, y + 11, () -> toggleDisliked(t)));
         }
         y += 16;
         drawQueue(g, x0, y, x1, y1, mx, my);
@@ -1126,9 +1542,214 @@ public final class CueScreen extends Screen {
     private void drawToast(GuiGraphicsExtractor g) {
         if (toast == null || System.currentTimeMillis() > toastUntil) return;
         int w = font.width(toast) + 16;
-        int x = (centerX0 + centerX1 - w) / 2, y = centerY1 - 22;
+        int x = (centerX0 + centerX1 - w) / 2, y = centerY1 - (selected.isEmpty() ? 22 : 42);
         g.fill(x, y, x + w, y + 16, WHITE);
         g.text(font, toast, x + 8, y + 4, BLACK, false);
+    }
+
+    // -------------------------------------------------------------- selection
+
+    private static String id(Track t) {
+        return t.location().toString();
+    }
+
+    private void clearSelection() {
+        selected.clear();
+        anchor = -1;
+        focusRow = -1;
+        selectDragging = false;
+    }
+
+    /** The selected songs, in the order shown. */
+    private List<Track> selectedTracks() {
+        return shownTracks.stream().filter(t -> selected.contains(id(t))).toList();
+    }
+
+    /** Selects the rows from {@code a} to {@code b}, either way round, and nothing else. */
+    private void selectRange(int a, int b) {
+        selected.clear();
+        if (shownTracks.isEmpty()) return;
+        int last = shownTracks.size() - 1;
+        int lo = Math.clamp(Math.min(a, b), 0, last), hi = Math.clamp(Math.max(a, b), 0, last);
+        for (int i = lo; i <= hi; i++) selected.add(id(shownTracks.get(i)));
+    }
+
+    /** The row at screen height {@code y}, held to the list's ends, or -1 with no list. */
+    private int rowAt(double y) {
+        if (shownTracks.isEmpty()) return -1;
+        double inside = Math.clamp(y, centerY0, centerY1 - 1);
+        return Math.clamp((int) Math.floor((inside - shownTop) / ROW), 0, shownTracks.size() - 1);
+    }
+
+    /** Scrolls just enough to show row {@code i}. */
+    private void revealRow(int i) {
+        int top = shownTop + i * ROW;
+        if (top < centerY0) scroll -= centerY0 - top;
+        else if (top + ROW > centerY1) scroll += top + ROW - centerY1;
+        scroll = Math.clamp(scroll, 0, scrollMax);
+    }
+
+    /**
+     * Shift+click selects from the last row clicked, and dragging on carries the
+     * selection along. Cmd (Ctrl elsewhere)+click adds or removes one row. A plain
+     * click on a row clears the selection and plays the row as before.
+     */
+    private boolean rowClicked(MouseButtonEvent event) {
+        boolean shift = event.hasShiftDown(), toggle = event.hasControlDownWithQuirk();
+        for (RowHit r : rowHits) {
+            if (!r.contains(event.x(), event.y())) continue;
+            if (!shift && !toggle) {
+                clearSelection();
+                return false;
+            }
+            if (toggle && !shift) {
+                if (!selected.remove(id(r.track()))) selected.add(id(r.track()));
+                anchor = r.index();
+                focusRow = r.index();
+            } else {
+                if (anchor < 0) anchor = r.index();
+                focusRow = r.index();
+                selectRange(anchor, focusRow);
+                selectDragging = true;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** Shift+up/down grows or shrinks the selection, Cmd/Ctrl+A selects all, Esc clears, Delete removes. */
+    private boolean selectionKey(KeyEvent event) {
+        if (shownTracks.isEmpty()) return false;
+        int key = event.key(), last = shownTracks.size() - 1;
+        if (event.isSelectAll()) {
+            anchor = 0;
+            focusRow = last;
+            selectRange(0, last);
+            return true;
+        }
+        if (event.hasShiftDown() && (key == InputConstants.KEY_UP || key == InputConstants.KEY_DOWN)) {
+            if (focusRow < 0) {
+                int playing = shownTracks.indexOf(player.current());
+                focusRow = playing >= 0 ? playing : 0;
+                anchor = focusRow;
+            } else {
+                focusRow = Math.clamp(focusRow + (key == InputConstants.KEY_UP ? -1 : 1), 0, last);
+                if (anchor < 0) anchor = focusRow;
+            }
+            selectRange(anchor, focusRow);
+            revealRow(focusRow);
+            return true;
+        }
+        if (selected.isEmpty()) return false;
+        if (key == InputConstants.KEY_ESCAPE) {
+            clearSelection();
+            return true;
+        }
+        if (key == InputConstants.KEY_DELETE || key == InputConstants.KEY_BACKSPACE) {
+            MenuItem delete = deleteItem(selectedTracks());
+            if (delete != null) delete.action().run();
+            return true;
+        }
+        return false;
+    }
+
+    /** What Delete does on this page: take the songs out of the playlist, Liked Songs, Disliked Songs, or the add-on's page. */
+    private MenuItem deleteItem(List<Track> tracks) {
+        if (tracks.isEmpty()) return null;
+        int n = tracks.size();
+        Runnable done = this::clearSelection;
+        return switch (view) {
+            case LIST -> {
+                String listId = key;
+                yield new MenuItem(tr("cuemymusic.bulk.remove", n), () -> {
+                    for (Track t : tracks) cfg.removeFromPlaylist(listId, id(t));
+                    showToast(tr("cuemymusic.bulk.removed", n));
+                    done.run();
+                });
+            }
+            case LIKED -> new MenuItem(tr("cuemymusic.bulk.unlike", n), () -> {
+                for (Track t : tracks) {
+                    if (isLiked(t)) cfg.toggleLiked(id(t));
+                }
+                showToast(tr("cuemymusic.bulk.unliked", n));
+                done.run();
+            });
+            case DISLIKED -> new MenuItem(tr("cuemymusic.bulk.undislike", n), () -> {
+                for (Track t : tracks) {
+                    if (isDisliked(t)) player.toggleDisliked(t);
+                }
+                showToast(tr("cuemymusic.bulk.undisliked", n));
+                done.run();
+            });
+            case PANEL -> {
+                CuePanel panel = CuePanels.get(key);
+                CuePanel.Action a = panel != null ? panel.deleteAction(tracks) : null;
+                yield a == null ? null : new MenuItem(a.label(), () -> {
+                    a.run().run();
+                    done.run();
+                });
+            }
+            default -> null;
+        };
+    }
+
+    /** The right-click menu for several selected songs. */
+    private void openBulkMenu(List<Track> tracks, int x, int y) {
+        int n = tracks.size();
+        List<MenuItem> items = new ArrayList<>();
+        items.add(new MenuItem(tr("cuemymusic.bulk.queue", n), () -> {
+            player.enqueueAll(tracks);
+            showToast(tr("cuemymusic.queue.added_all", n));
+        }));
+        boolean allLiked = tracks.stream().allMatch(this::isLiked);
+        if (view != View.LIKED || !allLiked) {
+            items.add(new MenuItem(tr(allLiked ? "cuemymusic.bulk.unlike" : "cuemymusic.bulk.like", n), () -> {
+                for (Track t : tracks) {
+                    if (isLiked(t) == allLiked) cfg.toggleLiked(id(t));
+                }
+                showToast(tr(allLiked ? "cuemymusic.bulk.unliked" : "cuemymusic.bulk.liked", n));
+            }));
+        }
+        List<Track> game = tracks.stream().filter(MusicLibrary::isGameMusic).toList();
+        boolean allDisliked = !game.isEmpty() && game.stream().allMatch(this::isDisliked);
+        if (!game.isEmpty() && view != View.DISLIKED) {
+            items.add(new MenuItem(tr(allDisliked ? "cuemymusic.bulk.undislike" : "cuemymusic.bulk.dislike", game.size()), () -> {
+                for (Track t : game) {
+                    if (isDisliked(t) == allDisliked) player.toggleDisliked(t);
+                }
+                showToast(tr(allDisliked ? "cuemymusic.bulk.undisliked" : "cuemymusic.bulk.disliked", game.size()));
+            }));
+        }
+        for (CueConfig.Playlist p : cfg.playlists) {
+            if (view == View.LIST && p.id().equals(key)) continue;
+            items.add(new MenuItem(tr("cuemymusic.bulk.add_to", n, clip(p.name(), 120)), () -> {
+                int added = 0;
+                for (Track t : tracks) {
+                    if (cfg.addToPlaylist(p.id(), id(t))) added++;
+                }
+                showToast(tr("cuemymusic.bulk.added", added, p.name()));
+            }));
+        }
+        items.add(new MenuItem(tr("cuemymusic.bulk.add_new", n), () -> {
+            String listId = cfg.createPlaylist(tr("cuemymusic.playlists.default_name", cfg.playlists.size() + 1));
+            for (Track t : tracks) cfg.addToPlaylist(listId, id(t));
+            open(View.LIST, listId);
+            startRename(listId);
+        }));
+        MenuItem delete = deleteItem(tracks);
+        if (delete != null) items.add(delete);
+        menu = new Menu(x, y, items);
+    }
+
+    /** While songs are selected: how many, and what to do with them. */
+    private void drawSelectionBar(GuiGraphicsExtractor g) {
+        if (selected.isEmpty() || shownTracks.isEmpty()) return;
+        String text = tr("cuemymusic.selection", selected.size());
+        int w = font.width(text) + 16;
+        int x = (centerX0 + centerX1 - w) / 2, y = centerY1 - 22;
+        g.fill(x, y, x + w, y + 16, 0xFF2C3A31);
+        g.fill(x, y, x + 2, y + 16, GREEN);
+        g.text(font, text, x + 9, y + 4, WHITE, false);
     }
 
     // ------------------------------------------------------------- add-on pages
@@ -1317,6 +1938,7 @@ public final class CueScreen extends Screen {
             menu = null;
             return true;
         }
+        if (selectionKey(event)) return true;
         if (event.key() == InputConstants.KEY_SPACE) {
             player.togglePause();
             return true;
@@ -1364,7 +1986,12 @@ public final class CueScreen extends Screen {
         if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
             for (RowHit r : rowHits) {
                 if (r.contains(event.x(), event.y())) {
-                    openMenu(r.track(), (int) event.x(), (int) event.y());
+                    if (selected.size() > 1 && selected.contains(r.track().location().toString())) {
+                        openBulkMenu(selectedTracks(), (int) event.x(), (int) event.y());
+                    } else {
+                        clearSelection();
+                        openMenu(r.track(), (int) event.x(), (int) event.y());
+                    }
                     return true;
                 }
             }
@@ -1372,6 +1999,7 @@ public final class CueScreen extends Screen {
         if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
             double x = event.x(), y = event.y();
             if (queueClicked(x, y, doubleClick)) return true;
+            if (rowClicked(event)) return true;
             for (Drag d : drags) {
                 if (d.contains(x, y)) {
                     dragging = d;
@@ -1406,6 +2034,14 @@ public final class CueScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (selectDragging) {
+            int row = rowAt(event.y());
+            if (row >= 0) {
+                focusRow = row;
+                selectRange(anchor, row);
+            }
+            return true;
+        }
         if (queueDrag >= 0) {
             queueDragY = event.y();
             return true;
@@ -1419,6 +2055,10 @@ public final class CueScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        if (selectDragging) {
+            selectDragging = false;
+            return true;
+        }
         if (queueDrag >= 0) {
             int from = queueDrag, slot = dropSlot(queueDragY);
             queueDrag = -1;
@@ -1560,17 +2200,19 @@ public final class CueScreen extends Screen {
         }
     }
 
-    /** A 7×6 heart, filled when the song is liked. */
-    /** A circle with a slash through it: the game won't play this song. */
-    private static void dislikeIcon(GuiGraphicsExtractor g, int x, int y, int color) {
-        String[] rows = {"..XXX..", ".X..XX.", "X..X..X", "X.X...X", "XX....X", ".X...X.", "..XXX.."};
+    /** A 9×9 thumbs down, filled when the song is disliked: the game won't play it. */
+    private static void dislikeIcon(GuiGraphicsExtractor g, int x, int y, boolean filled, int color) {
+        String[] rows = filled
+                ? new String[] {"XX.XXXXX.", "XX.XXXXX.", "XX.XXXXXX", "XX.XXXXX.", "XX.XXXXXX", "XX.XXXXX.", "...XXX...", "...XX....", "....X...."}
+                : new String[] {"XX.XXXXX.", "XX.X...X.", "XX.X....X", "XX.X...X.", "XX.X....X", "XX.XX..X.", "...X.XX..", "...X.X...", "....X...."};
         for (int r = 0; r < rows.length; r++) {
-            for (int c = 0; c < 7; c++) {
+            for (int c = 0; c < 9; c++) {
                 if (rows[r].charAt(c) == 'X') g.fill(x + c, y + r, x + c + 1, y + r + 1, color);
             }
         }
     }
 
+    /** A 7×6 heart, filled when the song is liked. */
     private static void heartIcon(GuiGraphicsExtractor g, int x, int y, boolean filled, int color) {
         String[] rows = filled
                 ? new String[] {".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X..."}
