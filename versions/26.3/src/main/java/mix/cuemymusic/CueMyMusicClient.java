@@ -41,7 +41,10 @@ public final class CueMyMusicClient implements ClientModInitializer {
     public void onInitializeClient() {
         CueConfig.INSTANCE.load();
         StatsFile.load();
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> StatsFile.save());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            StatsFile.save();
+            OutsideAudio.shutdown();
+        });
 
         KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MODID, "keys"));
         openPlayer = key("key.cuemymusic.open_player", InputConstants.UNKNOWN.getValue(), category);

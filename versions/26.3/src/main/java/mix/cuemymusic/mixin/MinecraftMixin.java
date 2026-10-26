@@ -14,6 +14,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.sounds.SoundManager;
 
+import mix.cuemymusic.AutomixProfiles;
 import mix.cuemymusic.CuePlayer;
 import mix.cuemymusic.library.MusicLibrary;
 
@@ -31,6 +32,9 @@ abstract class MinecraftMixin {
     @Inject(method = "reloadResourcePacks()Ljava/util/concurrent/CompletableFuture;", at = @At("RETURN"))
     private void cuemymusic$refreshLibrary(CallbackInfoReturnable<CompletableFuture<Void>> cir) {
         Minecraft mc = (Minecraft) (Object) this;
-        cir.getReturnValue().thenRun(() -> mc.execute(MusicLibrary::refresh));
+        cir.getReturnValue().thenRun(() -> mc.execute(() -> {
+            AutomixProfiles.clear();
+            MusicLibrary.refresh();
+        }));
     }
 }
