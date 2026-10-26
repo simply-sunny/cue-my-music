@@ -47,6 +47,12 @@ public final class CueConfig {
     public volatile List<String> disliked = List.of();
     /** Library sections folded shut: "artists", "packs", "playlists". */
     public volatile List<String> collapsed = List.of();
+    /**
+     * Vanilla music: Cue My Music and its add-ons are off, and the game plays
+     * its own music exactly as without them. Only the player's window stays,
+     * to turn this back off.
+     */
+    public volatile boolean vanilla = false;
     /** Blend songs on add-on pages into each other, at matched loudness. */
     public volatile boolean automix = true;
     /** Play songs on add-on pages from a separate process, so recordings of the game's audio leave them out. */
@@ -260,6 +266,7 @@ public final class CueConfig {
         liked = o.liked;
         pauseOnTravel = o.pauseOnTravel;
         automix = o.automix;
+        vanilla = o.vanilla;
         keepOutOfRecordings = o.keepOutOfRecordings;
         repeat = o.repeat;
         playlists = o.playlists;

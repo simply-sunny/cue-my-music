@@ -122,6 +122,7 @@ public final class CueMyMusicClient implements ClientModInitializer {
     /** Handles previous, play/pause and next while a screen has the keyboard. */
     static boolean mediaKey(KeyEvent event) {
         CuePlayer player = CuePlayer.INSTANCE;
+        if (CueConfig.INSTANCE.vanilla) return false;
         if (playPause.matches(event)) player.togglePause();
         else if (next.matches(event)) player.next();
         else if (previous.matches(event)) player.previous();
@@ -131,9 +132,15 @@ public final class CueMyMusicClient implements ClientModInitializer {
 
     private static void tick(Minecraft client) {
         CuePlayer player = CuePlayer.INSTANCE;
-        player.tick();
+        if (!CueConfig.INSTANCE.vanilla) player.tick();
         while (openPlayer.consumeClick()) {
             client.gui.setScreen(new CueScreen(client.gui.screen()));
+        }
+        if (CueConfig.INSTANCE.vanilla) {
+            // Off: the keys do nothing, but presses mustn't pile up for when it's back on.
+            while (playPause.consumeClick() | next.consumeClick() | previous.consumeClick() | toggle.consumeClick()) {
+            }
+            return;
         }
         while (playPause.consumeClick()) player.togglePause();
         while (next.consumeClick()) player.next();

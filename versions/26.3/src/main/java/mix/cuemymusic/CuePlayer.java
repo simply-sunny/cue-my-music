@@ -617,6 +617,24 @@ public final class CuePlayer {
         return mc.getSoundManager().play(o);
     }
 
+    /**
+     * Vanilla music is being turned on: stops the player's song and hands the
+     * music back to the game, which plans its next song as it would without
+     * the mod, after a short break.
+     */
+    public void stopForVanilla() {
+        if (current != null && playing) ListeningStats.INSTANCE.skipped(current.location().toString());
+        stopAll();
+        synchronized (this) {
+            playing = false;
+        }
+        paused = false;
+        travelHold = false;
+        focusPaused = false;
+        automixNext = null;
+        ((MusicManagerAccessor) Minecraft.getInstance().getMusicManager()).cuemymusic$setNextSongDelay(100);
+    }
+
     /** Stops whatever music is playing. The stream's close isn't taken as the song ending. */
     private void stopAll() {
         synchronized (this) {
