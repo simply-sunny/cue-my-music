@@ -12,7 +12,9 @@ First release.
 - **Liked Songs**: a heart on every track and in now playing.
 - Pages for **All game music**, each artist and each resource pack that adds music. Packs show their name, icon and credited author; packs without an icon get their initials on a gradient.
 - Play any track, pause, seek, next and previous. Space plays and pauses in the player.
-- Queue: add songs with **+**, drag to reorder, × to remove.
+- Play through a list: play a song on any page and the rest of the page follows in the order shown, then the game's music takes over.
+- Queue: add songs with **+**, or a whole page with **Add all to queue**. Drag to reorder, × to remove. Queued songs play before the list carries on, and a song queued with nothing playing starts at once.
+- **Pause during travel** setting. Off (default), your song keeps playing through dimension changes; on, it pauses while the new dimension loads and resumes from the same spot.
 - The game's own music plays through the player, exactly as in vanilla: same pick, same break, same volume and pitch per file, same toast. The queue shows the game's next song and the break before it.
 - Sort the track list by title, album or length.
 - Long titles and artists scroll in the now playing panel.
@@ -22,7 +24,7 @@ First release.
 - Built-in lengths for vanilla tracks. Resource pack tracks are measured from the file.
 - Keys for open player, effects on/off, previous, play/pause and next, in their own **Cue My Music** section. They work on any screen. Previous, play/pause and next default to F7, F8 and F9 on macOS.
 - Icon made from the game's note block and note textures.
-- 20 headless checks: DSP, plus pack names, initials and credits.
+- 34 headless checks: DSP, pack names, initials and credits, and the play order rules.
 
 ### Notes
 

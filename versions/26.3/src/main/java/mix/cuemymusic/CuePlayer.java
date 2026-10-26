@@ -1,11 +1,11 @@
 package mix.cuemymusic;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntSupplier;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.resources.sounds.Sound;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.MusicManager;
@@ -34,11 +34,15 @@ import mix.cuemymusic.mixin.MusicManagerAccessor;
  * rules, so the queue can show them.
  *
  * <p>Songs the player picks aren't cut off by the game: they keep playing
- * through dimension changes and menus. Songs added to the queue play as soon
- * as the current one ends; after that the game's schedule takes over again.
+ * through dimension changes and menus, or pause while a new dimension loads
+ * if that's set. Songs added to the queue play as soon as the current one
+ * ends, then the rest of the list a song was started from (see
+ * {@link PlayOrder}); after that the game's schedule takes over again.
  */
 public final class CuePlayer {
     public static final CuePlayer INSTANCE = new CuePlayer();
+    /** The list key for all game music, which Next falls back to when the game has no music to play. */
+    public static final String ALL = "all";
     private static final AtomicLong STREAM_IDS = new AtomicLong();
     /** How long a track may take to start before it's treated as failed. */
     private static final long START_TIMEOUT_NANOS = 3_000_000_000L;
@@ -56,8 +60,9 @@ public final class CuePlayer {
     private long activeStream = -1;
     private boolean ended;
     private long oursStarted;
-    private List<Track> context = List.of();
-    private final List<Track> queue = new ArrayList<>();
+    private final PlayOrder<Track> order = new PlayOrder<>();
+    /** True while the current track is paused for a dimension change, to resume once the new level has loaded. */
+    private boolean travelHold;
     private long lastNanos;
 
     // The game's next song, planned ahead.
@@ -152,8 +157,16 @@ public final class CuePlayer {
         plan();
         if (finished) {
             ours = null;
-            if (!queue.isEmpty()) start(queue.removeFirst(), 0, TrackSoundInstance.GAME, true);
+            Track n = order.next();
+            if (n != null) start(n, 0, TrackSoundInstance.GAME, true);
             return;
+        }
+        if (travelHold) {
+            ClientPacketListener connection = Minecraft.getInstance().getConnection();
+            if (connection != null && connection.hasClientLoaded()) {
+                travelHold = false;
+                if (paused && current != null) start(current, position, event, picked);
+            }
         }
         TrackSoundInstance o = ours;
         if (o != null && !playing && !paused && now - oursStarted > START_TIMEOUT_NANOS
@@ -162,10 +175,14 @@ public final class CuePlayer {
         }
     }
 
-    /** Plays {@code track} from {@code seconds}; previous then walks {@code list}. */
-    public void play(Track track, double seconds, List<Track> list) {
-        this.context = List.copyOf(list);
-        start(track, seconds, TrackSoundInstance.GAME, true);
+    /** Plays {@code list} from {@code index} to the end, after anything queued. {@code key} names the list. */
+    public void play(Object key, List<Track> list, int index) {
+        start(order.play(key, list, index), 0, TrackSoundInstance.GAME, true);
+    }
+
+    /** True if the list named {@code key} is the one playing through. */
+    public boolean isPlayingList(Object key) {
+        return key.equals(order.listKey());
     }
 
     public void togglePause() {
@@ -195,16 +212,17 @@ public final class CuePlayer {
         }
     }
 
-    /** The queue first, then the game's next song, skipping the break. */
+    /** The queue first, then the list's next song, then the game's next song, skipping the break. */
     public void next() {
-        if (!queue.isEmpty()) {
-            start(queue.removeFirst(), 0, TrackSoundInstance.GAME, true);
-            return;
-        }
-        if (upcoming() != null) {
+        Track n = order.next();
+        if (n != null) {
+            start(n, 0, TrackSoundInstance.GAME, true);
+        } else if (upcoming() != null) {
             playUpcoming();
         } else {
-            step(1);
+            // No music from the game here: carry on through all game music.
+            List<Track> all = MusicLibrary.all();
+            if (!all.isEmpty()) play(ALL, all, (all.indexOf(current) + 1) % all.size());
         }
     }
 
@@ -215,37 +233,55 @@ public final class CuePlayer {
         if (music != null) mc.getMusicManager().startPlaying(music);
     }
 
+    /** Back to the start of the song, or within the first 3 seconds the list's previous song. Never the queue. */
     public void previous() {
-        if (current != null && position > 3) {
-            seek(0);
-        } else {
-            step(-1);
-        }
+        Track p = current != null && position > 3 ? null : order.previous();
+        if (p != null) start(p, 0, TrackSoundInstance.GAME, true);
+        else seek(0);
     }
 
     // Queue.
 
     public List<Track> queue() {
-        return List.copyOf(queue);
+        return order.queue();
     }
 
+    /** Adds to the queue. With nothing playing or paused, it plays at once. */
     public void enqueue(Track track) {
-        queue.add(track);
+        order.enqueue(track);
+        startIfIdle();
+    }
+
+    /** Adds every song of {@code tracks} to the queue, in order. */
+    public void enqueueAll(List<Track> tracks) {
+        order.enqueueAll(tracks);
+        startIfIdle();
     }
 
     public void unqueue(int index) {
-        if (index >= 0 && index < queue.size()) queue.remove(index);
+        order.unqueue(index);
     }
 
     /** Moves the queued song at {@code from} so it ends up at {@code to}. */
     public void moveQueued(int from, int to) {
-        if (from < 0 || from >= queue.size()) return;
-        Track t = queue.remove(from);
-        queue.add(Math.clamp(to, 0, queue.size()), t);
+        order.moveQueued(from, to);
     }
 
     public void playQueued(int index) {
-        if (index >= 0 && index < queue.size()) start(queue.remove(index), 0, TrackSoundInstance.GAME, true);
+        Track t = order.playQueued(index);
+        if (t != null) start(t, 0, TrackSoundInstance.GAME, true);
+    }
+
+    /** The list's next song, while a list plays through and the queue is empty. */
+    public Track listNext() {
+        return order.listNext();
+    }
+
+    /** Plays the queue's head if nothing is playing, starting or paused. Game songs count as playing. */
+    private void startIfIdle() {
+        if (holdsMusic() || !waitingForGame()) return;
+        Track n = order.next();
+        if (n != null) start(n, 0, TrackSoundInstance.GAME, true);
     }
 
     // The game's music.
@@ -287,6 +323,8 @@ public final class CuePlayer {
         Sound sound = music.equals(plannedFor) ? plannedSound : pick(music);
         if (sound == null) return null;
         plannedFor = null;
+        // The game took over, so the list is done; anything queued plays after the game's song.
+        order.endList();
         Identifier event = music.sound().value().location();
         Track t = track(sound);
         SoundEngine.PlayResult result;
@@ -310,6 +348,34 @@ public final class CuePlayer {
             playing = false;
         }
         ours = null;
+    }
+
+    /**
+     * Runs the game's stop of every sound when the level changes: joining a world,
+     * a dimension change, or leaving. A picked track carries on from the same spot,
+     * or, with pause on travel set and a new level coming, pauses until it has loaded.
+     */
+    public void levelChanged(boolean travel, Runnable stopAll) {
+        Track t = current;
+        double at = position;
+        boolean keep = ours != null && picked && t != null;
+        // The stream's close isn't the song ending.
+        if (keep) {
+            synchronized (this) {
+                activeStream = -1;
+            }
+        }
+        stopAll.run();
+        if (!keep) return;
+        if (travel && CueConfig.INSTANCE.pauseOnTravel) {
+            paused = true;
+            playing = false;
+            position = at;
+            stopAll();
+            travelHold = true;
+        } else {
+            start(t, at, event, true);
+        }
     }
 
     /** Picks the next song and break again when the game's music or the time between songs changes. */
@@ -349,15 +415,6 @@ public final class CuePlayer {
         return MusicLibrary.get(sound.getLocation());
     }
 
-    private void step(int direction) {
-        List<Track> list = context.isEmpty() ? MusicLibrary.all() : context;
-        if (list.isEmpty()) return;
-        int i = current == null ? -1 : list.indexOf(current);
-        int n = Math.floorMod(i + direction, list.size());
-        if (i < 0 && direction < 0) n = list.size() - 1;
-        start(list.get(n), 0, TrackSoundInstance.GAME, true);
-    }
-
     private SoundEngine.PlayResult start(Track track, double seconds, Identifier event, boolean picked) {
         return start(track, TrackSoundInstance.of(track.location(), seconds, event), picked);
     }
@@ -376,6 +433,7 @@ public final class CuePlayer {
             lastNanos = System.nanoTime();
         }
         ours = o;
+        travelHold = false;
         this.event = event;
         this.picked = picked;
         oursStarted = System.nanoTime();

@@ -35,6 +35,8 @@ public final class CueConfig {
     public volatile String eqPreset = "flat";
     /** Liked songs as sound file ids ("minecraft:music/game/sweden"), oldest first. Replaced whole, never mutated in place. */
     public volatile List<String> liked = List.of();
+    /** Pause the player's song while a new dimension loads, rather than carry on. */
+    public volatile boolean pauseOnTravel = false;
 
     private CueConfig() {
     }
@@ -116,5 +118,6 @@ public final class CueConfig {
         eqGains = o.eqGains;
         eqPreset = o.eqPreset;
         liked = o.liked;
+        pauseOnTravel = o.pauseOnTravel;
     }
 }

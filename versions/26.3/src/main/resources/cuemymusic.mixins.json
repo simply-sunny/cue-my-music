@@ -4,6 +4,7 @@
 	"package": "mix.cuemymusic.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
+		"MinecraftMixin",
 		"MusicFrequencyInvoker",
 		"MusicManagerAccessor",
 		"MusicManagerMixin",
