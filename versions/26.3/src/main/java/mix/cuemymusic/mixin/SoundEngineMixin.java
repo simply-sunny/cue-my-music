@@ -17,6 +17,7 @@ import net.minecraft.client.sounds.SoundEngine;
 import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundSource;
 
+import mix.cuemymusic.CueConfig;
 import mix.cuemymusic.CuePlayer;
 import mix.cuemymusic.CueStream;
 import mix.cuemymusic.TrackSoundInstance;
@@ -26,7 +27,8 @@ abstract class SoundEngineMixin {
     /** While the player holds the music, other music (the game's, or another mod's) doesn't start over it. */
     @Inject(method = "play", at = @At("HEAD"), cancellable = true)
     private void cuemymusic$holdMusic(SoundInstance instance, CallbackInfoReturnable<SoundEngine.PlayResult> cir) {
-        if (instance.getSource() == SoundSource.MUSIC && CuePlayer.INSTANCE.holdsMusic() && !CuePlayer.INSTANCE.isOurs(instance)) {
+        if (instance.getSource() == SoundSource.MUSIC && !CueConfig.INSTANCE.vanilla && CuePlayer.INSTANCE.holdsMusic()
+                && !CuePlayer.INSTANCE.isOurs(instance)) {
             cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
         }
     }
@@ -38,7 +40,7 @@ abstract class SoundEngineMixin {
     private CompletableFuture<AudioStream> cuemymusic$wrapStream(SoundBufferLibrary library, Identifier sound, boolean looping,
             Operation<CompletableFuture<AudioStream>> original, @Local(argsOnly = true) SoundInstance instance) {
         CompletableFuture<AudioStream> stream = original.call(library, sound, looping);
-        if (instance.getSource() != SoundSource.MUSIC) return stream;
+        if (instance.getSource() != SoundSource.MUSIC || CueConfig.INSTANCE.vanilla) return stream;
         double start = instance instanceof TrackSoundInstance t ? t.startSeconds() : 0;
         // Async: seeking decodes ahead, which must not run on the client or sound thread.
         return stream.thenApplyAsync(s -> CueStream.wrap(s, sound, start, instance));

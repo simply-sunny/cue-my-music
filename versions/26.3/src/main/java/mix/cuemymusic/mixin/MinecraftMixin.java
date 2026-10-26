@@ -15,6 +15,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.sounds.SoundManager;
 
 import mix.cuemymusic.AutomixProfiles;
+import mix.cuemymusic.CueConfig;
 import mix.cuemymusic.CuePlayer;
 import mix.cuemymusic.library.MusicLibrary;
 
@@ -25,7 +26,8 @@ abstract class MinecraftMixin {
             method = "updateLevelInEngines(Lnet/minecraft/client/multiplayer/ClientLevel;Z)V",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/sounds/SoundManager;stop()V"))
     private void cuemymusic$keepSong(SoundManager sounds, Operation<Void> original, @Local(argsOnly = true) ClientLevel level) {
-        CuePlayer.INSTANCE.levelChanged(level != null, () -> original.call(sounds));
+        if (CueConfig.INSTANCE.vanilla) original.call(sounds);
+        else CuePlayer.INSTANCE.levelChanged(level != null, () -> original.call(sounds));
     }
 
     /** Picks up songs a pack added or removed once a resource reload finishes, such as from the pack screen or F3+T. */

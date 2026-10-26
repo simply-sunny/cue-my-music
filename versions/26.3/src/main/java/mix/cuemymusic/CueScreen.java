@@ -260,6 +260,14 @@ public final class CueScreen extends Screen {
         nextRowHits = new ArrayList<>();
         nextFieldHits = new ArrayList<>();
         this.partialTick = partialTick;
+        if (cfg.vanilla) {
+            drawVanilla(g, mouseX, mouseY);
+            hits = nextHits;
+            drags = nextDrags;
+            rowHits = nextRowHits;
+            fieldHits = nextFieldHits;
+            return;
+        }
 
         int sideW = Math.clamp(width / 5, 92, 150);
         int rightW = width >= 400 ? Math.clamp(width / 5, 96, 150) : 0;
@@ -301,6 +309,30 @@ public final class CueScreen extends Screen {
         drags = nextDrags;
         rowHits = nextRowHits;
         fieldHits = nextFieldHits;
+    }
+
+    /** With vanilla music on, the whole window is one card saying so, with a button to turn the mods back on. */
+    private void drawVanilla(GuiGraphicsExtractor g, int mx, int my) {
+        g.fill(0, 0, width, height, 0xFF000000);
+        int w = Math.min(300, width - 40), x0 = (width - w) / 2;
+        Component body = Component.translatable("cuemymusic.vanilla.body");
+        int bodyH = font.wordWrapHeight(body, w - 28);
+        int h = 64 + bodyH + 30, y0 = (height - h) / 2;
+        g.fill(x0, y0, x0 + w, y0 + h, PANEL);
+        bigText(g, tr("cuemymusic.vanilla.title"), x0 + 14, y0 + 14, 2, WHITE);
+        g.textWithWordWrap(font, body, x0 + 14, y0 + 40, w - 28, DIM, false);
+        Canvas c = new Canvas(g, x0 + 4, y0 + 48 + bodyH, x0 + w - 4, mx, my);
+        int bw = c.button(c.left(), tr("cuemymusic.vanilla.off"), PanelCanvas.ButtonStyle.PRIMARY, true, () -> setVanilla(false));
+        c.button(c.left() + bw + 6, tr("cuemymusic.vanilla.close"), PanelCanvas.ButtonStyle.SECONDARY, true, this::onClose);
+    }
+
+    /** Turns vanilla music on (both mods off: the player stops and the game takes over its music) or off. */
+    private void setVanilla(boolean on) {
+        if (on) player.stopForVanilla();
+        cfg.vanilla = on;
+        cfg.save();
+        // Back on: the game's own song stops so Cue My Music picks the next one.
+        if (!on) minecraft.getMusicManager().stopPlaying();
     }
 
     // ---------------------------------------------------------------- library
@@ -2052,6 +2084,8 @@ public final class CueScreen extends Screen {
 
         g.text(font, tr("cuemymusic.settings.playback"), left, y, WHITE, false);
         y += 14;
+        y = toggleRow(g, left, y, right, tr("cuemymusic.option.vanilla"), tr("cuemymusic.option.vanilla.desc"), cfg.vanilla,
+                () -> setVanilla(!cfg.vanilla));
         y = toggleRow(g, left, y, right, tr("cuemymusic.option.enabled"), tr("cuemymusic.option.enabled.desc"), cfg.enabled,
                 () -> cfg.enabled = !cfg.enabled);
         double applying = applying();
@@ -2846,6 +2880,7 @@ public final class CueScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if (cfg.vanilla) return super.keyPressed(event);
         if (renameBox != null) {
             if (event.key() == InputConstants.KEY_RETURN || event.key() == InputConstants.KEY_NUMPADENTER) {
                 finishRename(true);

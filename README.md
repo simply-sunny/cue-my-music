@@ -136,6 +136,7 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 
 | Setting | Default | Notes |
 | --- | --- | --- |
+| Vanilla music | Off | On: Cue My Music and any add-ons step aside. The game plays its own music as if they weren't installed, keys and `/cmm` do nothing, and the player screen shows only a button to turn them back on. |
 | Effects | On | Turns pitch, speed, and EQ off together. |
 | Pitch | 0 | −12 to +12 semitones. 12 is one octave. |
 | Speed | ×1.00 | 0.5 to 2.0, in steps of 0.05. |
