@@ -102,6 +102,11 @@ public final class CueConfig {
         replacePlaylist(id, p -> new Playlist(p.id(), p.name(), p.songs().stream().filter(s -> !s.equals(song)).toList()));
     }
 
+    /** Moves {@code moving} to just before {@code before}, or to the end if that's null, keeping their order. */
+    public void movePlaylistSongs(String id, java.util.Collection<String> moving, String before) {
+        replacePlaylist(id, p -> new Playlist(p.id(), p.name(), List.copyOf(PlayOrder.moved(p.songs(), moving, before))));
+    }
+
     private void replacePlaylist(String id, java.util.function.UnaryOperator<Playlist> change) {
         playlists = playlists.stream().map(p -> p.id().equals(id) ? change.apply(p) : p).toList();
         save();
