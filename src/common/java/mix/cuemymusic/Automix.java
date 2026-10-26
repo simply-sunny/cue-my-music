@@ -20,6 +20,7 @@ public final class Automix {
     /** The automatic length: 16 beats, from 4 to 12 seconds, or 8 seconds when the tempo isn't known. */
     static final double AUTO_SECONDS = 8;
     static final double AUTO_BEATS = 16;
+    static final double DROP_BEATS = 64;
     /** A cut's automatic length; it switches in the middle. */
     static final double CUT_SECONDS = 1;
     /** Waveform points per second, in each of {@link Profile}'s band envelopes. */
@@ -31,7 +32,7 @@ public final class Automix {
     }
 
     /** Named transitions, as in the editor's preset row. CUSTOM is one whose parts were set by hand. */
-    public enum Preset { AUTO, FADE, RISE, BLEND, ECHO, CUT, CUSTOM }
+    public enum Preset { AUTO, FADE, RISE, BLEND, DROP, ECHO, CUT, CUSTOM }
 
     /** How the two songs' volumes cross. */
     public enum Volume {
@@ -42,11 +43,13 @@ public final class Automix {
         /** The next song comes up over the first half, this one goes down over the second. */
         OVERLAP,
         /** A switch in the middle. */
-        CUT
+        CUT,
+        /** The next song drops in at full volume at once; this one holds for the first half, then fades out in a straight line. */
+        DROP
     }
 
     /** Where the bass moves from one song to the other, if it does. */
-    public enum Eq { NONE, EARLY_BASS_SWAP, CENTER_BASS_SWAP, LATE_BASS_SWAP }
+    public enum Eq { NONE, START_BASS_SWAP, EARLY_BASS_SWAP, CENTER_BASS_SWAP, LATE_BASS_SWAP }
 
     /** Filter sweeps: the next song rising in from its highs, this one's highs closing down, or both. */
     public enum Filter { NONE, RISE, FALL, SWEEP }
@@ -77,6 +80,7 @@ public final class Automix {
         return switch (p) {
             case RISE -> new Shape(Volume.SMOOTH, Eq.NONE, Filter.SWEEP, Effect.NONE);
             case BLEND -> new Shape(Volume.OVERLAP, Eq.CENTER_BASS_SWAP, Filter.NONE, Effect.NONE);
+            case DROP -> new Shape(Volume.DROP, Eq.START_BASS_SWAP, Filter.NONE, Effect.NONE);
             case ECHO -> new Shape(Volume.SMOOTH, Eq.NONE, Filter.NONE, Effect.ECHO_OUT);
             case CUT -> new Shape(Volume.CUT, Eq.NONE, Filter.NONE, Effect.NONE);
             default -> new Shape(Volume.SMOOTH, Eq.NONE, Filter.NONE, Effect.NONE);
@@ -166,11 +170,20 @@ public final class Automix {
         return a.bpm() > 0 ? Math.clamp(AUTO_BEATS * 60 / a.bpm(), 4, 12) : AUTO_SECONDS;
     }
 
+    /** A drop's automatic length: 16 bars (64 beats) of the first song, 15 to 40 seconds, or 30 with no tempo. */
+    public static double dropSeconds(Profile a) {
+        return a.bpm() > 0 ? Math.clamp(DROP_BEATS * 60 / a.bpm(), 15, 40) : 30;
+    }
+
     /** Works out {@code t} for songs {@code a} into {@code b}. Never longer than a quarter of the shorter song's sound. */
     public static Plan plan(Profile a, Profile b, Transition t) {
         Preset preset = t.preset() == Preset.AUTO ? autoPreset(a, b) : t.preset();
         Shape shape = preset == Preset.CUSTOM && t.shape() != null ? t.shape() : shape(preset);
-        double auto = shape.volume() == Volume.CUT ? CUT_SECONDS : autoSeconds(a);
+        double auto = switch (shape.volume()) {
+            case CUT -> CUT_SECONDS;
+            case DROP -> dropSeconds(a);
+            default -> autoSeconds(a);
+        };
         double seconds = t.seconds() >= 0 ? t.seconds() : auto;
         long most = Math.min(a.end() - a.start(), b.end() - b.start()) / 4;
         long fadeFrames = Math.clamp(a.frame(seconds), 1, Math.max(1, most));
@@ -201,6 +214,7 @@ public final class Automix {
             case LINEAR -> 1 - Math.clamp(t, 0, 1);
             case OVERLAP -> fadeOut(span(t, 0.5, 1));
             case CUT -> fadeOut(span(t, 0.49, 0.51));
+            case DROP -> 1 - span(t, 0.5, 1);
             default -> fadeOut(t);
         };
         // An echo-out cuts the song itself early; the echo carries on.
@@ -213,6 +227,8 @@ public final class Automix {
             case LINEAR -> Math.clamp(t, 0, 1);
             case OVERLAP -> fadeIn(span(t, 0, 0.5));
             case CUT -> fadeIn(span(t, 0.49, 0.51));
+            // In over the first few hundredths of a second, so it doesn't click.
+            case DROP -> span(t, 0, 0.002);
             default -> fadeIn(t);
         };
     }
@@ -228,13 +244,14 @@ public final class Automix {
     /** How much of the outgoing song's bass is left, before its volume. */
     public static double bassOut(Shape s, double t) {
         if (s.eq() == Eq.NONE) return 1;
+        if (s.eq() == Eq.START_BASS_SWAP) return 1 - span(t, 0, 0.002);
         double p = swapPoint(s.eq());
         return 1 - span(t, p - 0.025, p + 0.025);
     }
 
     /** How much of the incoming song's bass is in, before its volume. */
     public static double bassIn(Shape s, double t) {
-        if (s.eq() == Eq.NONE) return 1;
+        if (s.eq() == Eq.NONE || s.eq() == Eq.START_BASS_SWAP) return 1;
         double p = swapPoint(s.eq());
         return span(t, p - 0.025, p + 0.025);
     }
@@ -651,12 +668,23 @@ public final class Automix {
                         line[delayPos] = (float) (ya * gainA * (1 - span(t, 0.15, 0.25)) + wet * 0.55);
                         mixed += wet * 0.6 * fadeOut(span(t, 0.7, 1));
                     }
-                    out[i] = (float) mixed;
+                    out[i] = limit(mixed);
                 }
                 if (delay != null) delayPos = (delayPos + 1) % delay[0].length;
             }
             frame += frames;
         }
+    }
+
+    /** Above this, a transition's mix is squeezed so two songs at full volume together don't clip. */
+    static final double LIMIT_KNEE = 0.8;
+
+    /** Leaves quieter samples alone and bends louder ones smoothly towards, never past, full scale. */
+    static float limit(double x) {
+        double m = Math.abs(x);
+        if (m <= LIMIT_KNEE) return (float) x;
+        double room = 1 - LIMIT_KNEE;
+        return (float) Math.copySign(LIMIT_KNEE + room * Math.tanh((m - LIMIT_KNEE) / room), x);
     }
 
     /** A state-variable filter (Simper's form) with low-pass and high-pass outputs that stays stable while it's swept. */

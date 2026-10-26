@@ -97,6 +97,23 @@ public final class AutomixTest {
                 }
             }
         });
+        run("a drop: the next song in at full at once, this one's bass gone, holding half way, then a straight fade; 16 bars", () -> {
+            Automix.Shape d = Automix.shape(Automix.Preset.DROP);
+            close(Automix.volumeIn(d, 0.01), 1);
+            close(Automix.bassIn(d, 0.01), 1);
+            close(Automix.bassOut(d, 0.01), 0);
+            close(Automix.volumeOut(d, 0.4), 1);
+            close(Automix.volumeOut(d, 0.75), 0.5);
+            Automix.Profile a = song(100, 1_000_000, 128);
+            same(Automix.plan(a, a, Automix.Transition.AUTO.withPreset(Automix.Preset.DROP)).fadeFrames(), 3000L);
+        });
+        run("two loud songs together are squeezed under full scale, quiet ones untouched", () -> {
+            close(Automix.limit(0.5), 0.5);
+            close(Automix.limit(-0.8), -0.8);
+            same(Automix.limit(1.6) <= 1, true);
+            same(Automix.limit(-3) >= -1, true);
+            same(Automix.limit(1.2) > Automix.limit(1.0), true);
+        });
         run("a bass swap hands the bass over at its point, and only there", () -> {
             Automix.Shape s = Automix.shape(Automix.Preset.FADE).withEq(Automix.Eq.EARLY_BASS_SWAP);
             close(Automix.bassOut(s, 0.2), 1);
