@@ -848,11 +848,11 @@ public final class CueScreen extends Screen {
     }
 
     /**
-     * The page's search, ending at {@code right}: a magnifier, or once clicked,
+     * The page's search, between {@code left} and {@code right}: a magnifier, or once clicked,
      * a box that filters the songs shown as you type. It closes when it's empty
      * and you click elsewhere or press Esc.
      */
-    private void drawPageFilter(GuiGraphicsExtractor g, int right, int y, int mx, int my) {
+    private void drawPageFilter(GuiGraphicsExtractor g, int left, int right, int y, int mx, int my) {
         if (!pageFilterOpen) {
             int ix = right - 10;
             boolean hover = mx >= ix - 3 && mx < right + 3 && my >= y && my < y + 18;
@@ -863,7 +863,12 @@ public final class CueScreen extends Screen {
             }));
             return;
         }
-        int w = Math.min(140, Math.max(60, right - centerX0 - 200));
+        // As wide as fits between the toolbar's other buttons, up to 140.
+        int w = Math.min(140, right - left);
+        if (w < 40) {
+            pageFilterOpen = false;
+            return;
+        }
         Canvas c = new Canvas(g, right - w - Canvas.PAD, y, right + Canvas.PAD, mx, my);
         c.textField(PAGE_FILTER, Component.translatable("cuemymusic.page.filter"), w, text -> unfocusField());
         EditBox box = fields.get(PAGE_FILTER);
@@ -945,8 +950,8 @@ public final class CueScreen extends Screen {
                 }
             }));
         }
-        drawPageFilter(g, toolRight, y + 6, mx, my);
         // Add the whole list to the queue, in the order shown.
+        int toolLeft = x0 + 10 + pb;
         if (!tracks.isEmpty()) {
             int qx = x0 + 10 + pb + 10, qy = y + 6;
             String label = tr("cuemymusic.queue.add_all");
@@ -959,11 +964,13 @@ public final class CueScreen extends Screen {
                 showToast(tr("cuemymusic.queue.added_all", tracks.size()));
             }));
             // Edit the transitions, once two of the page's songs can blend.
+            toolLeft = qx + qw;
             if (tracks.stream().filter(AutomixProfiles::applies).limit(2).count() == 2) {
                 String title = headerTitle;
-                chip(g, qx + qw + 14, qy + 3, tr("cuemymusic.mix.open"), false, mx, my, () -> openMix(listKey, tracks, title));
+                toolLeft += 14 + chip(g, qx + qw + 14, qy + 3, tr("cuemymusic.mix.open"), false, mx, my, () -> openMix(listKey, tracks, title));
             }
         }
+        drawPageFilter(g, toolLeft + 12, toolRight, y + 6, mx, my);
         y += pb + 12;
 
         // Column headings; title, album and time sort.
