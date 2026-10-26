@@ -44,6 +44,7 @@ All keys are rebindable under **Options → Controls → Key Binds → Cue My Mu
 
 - Open the player from the music button on the title screen or pause menu, from **Mod Menu → Cue My Music**, or with **Open player**. The same key closes it.
 - The library on the left has **All game music**, **Liked Songs**, **Disliked Songs** once you have any, and pages added by add-ons. Below them are three sections: **Artists**, **Packs** (one page per resource pack that adds music), and **Your playlists**. Click a section's heading to fold it away; it shows its count while folded. Scroll the library when it's longer than the window. **Settings** stays at the bottom.
+- **Search**: click the magnifying glass next to **Library**, or press Cmd+F (Ctrl+F on Windows and Linux) anywhere in the player. Type part of a song's title, artist or album, in any order and without accents. Matching artists show as chips that open their page; matching songs list below, titles that start with what you typed first. Enter plays the results from the top.
 - Click a song to play it. The rest of the page plays after it, in the order shown. The big green button plays the page from the top, or pauses it while it's playing.
 - Hover a song and click the heart to like it, or **+** to add it to the queue. **Add all to queue** adds the whole page.
 - Right-click a song to queue it, like or dislike it, or add it to a playlist.
@@ -125,6 +126,8 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 | Pause during travel | Off | On: your song pauses while a new dimension loads, then resumes from the same spot. Off: it keeps playing, with a brief gap. |
 | Use equalizer | Off | Moving a band or picking a preset turns it on. |
 | EQ bands | 0 dB | 60, 150, 400, 1k, 2.4k, and 15k Hz, ±12 dB each. |
+| Automix add-on songs | On | Shown with an add-on page. Songs on add-on pages play at the same loudness, without silence at their ends, and blend into the next song over up to 8 seconds when one follows another in a page or the queue. Songs need the same sample rate to blend; otherwise they play one after the other. |
+| Keep add-on songs out of recordings | On | Shown with an add-on page. Songs on add-on pages play from a small separate Java process, and the game plays silence in their place. Recorders that take only the game's own audio, such as rec-util or OBS's application audio capture, leave them out; recorders of all system audio still pick them up. Applies from the next song. Game music and music discs are unaffected. |
 
 Presets: Flat, Bass Booster, Bass Reducer, Treble Booster, Treble Reducer, Vocal Booster, and Small Speakers.
 
@@ -171,6 +174,7 @@ An add-on can give itself a page in the player's library. Implement `mix.cuemymu
 | Seek is slow on a long song | Seeking decodes up to that point. Far into a 6-minute song can take a moment. |
 | A pack's songs are missing | The pack points at files that don't exist in this version. Vanilla can't play them either. |
 | Music sounds hollow with AirPods or other spatial audio | Fixed: stereo songs go straight to the speakers. If music still sounds off, turn off **Directional Audio** in **Options → Music & Sounds**. |
+| Add-on songs are silent, or come out of a different device | With **Keep add-on songs out of recordings** on they play through the system's default output, not the game's. See `logs/cuemymusic-outside.log`, or turn the setting off. |
 | Jukebox isn't affected | Expected. Only background music is. |
 | Broken config | Delete `config/cuemymusic.json` and relaunch. |
 

@@ -72,6 +72,10 @@
 	"cuemymusic.command.several": "\"%s\" matches more than one song: %s",
 	"cuemymusic.option.travel": "Pause during travel",
 	"cuemymusic.option.travel.desc": "Waits for a new dimension to load.",
+	"cuemymusic.option.automix": "Automix add-on songs",
+	"cuemymusic.option.automix.desc": "Blends each into the next, at the same loudness.",
+	"cuemymusic.option.outside": "Keep add-on songs out of recordings",
+	"cuemymusic.option.outside.desc": "Plays them outside the game. From the next song.",
 	"cuemymusic.option.pitch": "Pitch",
 	"cuemymusic.option.pitch.value": "%s semitones",
 	"cuemymusic.option.speed": "Speed",
@@ -152,5 +156,12 @@
 	"cuemymusic.stats.skipped.hint": "Dislike it and the game won't pick it again.",
 	"cuemymusic.stats.reset": "Reset stats",
 	"cuemymusic.stats.reset.confirm": "Click again to reset",
-	"cuemymusic.stats.reset.done": "Stats reset"
+	"cuemymusic.stats.reset.done": "Stats reset",
+	"cuemymusic.search.title": "Search",
+	"cuemymusic.search.hint": "Songs, artists or albums",
+	"cuemymusic.search.empty": "Type a song, artist or album. Enter plays what's found. Cmd/Ctrl+F comes back here from anywhere in the player.",
+	"cuemymusic.search.none": "Nothing matches \"%s\".",
+	"cuemymusic.search.browse": "All artists",
+	"cuemymusic.search.artists": "Artists",
+	"cuemymusic.search.songs": "Songs (%s)"
 }

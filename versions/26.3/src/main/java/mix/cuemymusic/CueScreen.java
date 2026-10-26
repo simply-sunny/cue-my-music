@@ -85,7 +85,7 @@ public final class CueScreen extends Screen {
     }
 
     /** PLAYLIST is all game music; LIST is one of the player's own playlists; PANEL is an add-on's page. */
-    private enum View { PLAYLIST, LIKED, DISLIKED, LIST, ARTIST, PACK, STATS, SETTINGS, PANEL }
+    private enum View { PLAYLIST, LIKED, DISLIKED, LIST, ARTIST, PACK, STATS, SEARCH, SETTINGS, PANEL }
 
     /** A track row that opens the song menu when right-clicked. */
     private record RowHit(int x0, int y0, int x1, int y1, Track track, int index) {
@@ -160,6 +160,10 @@ public final class CueScreen extends Screen {
     private long deleteArmedUntil;
     /** When Reset stats was first clicked; a second click soon after resets. */
     private long resetArmedAt;
+    /** What's typed in the search box, kept while other pages are open. */
+    private String searchQuery = "";
+    /** Puts the cursor in the search box the next time it's drawn. */
+    private boolean focusSearch;
     // An add-on page's text fields, by key, and the one being typed in.
     private final Map<String, EditBox> fields = new LinkedHashMap<>();
     private final Map<String, Consumer<String>> fieldSubmits = new HashMap<>();
@@ -263,6 +267,11 @@ public final class CueScreen extends Screen {
     private void drawLibrary(GuiGraphicsExtractor g, int x0, int y0, int x1, int y1, int mx, int my) {
         g.fill(x0, y0, x1, y1, PANEL);
         g.text(font, tr("cuemymusic.library"), x0 + 6, y0 + 7, WHITE, false);
+        // Search, at the right of the heading.
+        int sx = x1 - 15, sy = y0 + 5;
+        boolean searchHover = mx >= sx - 3 && mx < sx + 12 && my >= sy - 3 && my < sy + 12;
+        searchIcon(g, sx, sy, view == View.SEARCH ? GREEN : searchHover ? WHITE : DIM);
+        nextHits.add(new Hit(sx - 3, sy - 3, sx + 12, sy + 12, this::openSearch));
 
         List<Track> all = MusicLibrary.gameMusic();
         List<String> artists = new ArrayList<>(Catalog.ARTISTS.stream().filter(a -> !MusicLibrary.byArtist(a).isEmpty()).toList());
@@ -529,6 +538,7 @@ public final class CueScreen extends Screen {
         int contentBottom = switch (view) {
             case SETTINGS -> drawSettings(g, x0, contentTop, x1, mx, my);
             case STATS -> drawStats(g, x0, contentTop, x1, mx, my);
+            case SEARCH -> drawSearch(g, x0, contentTop, x1, mx, my);
             case PANEL -> {
                 Canvas canvas = new Canvas(g, x0, contentTop, x1, mx, my);
                 try {
@@ -791,6 +801,132 @@ public final class CueScreen extends Screen {
         if (by == null) return tracks;
         // Stable sort, so tracks with the same album keep their listed order.
         return tracks.stream().sorted(ascending ? by : by.reversed()).toList();
+    }
+
+    // ----------------------------------------------------------------- search
+
+    private static final String SEARCH_FIELD = "search";
+
+    private void openSearch() {
+        open(View.SEARCH, null);
+        focusSearch = true;
+    }
+
+    /** A search box, the artists whose names match, and every song whose title, artist or album does. */
+    private int drawSearch(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my) {
+        Canvas c = new Canvas(g, x0, y, x1, mx, my);
+        bigText(g, tr("cuemymusic.search.title"), c.left(), y + 10, 2, WHITE);
+        c.y += 36;
+        boolean fresh = !fields.containsKey(SEARCH_FIELD);
+        // Enter plays the results from the top.
+        String typed = c.textField(SEARCH_FIELD, Component.translatable("cuemymusic.search.hint"), c.right() - c.left(), text -> {
+            List<Track> songs = searchSongs(text);
+            if (!songs.isEmpty()) player.play("search:" + text, songs, 0);
+        });
+        if (fresh && !searchQuery.isEmpty()) c.setText(SEARCH_FIELD, searchQuery);
+        else searchQuery = typed;
+        List<Track> found = searchSongs(searchQuery);
+        if (focusSearch) {
+            focusSearch = false;
+            EditBox box = fields.get(SEARCH_FIELD);
+            unfocusField();
+            focusedField = box;
+            box.setFocused(true);
+            setFocused(box);
+        }
+        c.space(c.buttonHeight() + 12);
+
+        List<String> terms = terms(searchQuery);
+        List<String> artists = MusicLibrary.all().stream().map(Track::artist).distinct()
+                .filter(a -> terms.isEmpty() || matches(normalize(a), terms)).sorted(String.CASE_INSENSITIVE_ORDER).limit(24).toList();
+        if (terms.isEmpty()) {
+            c.text(Component.translatable("cuemymusic.search.empty"), DIM);
+            c.space(6);
+        } else if (artists.isEmpty() && found.isEmpty()) {
+            c.text(Component.translatable("cuemymusic.search.none", searchQuery.strip()), DIM);
+            return c.y;
+        }
+        if (!artists.isEmpty()) {
+            c.heading(tr(terms.isEmpty() ? "cuemymusic.search.browse" : "cuemymusic.search.artists"));
+            c.y = artistChips(g, c.left(), c.y, c.right(), mx, my, artists) + 10;
+        }
+        if (!found.isEmpty()) {
+            c.heading(tr("cuemymusic.search.songs", found.size()));
+            c.y -= 6;
+            c.tracks("search:" + searchQuery, found);
+        }
+        return c.y;
+    }
+
+    /** Artists as clickable chips, wrapping onto new lines. Returns the y below them. */
+    private int artistChips(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my, List<String> artists) {
+        int cx = x0, h = 20;
+        for (String artist : artists) {
+            String name = clip(artist, x1 - x0 - 34);
+            int w = 30 + font.width(name);
+            if (cx > x0 && cx + w > x1) {
+                cx = x0;
+                y += h + 4;
+            }
+            boolean hover = mx >= cx && mx < cx + w && my >= y && my < y + h && my >= centerY0 && my < centerY1;
+            g.fill(cx, y, cx + w, y + h, hover ? 0xFF333333 : 0xFF242424);
+            art(g, artistArt(artist), cx + 2, y + 2, 16);
+            g.text(font, name, cx + 22, y + 6, hover ? WHITE : DIM, false);
+            int top = Math.max(y, centerY0), bottom = Math.min(y + h, centerY1);
+            if (bottom > top) nextHits.add(new Hit(cx, top, cx + w, bottom, () -> open(View.ARTIST, artist)));
+            cx += w + 4;
+        }
+        return y + h;
+    }
+
+    /**
+     * Songs matching every word of {@code query} in their title, artist or album. Titles that
+     * start with the query come first, then titles that contain it, then the rest.
+     */
+    private static List<Track> searchSongs(String query) {
+        List<String> terms = terms(query);
+        if (terms.isEmpty()) return List.of();
+        String whole = String.join(" ", terms);
+        List<Track> found = new ArrayList<>();
+        for (Track t : MusicLibrary.all()) {
+            if (matches(normalize(t.title() + " " + t.artist() + " " + t.album()), terms)) found.add(t);
+        }
+        found.sort(Comparator.comparingInt((Track t) -> {
+            String title = normalize(t.title());
+            return title.startsWith(whole) ? 0 : title.contains(whole) ? 1 : normalize(t.artist()).contains(whole) ? 2 : 3;
+        }).thenComparing(Track::title, String.CASE_INSENSITIVE_ORDER));
+        return found;
+    }
+
+    private static List<String> terms(String query) {
+        String q = normalize(query).strip();
+        return q.isEmpty() ? List.of() : List.of(q.split("\\s+"));
+    }
+
+    private static boolean matches(String text, List<String> terms) {
+        for (String term : terms) {
+            if (!text.contains(term)) return false;
+        }
+        return true;
+    }
+
+    /** Lower case, without accents, so "beyonce" finds "Beyoncé". */
+    private static String normalize(String s) {
+        return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT);
+    }
+
+    private static Art artistArt(String artist) {
+        return Catalog.ARTIST_ART.containsKey(artist) ? Art.block(Catalog.ARTIST_ART.get(artist).texture()) : Art.initials(artist);
+    }
+
+    /** A 9×9 magnifying glass. */
+    private static void searchIcon(GuiGraphicsExtractor g, int x, int y, int color) {
+        String[] rows = {".XXXX....", "X....X...", "X....X...", "X....X...", "X....X...", ".XXXX....", ".....XX..", "......XX.", ".......XX"};
+        for (int r = 0; r < rows.length; r++) {
+            for (int c = 0; c < 9; c++) {
+                if (rows[r].charAt(c) == 'X') g.fill(x + c, y + r, x + c + 1, y + r + 1, color);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ stats
@@ -1086,7 +1222,7 @@ public final class CueScreen extends Screen {
         for (int i = 0; i < top.size(); i++) {
             String artist = top.get(i).getKey();
             double sec = top.get(i).getValue();
-            Art art = Catalog.ARTIST_ART.containsKey(artist) ? Art.block(Catalog.ARTIST_ART.get(artist).texture()) : Art.initials(artist);
+            Art art = artistArt(artist);
             int ry = y + i * 20;
             art(g, art, x0, ry + 1, 16);
             int tx = x0 + 20;
@@ -1201,6 +1337,13 @@ public final class CueScreen extends Screen {
                 live && heard.tempo() != target.tempo() ? applying : -1);
         y = toggleRow(g, left, y, right, tr("cuemymusic.option.travel"), tr("cuemymusic.option.travel.desc"), cfg.pauseOnTravel,
                 () -> cfg.pauseOnTravel = !cfg.pauseOnTravel);
+        if (!CuePanels.all().isEmpty()) {
+            // Only songs on add-on pages are affected, so these only show with an add-on.
+            y = toggleRow(g, left, y, right, tr("cuemymusic.option.automix"), tr("cuemymusic.option.automix.desc"), cfg.automix,
+                    () -> cfg.automix = !cfg.automix);
+            y = toggleRow(g, left, y, right, tr("cuemymusic.option.outside"), tr("cuemymusic.option.outside.desc"),
+                    cfg.keepOutOfRecordings, () -> cfg.keepOutOfRecordings = !cfg.keepOutOfRecordings);
+        }
         y += 10;
 
         g.text(font, tr("cuemymusic.settings.equalizer"), left, y, WHITE, false);
@@ -1948,6 +2091,11 @@ public final class CueScreen extends Screen {
         }
         if (menu != null && event.key() == InputConstants.KEY_ESCAPE) {
             menu = null;
+            return true;
+        }
+        if (event.key() == InputConstants.KEY_F && event.hasControlDownWithQuirk()) {
+            if (view == View.SEARCH) focusSearch = true;
+            else openSearch();
             return true;
         }
         if (selectionKey(event)) return true;

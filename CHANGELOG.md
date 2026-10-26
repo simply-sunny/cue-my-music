@@ -2,6 +2,14 @@
 
 All notable changes to Cue My Music are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Search: the magnifying glass next to Library, or Cmd/Ctrl+F. Finds songs by title, artist or album, and artists by name.
+- Automix for songs on add-on pages: matched loudness, silence trimmed, and an 8-second crossfade into the next song.
+- Keep add-on songs out of recordings: they play from a separate process, so recorders of the game's own audio leave them out.
+
 ## 1.2.0 — 2026-10-26
 
 ### Added

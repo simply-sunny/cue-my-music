@@ -237,7 +237,8 @@ public final class MusicLibrary {
         return t;
     }
 
-    private static Identifier file(Identifier track) {
+    /** The ogg file a track plays, as a resource. */
+    public static Identifier file(Identifier track) {
         return track.withPath(p -> "sounds/" + p + ".ogg");
     }
 

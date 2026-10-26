@@ -45,6 +45,10 @@ public final class CueConfig {
     public volatile List<String> disliked = List.of();
     /** Library sections folded shut: "artists", "packs", "playlists". */
     public volatile List<String> collapsed = List.of();
+    /** Blend songs on add-on pages into each other, at matched loudness. */
+    public volatile boolean automix = true;
+    /** Play songs on add-on pages from a separate process, so recordings of the game's audio leave them out. */
+    public volatile boolean keepOutOfRecordings = true;
 
     private CueConfig() {
     }
@@ -226,6 +230,8 @@ public final class CueConfig {
         eqPreset = o.eqPreset;
         liked = o.liked;
         pauseOnTravel = o.pauseOnTravel;
+        automix = o.automix;
+        keepOutOfRecordings = o.keepOutOfRecordings;
         repeat = o.repeat;
         playlists = o.playlists;
         disliked = o.disliked;

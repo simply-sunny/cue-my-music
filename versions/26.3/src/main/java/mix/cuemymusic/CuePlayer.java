@@ -14,6 +14,7 @@ import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.client.sounds.WeighedSoundEvents;
 import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.Music;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 
 import mix.cuemymusic.library.MusicLibrary;
@@ -64,6 +65,14 @@ public final class CuePlayer {
     /** True while the current track is paused for a dimension change, to resume once the new level has loaded. */
     private boolean travelHold;
     private long lastNanos;
+    /** The song an automixed song blends into, or null; read by the stream. */
+    private volatile Track automixNext;
+
+    /** A stream blended into {@code track}, which counts as playing from {@code atNanos}. */
+    private record Handover(long stream, Track track, double seconds, long atNanos) {
+    }
+
+    private volatile Handover handover;
 
     // The game's next song, planned ahead.
     private final RandomSource random = RandomSource.create();
@@ -147,6 +156,7 @@ public final class CuePlayer {
         long now = System.nanoTime();
         boolean finished;
         double heardSeconds = 0;
+        handOver(now);
         synchronized (this) {
             if (playing && !paused) {
                 heardSeconds = Math.min(1, (now - lastNanos) / 1e9);
@@ -170,6 +180,8 @@ public final class CuePlayer {
             StatsFile.saveNowAndThen();
         }
         plan();
+        planAutomix();
+        OutsideAudio.volume(Minecraft.getInstance().options.getFinalSoundSourceVolume(SoundSource.MUSIC));
         if (finished) {
             if (current != null) ListeningStats.INSTANCE.finished(current.location().toString());
             ours = null;
@@ -189,6 +201,51 @@ public final class CuePlayer {
         if (o != null && !playing && !paused && now - oursStarted > START_TIMEOUT_NANOS
                 && !Minecraft.getInstance().getSoundManager().isActive(o)) {
             ours = null;
+        }
+    }
+
+    // Automix.
+
+    /** The song the playing one blends into, if both are automixed. Read by the stream. */
+    Track automixNext() {
+        return automixNext;
+    }
+
+    /** Called from the stream: it's blending into {@code track}, which is heard as the song playing from {@code atNanos}. */
+    void automixed(long stream, Track track, double seconds, long atNanos) {
+        handover = new Handover(stream, track, seconds, atNanos);
+    }
+
+    /** What plays after the current song, worked out ahead so the stream can start blending into it. */
+    private void planAutomix() {
+        Track c = current, n = null;
+        if (c != null && ours != null && AutomixProfiles.applies(c) && CueConfig.INSTANCE.repeatMode() != PlayOrder.Repeat.ONE) {
+            order.setRepeat(CueConfig.INSTANCE.repeatMode());
+            List<Track> queued = order.queue();
+            n = queued.isEmpty() ? order.listNext() : queued.getFirst();
+            if (!AutomixProfiles.applies(n)) n = null;
+            // Ready before the fade is due.
+            AutomixProfiles.get(c);
+            if (n != null) AutomixProfiles.get(n);
+        }
+        automixNext = n;
+    }
+
+    /** The blended-in song is heard now: it becomes the current song, as if the last one had ended. */
+    private void handOver(long now) {
+        Handover h = handover;
+        if (h == null || now < h.atNanos()) return;
+        handover = null;
+        if (h.stream() != activeStream) return;
+        Track ended = current;
+        if (ended != null) ListeningStats.INSTANCE.finished(ended.location().toString());
+        ListeningStats.INSTANCE.started(h.track().location().toString());
+        order.setRepeat(CueConfig.INSTANCE.repeatMode());
+        order.finished(ended);
+        synchronized (this) {
+            current = h.track();
+            position = h.seconds() + (now - h.atNanos()) / 1e9;
+            lastNanos = now;
         }
     }
 
@@ -488,6 +545,7 @@ public final class CuePlayer {
             lastNanos = System.nanoTime();
         }
         ours = o;
+        handover = null;
         travelHold = false;
         this.event = event;
         this.picked = picked;
@@ -511,6 +569,7 @@ public final class CuePlayer {
         Minecraft mc = Minecraft.getInstance();
         TrackSoundInstance o = ours;
         ours = null;
+        handover = null;
         MusicManagerAccessor music = (MusicManagerAccessor) mc.getMusicManager();
         SoundInstance current = music.cuemymusic$currentMusic();
         if (current != null) mc.getSoundManager().stop(current);
