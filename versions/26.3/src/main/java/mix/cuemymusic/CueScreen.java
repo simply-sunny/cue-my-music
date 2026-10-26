@@ -995,25 +995,30 @@ public final class CueScreen extends Screen {
             int qx = x0 + 10 + pb + 10, qy = y + 6;
             String label = tr("cuemymusic.queue.add_all");
             int qw = 13 + font.width(label);
-            boolean qHover = mx >= qx - 2 && mx < qx + qw + 2 && my >= qy && my < qy + pb;
-            plusIcon(g, qx, qy + 5, qHover ? WHITE : DIM);
-            g.text(font, label, qx + 13, qy + 6, qHover ? WHITE : DIM, false);
-            nextHits.add(new Hit(qx - 2, qy, qx + qw + 2, qy + pb, () -> {
-                player.enqueueAll(tracks);
-                showToast(tr("cuemymusic.queue.added_all", tracks.size()));
-            }));
             // Mix: shows the transitions in place of the list, once two songs next to each other can blend.
-            toolLeft = qx + qw;
             boolean canMix = false;
             for (int i = 0; i + 1 < tracks.size() && !canMix; i++) canMix = blends(tracks, i);
             if (!canMix) mixMode = false;
-            if (canMix) {
-                toolLeft += 14 + chip(g, qx + qw + 14, qy + 3, tr("cuemymusic.mix.open"), mixMode, mx, my, () -> {
-                    mixMode = !mixMode;
-                    mixFrom = mixTo = null;
-                    clearSelection();
-                    scroll = 0;
-                });
+            String mixLabel = tr("cuemymusic.mix.open");
+            int chipsRight = qx + qw + (canMix ? 14 + font.width(mixLabel) + 12 : 0);
+            // Without room for an open search box, it takes these buttons' place until it closes.
+            if (!pageFilterOpen || toolRight - chipsRight - 12 >= 100) {
+                boolean qHover = mx >= qx - 2 && mx < qx + qw + 2 && my >= qy && my < qy + pb;
+                plusIcon(g, qx, qy + 5, qHover ? WHITE : DIM);
+                g.text(font, label, qx + 13, qy + 6, qHover ? WHITE : DIM, false);
+                nextHits.add(new Hit(qx - 2, qy, qx + qw + 2, qy + pb, () -> {
+                    player.enqueueAll(tracks);
+                    showToast(tr("cuemymusic.queue.added_all", tracks.size()));
+                }));
+                toolLeft = qx + qw;
+                if (canMix) {
+                    toolLeft += 14 + chip(g, qx + qw + 14, qy + 3, mixLabel, mixMode, mx, my, () -> {
+                        mixMode = !mixMode;
+                        mixFrom = mixTo = null;
+                        clearSelection();
+                        scroll = 0;
+                    });
+                }
             }
         } else {
             mixMode = false;
