@@ -27,6 +27,27 @@ public final class AutomixTest {
             same(p.end(), 4L);
             same(p.frames(), 5L);
         });
+        run("a profile reads back as it was written; another format reads as none", () -> {
+            Automix.Profile p = new Automix.Profile(48000, 2, 1_000_000, 1200, 990_000, .2, .9, 127.6, "4A",
+                    new float[] {.1f, .5f}, new float[] {.2f}, new float[0]);
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            try {
+                p.write(new java.io.DataOutputStream(bytes));
+                byte[] data = bytes.toByteArray();
+                Automix.Profile q = Automix.Profile.read(new java.io.DataInputStream(new java.io.ByteArrayInputStream(data)));
+                same(q.rate(), p.rate());
+                same(q.frames(), p.frames());
+                same(q.end(), p.end());
+                same(q.bpm(), p.bpm());
+                same(q.key(), p.key());
+                same(java.util.Arrays.toString(q.low()), java.util.Arrays.toString(p.low()));
+                same(q.high().length, 0);
+                data[3]++;
+                same(Automix.Profile.read(new java.io.DataInputStream(new java.io.ByteArrayInputStream(data))), null);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        });
         run("all silence counts as no sound", () -> {
             Automix.Analyzer a = new Automix.Analyzer(10, 1);
             a.accept(new float[] {0, 0.001f, 0}, 3);

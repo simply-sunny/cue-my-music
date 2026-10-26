@@ -1,14 +1,28 @@
 package mix.cuemymusic;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import java.util.zip.CRC32;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import net.fabricmc.loader.api.FabricLoader;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.sounds.FloatSampleSource;
@@ -20,7 +34,12 @@ import mix.cuemymusic.library.Track;
 
 /**
  * Each automixed song's {@link Automix.Profile}, worked out once by decoding
- * the whole file on a background thread. Cleared when resource packs reload.
+ * the whole file on a background thread, and saved under
+ * {@code config/cuemymusic-analysis} so it's read back next time instead of
+ * worked out again. A saved profile holds the file's size and checksum, and
+ * is redone if the file changed. Once the game has loaded, every add-on song
+ * is looked at in the background, so tempos and keys are there when a page
+ * shows them. Cleared from memory when resource packs reload.
  */
 public final class AutomixProfiles {
     private static final Logger LOG = LoggerFactory.getLogger("cuemymusic");
@@ -34,7 +53,29 @@ public final class AutomixProfiles {
         return t;
     });
 
+    /** Looks at every add-on song once resources have loaded, on its own thread so songs asked for now don't wait. */
+    private static final ExecutorService WARM_UP = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "cuemymusic-automix-warm-up");
+        t.setDaemon(true);
+        t.setPriority(Thread.MIN_PRIORITY);
+        return t;
+    });
+    private static volatile boolean warmed;
+
     private AutomixProfiles() {
+    }
+
+    /** Each client tick: once resources have loaded, starts looking at every add-on song not looked at yet. */
+    static void tick(Minecraft mc) {
+        if (warmed || !mc.isGameLoadFinished() || mc.gui.overlay() != null || !CueConfig.INSTANCE.automix || CueConfig.INSTANCE.vanilla) return;
+        warmed = true;
+        List<Identifier> songs = MusicLibrary.all().stream().filter(AutomixProfiles::applies).map(Track::location).toList();
+        WARM_UP.execute(() -> {
+            for (Identifier id : songs) {
+                if (!warmed) return;
+                if (STARTED.putIfAbsent(id, true) == null) analyse(id);
+            }
+        });
     }
 
     /** True if automix applies to {@code track}: it's on, and the song is on an add-on's page. */
@@ -51,6 +92,7 @@ public final class AutomixProfiles {
     }
 
     public static void clear() {
+        warmed = false;
         PROFILES.clear();
         STARTED.clear();
     }
@@ -67,7 +109,28 @@ public final class AutomixProfiles {
     }
 
     private static void analyse(Identifier id) {
-        try (FloatSampleSource source = open(id)) {
+        byte[] file;
+        try (InputStream in = Minecraft.getInstance().getResourceManager().open(MusicLibrary.file(id))) {
+            file = in.readAllBytes();
+        } catch (IOException | RuntimeException e) {
+            LOG.warn("Couldn't read {} for automix", id, e);
+            return;
+        }
+        CRC32 crc = new CRC32();
+        crc.update(file);
+        long sum = crc.getValue();
+        Path saved = savedPath(id);
+        Automix.Profile p = load(saved, file.length, sum);
+        if (p == null) {
+            p = decode(id, file);
+            if (p == null) return;
+            save(saved, file.length, sum, p);
+        }
+        PROFILES.put(id, p);
+    }
+
+    private static Automix.Profile decode(Identifier id, byte[] file) {
+        try (FloatSampleSource source = new JOrbisAudioStream(new ByteArrayInputStream(file))) {
             Automix.Analyzer analyzer = new Automix.Analyzer(source.getFormat().getSampleRate(), source.getFormat().getChannels());
             float[][] buffer = {new float[8192]};
             int[] size = {0};
@@ -80,9 +143,46 @@ public final class AutomixProfiles {
                 });
                 analyzer.accept(buffer[0], size[0]);
             }
-            PROFILES.put(id, analyzer.finish());
+            return analyzer.finish();
         } catch (IOException | RuntimeException e) {
             LOG.warn("Couldn't analyse {} for automix", id, e);
+            return null;
+        }
+    }
+
+    /** Where a song's profile is saved: one file per song, named after its id. */
+    private static Path savedPath(Identifier id) {
+        String name = id.toString().replaceAll("[^a-z0-9_.-]", "_");
+        return FabricLoader.getInstance().getConfigDir().resolve("cuemymusic-analysis").resolve(name + ".bin");
+    }
+
+    /** The saved profile, or null if there's none, it's from an older analysis, or the file has changed since. */
+    private static Automix.Profile load(Path saved, long size, long sum) {
+        if (!Files.isRegularFile(saved)) return null;
+        try (DataInputStream in = new DataInputStream(new GZIPInputStream(Files.newInputStream(saved)))) {
+            if (in.readLong() != size || in.readLong() != sum) return null;
+            return Automix.Profile.read(in);
+        } catch (IOException | RuntimeException e) {
+            LOG.debug("Couldn't read saved analysis {}", saved, e);
+            return null;
+        }
+    }
+
+    private static void save(Path saved, long size, long sum, Automix.Profile p) {
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (DataOutputStream out = new DataOutputStream(new GZIPOutputStream(bytes))) {
+                out.writeLong(size);
+                out.writeLong(sum);
+                p.write(out);
+            }
+            Files.createDirectories(saved.getParent());
+            // Written whole and then moved into place, so a crash never leaves half a file.
+            Path temp = saved.resolveSibling(saved.getFileName() + ".tmp");
+            Files.write(temp, bytes.toByteArray());
+            Files.move(temp, saved, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException | RuntimeException e) {
+            LOG.warn("Couldn't save the analysis to {}", saved, e);
         }
     }
 }

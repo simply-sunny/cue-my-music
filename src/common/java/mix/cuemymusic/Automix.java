@@ -1,5 +1,7 @@
 package mix.cuemymusic;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 
@@ -148,6 +150,48 @@ public final class Automix {
 
         public long frame(double seconds) {
             return Math.round(seconds * rate);
+        }
+
+        /**
+         * Bump whenever analysis changes what a profile holds, so profiles saved
+         * by an older version are worked out again instead of read.
+         */
+        public static final int FORMAT = 1;
+
+        /** Writes this profile, for {@link #read} to read back. */
+        public void write(DataOutputStream out) throws IOException {
+            out.writeInt(FORMAT);
+            out.writeFloat(rate);
+            out.writeInt(channels);
+            out.writeLong(frames);
+            out.writeLong(start);
+            out.writeLong(end);
+            out.writeDouble(rms);
+            out.writeDouble(peak);
+            out.writeDouble(bpm);
+            out.writeUTF(key);
+            for (float[] band : new float[][] {low, mid, high}) {
+                out.writeInt(band.length);
+                for (float v : band) out.writeFloat(v);
+            }
+        }
+
+        /** A profile {@link #write} wrote, or null if an older version of the analysis wrote it. */
+        public static Profile read(DataInputStream in) throws IOException {
+            if (in.readInt() != FORMAT) return null;
+            float rate = in.readFloat();
+            int channels = in.readInt();
+            long frames = in.readLong(), start = in.readLong(), end = in.readLong();
+            double rms = in.readDouble(), peak = in.readDouble(), bpm = in.readDouble();
+            String key = in.readUTF();
+            float[][] bands = new float[3][];
+            for (int b = 0; b < 3; b++) {
+                int n = in.readInt();
+                if (n < 0 || n > 1 << 20) throw new IOException("bad waveform length " + n);
+                bands[b] = new float[n];
+                for (int i = 0; i < n; i++) bands[b][i] = in.readFloat();
+            }
+            return new Profile(rate, channels, frames, start, end, rms, peak, bpm, key, bands[0], bands[1], bands[2]);
         }
     }
 
