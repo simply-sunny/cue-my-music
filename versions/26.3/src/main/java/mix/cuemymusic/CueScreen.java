@@ -203,6 +203,11 @@ public final class CueScreen extends Screen {
     /** The transition open in the editor, as its two songs' ids; null for the mix's songs. */
     private String mixFrom, mixTo;
     private int mixEdit = -1;
+    /** The open transition's two songs on screen, which scroll sideways to move it; null with none shown. */
+    private int mixLaneX0, mixLaneY0, mixLaneX1, mixLaneY1;
+    private DoubleConsumer mixLaneScroll, nextMixLaneScroll;
+    /** When scrolling last moved a transition and it isn't saved yet, or 0. */
+    private long mixScrolledAt;
     /** The title of the page header drawn last, for the mix editor. */
     // An add-on page's text fields, by key, and the one being typed in.
     private final Map<String, EditBox> fields = new LinkedHashMap<>();
@@ -267,13 +272,20 @@ public final class CueScreen extends Screen {
         nextDrags = new ArrayList<>();
         nextRowHits = new ArrayList<>();
         nextFieldHits = new ArrayList<>();
+        nextMixLaneScroll = null;
         this.partialTick = partialTick;
+        // Scrolling a transition sends many small moves; it's saved once they stop.
+        if (mixScrolledAt != 0 && System.nanoTime() - mixScrolledAt > 500_000_000L) {
+            mixScrolledAt = 0;
+            cfg.save();
+        }
         if (cfg.vanilla) {
             drawVanilla(g, mouseX, mouseY);
             hits = nextHits;
             drags = nextDrags;
             rowHits = nextRowHits;
             fieldHits = nextFieldHits;
+        mixLaneScroll = nextMixLaneScroll;
             return;
         }
 
@@ -317,6 +329,7 @@ public final class CueScreen extends Screen {
         drags = nextDrags;
         rowHits = nextRowHits;
         fieldHits = nextFieldHits;
+        mixLaneScroll = nextMixLaneScroll;
     }
 
     /** With vanilla music on, the whole window is one card saying so, with a button to turn the mods back on. */
@@ -1423,14 +1436,35 @@ public final class CueScreen extends Screen {
                 showToast(tr("cuemymusic.mix.off.hint"));
             }
         }));
-        // Drag along either song to move where the transition starts.
-        double ts0 = t0;
-        for (int lane : new int[] {laneA, laneB}) {
-            nextDrags.add(new Drag(left, lane, right, lane + laneH, false, f -> {
-                double at = ts0 + f * span - len / 2;
-                cfg.setTransition(from, to, cfg.transition(from, to).withStart(Math.clamp(Math.round((aEnd - at) * 10) / 10.0, 0, 60)));
-            }, cfg::save));
+        // Beats between the songs, counted from where the transition starts, each bar's first in green;
+        // and faint bar lines across both songs during the transition.
+        if (pa.bpm() > 0) {
+            double beat = 60 / pa.bpm();
+            int ty = laneA + laneH + gapH / 2;
+            for (long k = (long) Math.ceil((t0 - start) / beat); start + k * beat <= t0 + span; k++) {
+                double at = start + k * beat;
+                int x = timeX(at, t0, span, left, right);
+                if (x < left || x >= right) continue;
+                boolean bar = Math.floorMod(k, 4) == 0;
+                if (bar && at >= start - 1e-6 && at <= start + len + 1e-6) g.fill(x, laneA, x + 1, laneB + laneH, 0x22FFFFFF);
+                if (x >= pbx - 3 && x < pbx + pbs + 3) continue;
+                int h = bar ? 5 : 3;
+                g.fill(x, ty - h, x + 1, ty + h, bar ? GREEN : 0xFF5A5A5A);
+            }
         }
+        // Scrolling sideways over the songs, or Shift and the wheel, moves where the transition starts: a beat a notch.
+        double step = pa.bpm() > 0 ? 60 / pa.bpm() : 0.5, planned = aEnd - start;
+        mixLaneX0 = left;
+        mixLaneY0 = Math.max(laneA, centerY0);
+        mixLaneX1 = right;
+        mixLaneY1 = Math.min(laneB + laneH, centerY1);
+        nextMixLaneScroll = notches -> {
+            double before = cfg.transition(from, to).startBeforeEnd();
+            if (before < 0) before = planned;
+            before = Math.clamp(Math.round((before + notches * step) * 100) / 100.0, 0, 60);
+            cfg.setTransition(from, to, cfg.transition(from, to).withStart(before));
+            mixScrolledAt = System.nanoTime();
+        };
         y = laneB + laneH + 18;
 
         // Presets.
@@ -1479,13 +1513,31 @@ public final class CueScreen extends Screen {
         boolean cut = shape.volume() == Automix.Volume.CUT;
         double most = cut ? 4 : 40;
         double autoLen = cut ? 1 : shape.volume() == Automix.Volume.DROP ? Automix.dropSeconds(pa) : Automix.autoSeconds(pa);
-        // In bars too, as DJs count, when the tempo is known.
-        String lenText = tr("cuemymusic.mix.seconds", String.format("%.1f", len));
-        if (pa.bpm() > 0 && !cut) lenText = tr("cuemymusic.mix.seconds_bars", String.format("%.1f", len), String.format("%.1f", len * pa.bpm() / 240).replace(".0", ""));
-        y = sliderRow(g, left, y, right, tr("cuemymusic.mix.length"), lenText,
-                (len - 0.5) / (most - 0.5), f -> cfg.setTransition(from, to,
-                        cfg.transition(from, to).withSeconds(Math.round((0.5 + f * (most - 0.5)) * 10) / 10.0)),
-                (autoLen - 0.5) / (most - 0.5), -1);
+        // In bars, as DJs count, when the tempo is known; otherwise in seconds.
+        double barSeconds = pa.bpm() > 0 ? 240 / pa.bpm() : 0;
+        java.util.function.DoubleFunction<String> lengthText = sec -> barSeconds > 0
+                ? tr("cuemymusic.mix.bars", String.format("%.1f", sec / barSeconds).replace(".0", ""))
+                : tr("cuemymusic.mix.seconds", String.format("%.1f", sec).replace(".0", ""));
+        List<Double> lengths = new ArrayList<>();
+        for (double n : barSeconds > 0 ? new double[] {2, 4, 8, 16} : new double[] {4, 8, 15, 30}) {
+            double sec = barSeconds > 0 ? n * barSeconds : n;
+            if (sec <= most) lengths.add(Math.round(sec * 100) / 100.0);
+        }
+        String lenShown = t.seconds() < 0 ? tr("cuemymusic.mix.auto_value", lengthText.apply(autoLen)) : lengthText.apply(len);
+        y = dropRow(g, left, y, right, mx, my, tr("cuemymusic.mix.length"), lenShown, () -> {
+            List<MenuItem> items = new ArrayList<>();
+            items.add(new MenuItem((t.seconds() < 0 ? "✔ " : "    ") + tr("cuemymusic.mix.auto_value", lengthText.apply(autoLen)), () -> {
+                cfg.setTransition(from, to, cfg.transition(from, to).withSeconds(-1));
+                cfg.save();
+            }));
+            for (double sec : lengths) {
+                items.add(new MenuItem((t.seconds() >= 0 && Math.abs(t.seconds() - sec) < 0.05 ? "✔ " : "    ") + lengthText.apply(sec), () -> {
+                    cfg.setTransition(from, to, cfg.transition(from, to).withSeconds(sec));
+                    cfg.save();
+                }));
+            }
+            return items;
+        });
         y = sliderRow(g, left, y, right, tr("cuemymusic.mix.start"), tr("cuemymusic.mix.before_end", String.format("%.1f", aEnd - start)),
                 (aEnd - start) / 60, f -> cfg.setTransition(from, to, cfg.transition(from, to).withStart(Math.round(f * 600) / 10.0)),
                 len / 60, -1);
@@ -1574,25 +1626,29 @@ public final class CueScreen extends Screen {
     /** A row with a part's name, and its value as a drop-down of the choices. */
     private int partRow(GuiGraphicsExtractor g, int left, int y, int right, int mx, int my, String label, Enum<?> value, Enum<?>[] choices,
             java.util.function.Function<Enum<?>, Automix.Shape> with, String from, String to) {
+        return dropRow(g, left, y, right, mx, my, label, partName(value), () -> {
+            List<MenuItem> items = new ArrayList<>();
+            for (Enum<?> c : choices) {
+                items.add(new MenuItem((c == value ? "✔ " : "    ") + partName(c), () -> {
+                    cfg.setTransition(from, to, cfg.transition(from, to).withShape(with.apply(c)));
+                    cfg.save();
+                }));
+            }
+            return items;
+        });
+    }
+
+    /** A row with a label, and at the right {@code shown} as a drop-down that opens {@code items}. */
+    private int dropRow(GuiGraphicsExtractor g, int left, int y, int right, int mx, int my, String label, String shown,
+            java.util.function.Supplier<List<MenuItem>> items) {
         g.text(font, label, left, y + 4, WHITE, false);
-        String shown = partName(value) + "  ▾";
+        shown += "  ▾";
         int w = font.width(shown) + 14, bx = right - w;
         boolean hover = mx >= bx && mx < right && my >= y && my < y + 15 && my >= centerY0 && my < centerY1;
         g.fill(bx, y, right, y + 15, hover ? 0xFF3A3A3A : 0xFF2A2A2A);
         g.text(font, shown, bx + 7, y + 4, WHITE, false);
         int top = Math.max(y, centerY0), bottom = Math.min(y + 15, centerY1);
-        if (bottom > top) {
-            nextHits.add(new Hit(bx, top, right, bottom, () -> {
-                List<MenuItem> items = new ArrayList<>();
-                for (Enum<?> c : choices) {
-                    items.add(new MenuItem((c == value ? "✔ " : "    ") + partName(c), () -> {
-                        cfg.setTransition(from, to, cfg.transition(from, to).withShape(with.apply(c)));
-                        cfg.save();
-                    }));
-                }
-                showMenu(new Menu(bx, y + 16, items));
-            }));
-        }
+        if (bottom > top) nextHits.add(new Hit(bx, top, right, bottom, () -> showMenu(new Menu(bx, y + 16, items.get()))));
         return y + 20;
     }
 
@@ -3133,6 +3189,11 @@ public final class CueScreen extends Screen {
         }
         if (x >= libraryX0 && x < libraryX1 && y >= libraryScrollTop && y < libraryScrollBottom && libraryScrollMax > 0) {
             libraryScroll = Math.clamp(libraryScroll - vertical * 24, 0, libraryScrollMax);
+            return true;
+        }
+        boolean sideways = Math.abs(horizontal) > Math.abs(vertical) || minecraft.hasShiftDown();
+        if (mixLaneScroll != null && sideways && x >= mixLaneX0 && x < mixLaneX1 && y >= mixLaneY0 && y < mixLaneY1) {
+            mixLaneScroll.accept(horizontal != 0 ? horizontal : vertical);
             return true;
         }
         if (x >= centerX0 && x < centerX1 && y >= centerY0 && y < centerY1) {
