@@ -47,7 +47,7 @@ All keys are rebindable under **Options → Controls → Key Binds → Cue My Mu
 - Click a song to play it. The rest of the page plays after it, in the order shown. The big green button plays the page from the top, or pauses it while it's playing.
 - Hover a song and click the heart to like it, or **+** to add it to the queue. **Add all to queue** adds the whole page.
 - Right-click a song to queue it, like or dislike it, or add it to a playlist.
-- **Dislike** keeps the game from ever picking a song for its own music. If the game is playing it, it skips to another. You can still play it yourself, and it still plays through a page you started. Disliked songs are greyed with a ⊘, and listed on **Disliked Songs**, where right-click → **Remove dislike** brings one back. Liking a song takes its dislike away, and the other way round.
+- **Dislike** (the ⊘ left of the heart on a hovered row, next to the heart under the song that's playing, or right-click) keeps the game from ever picking a song for its own music. If the game is playing it, it skips to another. You can still play it yourself, and it still plays through a page you started. Disliked songs are greyed with a red ⊘, and listed on **Disliked Songs**. Click the ⊘ again to bring one back. Liking a song takes its dislike away, and the other way round.
 - The repeat button next to play cycles through off, repeat all (the page starts over at its end), and repeat one (the song plays again). Next and previous still move on.
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
 - Space plays and pauses while the player is open. Click or drag the progress bar to seek.
@@ -77,7 +77,7 @@ Click **New playlist** in the library, then right-click songs anywhere and pick 
 
 Queued songs play next, before the rest of the page. The page then picks up after the song the queue interrupted. A song queued while nothing is playing starts at once. Drag to reorder, click × to remove, or double-click to play now. A long queue scrolls.
 
-**Next** plays the queue, then the page, then the game's next song. **Previous** goes back through the page, or restarts the song after its first 3 seconds.
+**Next** plays the queue, then the page, then the game's next song. Where the game has no music, it carries on through **All game music**, skipping disliked songs. **Previous** goes back through the page, or restarts the song after its first 3 seconds.
 
 After that, the game's own music returns. The game still decides when music plays: a random break of up to 20 minutes between songs on the default **Music Frequency**, and different music on the title screen, underwater, in the Nether, and so on. The queue shows the game's next song with **In 0:42** while waiting, or **After a 12:30 break** while a song plays. Click it to play it now.
 
@@ -146,7 +146,7 @@ java scripts/MakeIcon.java <26.3 client jar> src/main/resources/assets/cuemymusi
 
 ### Add-ons
 
-An add-on can give itself a page in the player's library. Implement `mix.cuemymusic.api.CuePanel` and call `CuePanels.register(panel)` from your client initializer. The page draws through a `PanelCanvas`, which has the player's header, headings, text, text fields, buttons, progress bar, and song list, so it matches the rest of the player. A panel can also take over a resource pack's entry (`packId`) and add items to the right-click menu of its songs (`songActions`). The API is new in 1.1.0 and may still change.
+An add-on can give itself a page in the player's library. Implement `mix.cuemymusic.api.CuePanel` and call `CuePanels.register(panel)` from your client initializer. The page draws through a `PanelCanvas`, which has the player's header, headings, text, text fields, buttons, progress bar, and song list, so it matches the rest of the player. A panel can also take over a resource pack's entry (`packId`; that pack's songs then stay out of **All game music** too) and add items to the right-click menu of its songs (`songActions`). The API is new in 1.1.0 and may still change.
 
 ## Troubleshooting
 

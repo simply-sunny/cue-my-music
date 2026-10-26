@@ -132,6 +132,20 @@ public final class MusicLibrary {
     }
 
     /** Game music credited to {@code artist}. */
+    /**
+     * Every song except the ones in packs an add-on page stands in for, such as
+     * downloads: those aren't the game's music and only play from their page.
+     */
+    public static synchronized List<Track> gameMusic() {
+        java.util.Set<String> addOnPacks = new java.util.HashSet<>();
+        for (mix.cuemymusic.api.CuePanel p : mix.cuemymusic.api.CuePanels.all()) {
+            if (p.packId() != null) addOnPacks.add(p.packId());
+        }
+        List<Track> all = all();
+        if (addOnPacks.isEmpty()) return all;
+        return all.stream().filter(t -> t.packId() == null || !addOnPacks.contains(t.packId())).toList();
+    }
+
     public static synchronized List<Track> byArtist(String artist) {
         return all().stream().filter(t -> t.packId() == null && t.artist().equals(artist)).toList();
     }

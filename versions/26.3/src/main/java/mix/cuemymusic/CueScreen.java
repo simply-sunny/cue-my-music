@@ -47,6 +47,7 @@ public final class CueScreen extends Screen {
     private static final int DIM = 0xFFB3B3B3;
     private static final int FAINT = 0xFF6A6A6A;
     private static final int GREEN = 0xFF1ED760;
+    private static final int RED = 0xFFFF6B6B;
     private static final int TRACK_BG = 0xFF4D4D4D;
     private static final int GAP = 4;
     private static final int BOTTOM = 42;
@@ -232,7 +233,7 @@ public final class CueScreen extends Screen {
         g.fill(x0, y0, x1, y1, PANEL);
         g.text(font, tr("cuemymusic.library"), x0 + 6, y0 + 7, WHITE, false);
 
-        List<Track> all = MusicLibrary.all();
+        List<Track> all = MusicLibrary.gameMusic();
         List<String> artists = new ArrayList<>(Catalog.ARTISTS.stream().filter(a -> !MusicLibrary.byArtist(a).isEmpty()).toList());
         if (MusicLibrary.hasUnknown()) artists.add(Catalog.UNKNOWN_ARTIST);
         List<CuePanel> panels = CuePanels.all();
@@ -410,8 +411,7 @@ public final class CueScreen extends Screen {
             showToast(tr("cuemymusic.queue.added"));
         }));
         items.add(new MenuItem(tr(isLiked(t) ? "cuemymusic.menu.unlike" : "cuemymusic.menu.like"), () -> toggleLiked(t)));
-        items.add(new MenuItem(tr(isDisliked(t) ? "cuemymusic.menu.undislike" : "cuemymusic.menu.dislike"), () ->
-                showToast(tr(player.toggleDisliked(t) ? "cuemymusic.disliked.added" : "cuemymusic.disliked.removed"))));
+        items.add(new MenuItem(tr(isDisliked(t) ? "cuemymusic.menu.undislike" : "cuemymusic.menu.dislike"), () -> toggleDisliked(t)));
         for (CueConfig.Playlist p : cfg.playlists) {
             if (view == View.LIST && p.id().equals(key)) continue;
             items.add(new MenuItem(tr("cuemymusic.menu.add_to", clip(p.name(), 120)), () -> showToast(cfg.addToPlaylist(p.id(), song)
@@ -503,7 +503,7 @@ public final class CueScreen extends Screen {
                     key, null, artistColor(key));
             case PACK -> drawTrackPage(g, x0, contentTop, x1, mx, my, "pack:" + key, MusicLibrary.byPack(key), pack.art(),
                     tr("cuemymusic.pack"), pack.name(), pack.author(), PackNames.gradient(pack.name())[1]);
-            case PLAYLIST -> drawTrackPage(g, x0, contentTop, x1, mx, my, CuePlayer.ALL, MusicLibrary.all(), PLAYLIST_ART,
+            case PLAYLIST -> drawTrackPage(g, x0, contentTop, x1, mx, my, CuePlayer.ALL, MusicLibrary.gameMusic(), PLAYLIST_ART,
                     tr("cuemymusic.playlist"), tr("cuemymusic.playlist.title"), null, 0xFF1E3A2A);
             case LIKED -> drawTrackPage(g, x0, contentTop, x1, mx, my, "liked", liked(), LIKED_ART,
                     tr("cuemymusic.playlist"), tr("cuemymusic.liked.title"), null, 0xFF3A2E6E);
@@ -581,7 +581,7 @@ public final class CueScreen extends Screen {
             boolean delHover = mx >= dx - 2 && mx < x1 - 8 && my >= ay - 3 && my < ay + 11;
             boolean renHover = mx >= rx - 2 && mx < dx - 10 && my >= ay - 3 && my < ay + 11;
             g.text(font, ren, rx, ay, renHover ? WHITE : DIM, false);
-            g.text(font, del, dx, ay, System.currentTimeMillis() < deleteArmedUntil ? 0xFFFF6B6B : delHover ? WHITE : DIM, false);
+            g.text(font, del, dx, ay, System.currentTimeMillis() < deleteArmedUntil ? RED : delHover ? WHITE : DIM, false);
             nextHits.add(new Hit(rx - 2, ay - 3, dx - 10, ay + 11, () -> startRename(id)));
             nextHits.add(new Hit(dx - 2, ay - 3, x1 - 8, ay + 11, () -> {
                 if (System.currentTimeMillis() < deleteArmedUntil) {
@@ -642,8 +642,8 @@ public final class CueScreen extends Screen {
                 boolean disliked = isDisliked(t);
                 g.text(font, clip(t.title(), titleW), textX, y + 2, isCurrent ? GREEN : disliked ? FAINT : WHITE, false);
                 g.text(font, clip(t.artist(), titleW), textX, y + 11, DIM, false);
-                // Stops short of the heart and + when they show.
-                int albumEnd = hover || isLiked(t) ? colTime - 60 : colTime - 48;
+                // Stops short of the dislike, heart and + when they show.
+                int albumEnd = hover || disliked ? colTime - 74 : isLiked(t) ? colTime - 60 : colTime - 48;
                 if (showAlbum) g.text(font, clip(t.album(), albumEnd - colAlbum), colAlbum, y + 6, DIM, false);
                 String len = Double.isNaN(t.seconds()) ? "-:--" : time(t.seconds());
                 g.text(font, len, colTime - font.width(len), y + 6, DIM, false);
@@ -652,9 +652,13 @@ public final class CueScreen extends Screen {
                 nextRowHits.add(new RowHit(x0, top, x1, bottom, t));
                 // Like: always shown once liked, otherwise on hover, left of add to queue.
                 boolean liked = isLiked(t);
-                if (disliked && !hover) {
-                    // Disliked: the game won't pick it. A small no-entry mark where the heart goes.
-                    g.text(font, "\u2298", colTime - 57, y + 6, FAINT, false);
+                // Dislike: always shown once disliked, otherwise on hover, left of the heart.
+                if (hover || disliked) {
+                    int dx = colTime - 70, dy = y + 6;
+                    boolean dislikeHover = hover && mx >= dx - 2 && mx < dx + 9 && my >= dy - 2 && my < dy + 9;
+                    dislikeIcon(g, dx, dy, disliked ? RED : dislikeHover ? WHITE : DIM);
+                    if (hover) nextHits.add(new Hit(dx - 2, Math.max(dy - 2, centerY0), dx + 9, Math.min(dy + 9, centerY1),
+                            () -> toggleDisliked(t)));
                 }
                 if (hover || liked) {
                     int hx = colTime - 56, hy = y + 6;
@@ -696,6 +700,10 @@ public final class CueScreen extends Screen {
 
     private boolean isDisliked(Track t) {
         return cfg.isDisliked(t.location().toString());
+    }
+
+    private void toggleDisliked(Track t) {
+        showToast(tr(player.toggleDisliked(t) ? "cuemymusic.disliked.added" : "cuemymusic.disliked.removed"));
     }
 
     private boolean isLiked(Track t) {
@@ -889,12 +897,16 @@ public final class CueScreen extends Screen {
         int y = y0 + 25 + size;
         marquee(g, t.title(), left, y, w, WHITE, 1.5f);
         y += 15;
-        marquee(g, t.artist(), left, y, w - 12, DIM, 1);
+        marquee(g, t.artist(), left, y, w - 24, DIM, 1);
         boolean liked = isLiked(t);
         int hx = left + w - 7;
         boolean heartHover = mx >= hx - 2 && mx < hx + 9 && my >= y - 2 && my < y + 8;
         heartIcon(g, hx, y + 1, liked, liked ? GREEN : heartHover ? WHITE : DIM);
         nextHits.add(new Hit(hx - 2, y - 2, hx + 9, y + 8, () -> toggleLiked(t)));
+        int dx = hx - 13;
+        boolean dislikeHover = mx >= dx - 2 && mx < dx + 9 && my >= y - 2 && my < y + 9;
+        dislikeIcon(g, dx, y + 1, isDisliked(t) ? RED : dislikeHover ? WHITE : DIM);
+        nextHits.add(new Hit(dx - 2, y - 2, dx + 9, y + 9, () -> toggleDisliked(t)));
         y += 16;
         drawQueue(g, x0, y, x1, y1, mx, my);
     }
@@ -1228,10 +1240,10 @@ public final class CueScreen extends Screen {
                     fg = enabled ? BLACK : 0xFF1B3324;
                 }
                 default -> {
-                    int edge = !enabled ? 0xFF3A3A3A : style == ButtonStyle.DANGER ? 0xFFFF6B6B : hover ? WHITE : 0xFF8A8A8A;
+                    int edge = !enabled ? 0xFF3A3A3A : style == ButtonStyle.DANGER ? RED : hover ? WHITE : 0xFF8A8A8A;
                     g.fill(x, y, bx1, y + BUTTON_H, edge);
                     g.fill(x + 1, y + 1, bx1 - 1, y + BUTTON_H - 1, hover ? 0xFF2A2A2A : PANEL);
-                    fg = !enabled ? FAINT : style == ButtonStyle.DANGER ? 0xFFFF6B6B : WHITE;
+                    fg = !enabled ? FAINT : style == ButtonStyle.DANGER ? RED : WHITE;
                 }
             }
             g.text(font, label, x + 10, y + (BUTTON_H - 8) / 2, fg, false);
@@ -1545,6 +1557,16 @@ public final class CueScreen extends Screen {
     }
 
     /** A 7×6 heart, filled when the song is liked. */
+    /** A circle with a slash through it: the game won't play this song. */
+    private static void dislikeIcon(GuiGraphicsExtractor g, int x, int y, int color) {
+        String[] rows = {"..XXX..", ".X..XX.", "X..X..X", "X.X...X", "XX....X", ".X...X.", "..XXX.."};
+        for (int r = 0; r < rows.length; r++) {
+            for (int c = 0; c < 7; c++) {
+                if (rows[r].charAt(c) == 'X') g.fill(x + c, y + r, x + c + 1, y + r + 1, color);
+            }
+        }
+    }
+
     private static void heartIcon(GuiGraphicsExtractor g, int x, int y, boolean filled, int color) {
         String[] rows = filled
                 ? new String[] {".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X..."}
