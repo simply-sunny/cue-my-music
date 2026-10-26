@@ -85,7 +85,7 @@ public final class CueScreen extends Screen {
     }
 
     /** PLAYLIST is all game music; LIST is one of the player's own playlists; PANEL is an add-on's page. */
-    private enum View { PLAYLIST, LIKED, DISLIKED, LIST, ARTIST, PACK, STATS, SEARCH, MIX, SETTINGS, PANEL }
+    private enum View { PLAYLIST, LIKED, DISLIKED, LIST, ARTIST, PACK, STATS, SEARCH, SETTINGS, PANEL }
 
     /** A track row that opens the song menu when right-clicked. */
     private record RowHit(int x0, int y0, int x1, int y1, Track track, int index) {
@@ -191,11 +191,13 @@ public final class CueScreen extends Screen {
     /** Puts the cursor in the search box the next time it's drawn. */
     private boolean focusSearch;
     // The mix page: its songs, its title, and the transition being edited (the index of its first song), or -1 for the list.
+    /** Whether the page shows its mix (tempos, keys and transitions) in place of its song list. */
+    private boolean mixMode;
     private List<Track> mixTracks = List.of();
-    private String mixTitle = "";
+    /** The transition open in the editor, as its two songs' ids; null for the mix's songs. */
+    private String mixFrom, mixTo;
     private int mixEdit = -1;
     /** The title of the page header drawn last, for the mix editor. */
-    private String headerTitle = "";
     // An add-on page's text fields, by key, and the one being typed in.
     private final Map<String, EditBox> fields = new LinkedHashMap<>();
     private final Map<String, Consumer<String>> fieldSubmits = new HashMap<>();
@@ -483,6 +485,8 @@ public final class CueScreen extends Screen {
             fieldSubmits.clear();
             unfocusField();
             pageFilterOpen = false;
+            mixMode = false;
+            mixFrom = mixTo = null;
         }
         view = v;
         key = k;
@@ -826,7 +830,6 @@ public final class CueScreen extends Screen {
             case SETTINGS -> drawSettings(g, x0, contentTop, x1, mx, my);
             case STATS -> drawStats(g, x0, contentTop, x1, mx, my);
             case SEARCH -> drawSearch(g, x0, contentTop, x1, mx, my);
-            case MIX -> drawMix(g, x0, contentTop, x1, mx, my);
             case PANEL -> {
                 Canvas canvas = new Canvas(g, x0, contentTop, x1, mx, my);
                 try {
@@ -919,7 +922,6 @@ public final class CueScreen extends Screen {
     private int drawHeader(GuiGraphicsExtractor g, int x0, int y, int x1, Art art, String kind, String title, String summary,
             int color) {
         int headerH = 70;
-        headerTitle = title;
         g.fillGradient(x0, y, x1, y + headerH, color, PANEL);
         art(g, art, x0 + 10, y + 12, 48);
         int tx = x0 + 66;
@@ -995,15 +997,36 @@ public final class CueScreen extends Screen {
                 player.enqueueAll(tracks);
                 showToast(tr("cuemymusic.queue.added_all", tracks.size()));
             }));
-            // Edit the transitions, once two of the page's songs can blend.
+            // Mix: shows the transitions in place of the list, once two songs next to each other can blend.
             toolLeft = qx + qw;
-            if (tracks.stream().filter(AutomixProfiles::applies).limit(2).count() == 2) {
-                String title = headerTitle;
-                toolLeft += 14 + chip(g, qx + qw + 14, qy + 3, tr("cuemymusic.mix.open"), false, mx, my, () -> openMix(listKey, tracks, title));
+            boolean canMix = false;
+            for (int i = 0; i + 1 < tracks.size() && !canMix; i++) canMix = blends(tracks, i);
+            if (!canMix) mixMode = false;
+            if (canMix) {
+                toolLeft += 14 + chip(g, qx + qw + 14, qy + 3, tr("cuemymusic.mix.open"), mixMode, mx, my, () -> {
+                    mixMode = !mixMode;
+                    mixFrom = mixTo = null;
+                    clearSelection();
+                    scroll = 0;
+                });
             }
+        } else {
+            mixMode = false;
         }
         drawPageFilter(g, toolLeft + 12, toolRight, y + 6, mx, my);
         y += pb + 12;
+        if (mixMode) {
+            mixTracks = tracks;
+            mixEdit = -1;
+            for (int i = 0; mixFrom != null && i + 1 < tracks.size(); i++) {
+                if (id(tracks.get(i)).equals(mixFrom) && id(tracks.get(i + 1)).equals(mixTo) && blends(i)) {
+                    mixEdit = i;
+                    break;
+                }
+            }
+            if (mixEdit < 0) mixFrom = mixTo = null;
+            return mixEdit >= 0 ? drawTransitionEditor(g, x0, y, x1, mx, my, listKey) : drawMix(g, x0, y, x1, mx, my, listKey);
+        }
 
         // Column headings; title, album and time sort.
         boolean showAlbum = x1 - x0 > 260;
@@ -1154,7 +1177,6 @@ public final class CueScreen extends Screen {
 
     // -------------------------------------------------------------------- mix
 
-    private static final Art MIX_ART = Art.block("block/amethyst_block");
     private static final int MIX_PURPLE = 0xFFB18CFF;
 
     // Waveform and curve colours, as in Spotify's mix editor: bass blue, mids orange, highs white;
@@ -1165,56 +1187,39 @@ public final class CueScreen extends Screen {
     private static final int CURVE_VOLUME = 0xFF8CCBFF;
     private static final int CURVE_EQ = 0xFFFFD84A;
 
-    /** Opens the mix page for a page's songs, in the order shown. */
-    private void openMix(String listKey, List<Track> tracks, String title) {
-        open(View.MIX, listKey);
-        mixTracks = List.copyOf(tracks);
-        mixTitle = title;
-        mixEdit = -1;
-    }
-
     /** True if songs {@code i} and {@code i + 1} of the mix blend, or would once both are analysed. */
     private boolean blends(int i) {
-        Track a = mixTracks.get(i), b = mixTracks.get(i + 1);
+        return blends(mixTracks, i);
+    }
+
+    /** True if songs {@code i} and {@code i + 1} of {@code tracks} blend, or would once both are analysed. */
+    private static boolean blends(List<Track> tracks, int i) {
+        Track a = tracks.get(i), b = tracks.get(i + 1);
         if (!AutomixProfiles.applies(a) || !AutomixProfiles.applies(b) || a.equals(b)) return false;
         Automix.Profile pa = AutomixProfiles.get(a), pb = AutomixProfiles.get(b);
         return pa == null || pb == null || pa.blendsWith(pb);
     }
 
-    /** The mix page: the songs in order, each with its tempo and key, and the transition between each pair. Or one transition's editor. */
-    private int drawMix(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my) {
-        if (mixEdit >= 0 && (mixEdit + 1 >= mixTracks.size() || !blends(mixEdit))) mixEdit = -1;
-        if (mixEdit >= 0) return drawTransitionEditor(g, x0, y, x1, mx, my);
+    /**
+     * A page's mix, in place of its song list: the songs in order, each with
+     * its tempo and key, and the transition between each pair that blends.
+     * Songs that don't (the game's own) are dimmed and play as they are.
+     */
+    private int drawMix(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my, String listKey) {
         int transitions = 0;
         for (int i = 0; i + 1 < mixTracks.size(); i++) {
             if (blends(i)) transitions++;
         }
-        y = drawHeader(g, x0, y, x1, MIX_ART, tr("cuemymusic.mix.kind"), mixTitle,
-                tr("cuemymusic.mix.summary", mixTracks.size(), transitions), 0xFF3A2466);
-
-        // Play the mix, and turn automix on or off.
-        int pb = 18;
-        boolean thisList = player.current() != null && player.isPlayingList(key);
-        roundButton(g, x0 + 10, y + 6, pb, GREEN);
-        if (thisList && player.isPlaying()) pauseIcon(g, x0 + 16, y + 11, 8, BLACK);
-        else playIcon(g, x0 + 17, y + 11, 8, BLACK);
-        String listKey = key;
-        nextHits.add(new Hit(x0 + 10, y + 6, x0 + 10 + pb, y + 6 + pb, () -> {
-            if (thisList) player.togglePause();
-            else if (!mixTracks.isEmpty()) player.play(listKey, mixTracks, 0);
-        }));
-        chip(g, x0 + 10 + pb + 10, y + 9, tr(cfg.automix ? "cuemymusic.mix.on" : "cuemymusic.mix.off"), cfg.automix, mx, my, () -> {
+        int left = x0 + 10, right = x1 - 10;
+        int cw = chip(g, left, y, tr(cfg.automix ? "cuemymusic.mix.on" : "cuemymusic.mix.off"), cfg.automix, mx, my, () -> {
             cfg.automix = !cfg.automix;
             cfg.save();
         });
-        y += pb + 14;
-        int left = x0 + 10, right = x1 - 10;
+        String summary = tr("cuemymusic.mix.summary", mixTracks.size(), transitions);
+        g.text(font, clip(summary, right - left - cw - 10), left + cw + 10, y + 3, DIM, false);
+        y += 20;
         if (!cfg.automix) {
             g.text(font, clip(tr("cuemymusic.mix.off.hint"), right - left), left, y, DIM, false);
-            y += 14;
-        }
-        if (transitions == 0) {
-            g.text(font, clip(tr("cuemymusic.mix.none"), right - left), left, y, DIM, false);
             y += 14;
         }
 
@@ -1227,8 +1232,9 @@ public final class CueScreen extends Screen {
             art(g, t.art(), left, y + 3, art);
             boolean current = t.equals(player.current());
             int textRight = right - mixRowInfo(g, t, right, y + 11);
-            g.text(font, clip(t.title(), textRight - left - art - 16), left + art + 8, y + 5, current ? GREEN : WHITE, false);
-            g.text(font, clip(t.artist(), textRight - left - art - 16), left + art + 8, y + 17, DIM, false);
+            boolean mixes = AutomixProfiles.applies(t);
+            g.text(font, clip(t.title(), textRight - left - art - 16), left + art + 8, y + 5, current ? GREEN : mixes ? WHITE : FAINT, false);
+            g.text(font, clip(t.artist(), textRight - left - art - 16), left + art + 8, y + 17, mixes ? DIM : FAINT, false);
             int index = i, top = Math.max(y, centerY0), bottom = Math.min(y + rowH, centerY1);
             if (bottom > top) nextHits.add(new Hit(left - 4, top, right + 4, bottom, () -> player.play(listKey, mixTracks, index)));
             y += rowH;
@@ -1241,9 +1247,10 @@ public final class CueScreen extends Screen {
             g.fill(lineX, y, lineX + 1, y + gap, 0xFF5A5A5A);
             Automix.Transition tn = cfg.transition(id(t), id(mixTracks.get(i + 1)));
             String label = (tn.preset() == Automix.Preset.AUTO ? "✦ " : "") + presetName(tn.preset()) + "  ›";
+            String from = id(t), to = id(mixTracks.get(i + 1));
             chip(g, lineX + 10, y + 3, label, false, mx, my, () -> {
-                mixEdit = index;
-                scroll = 0;
+                mixFrom = from;
+                mixTo = to;
             });
             y += gap;
         }
@@ -1318,15 +1325,11 @@ public final class CueScreen extends Screen {
      * it with the volume and bass curves, a preview button, the presets, the
      * parts as drop-downs, and the timing.
      */
-    private int drawTransitionEditor(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my) {
+    private int drawTransitionEditor(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my, String listKey) {
         Track a = mixTracks.get(mixEdit), b = mixTracks.get(mixEdit + 1);
         String from = id(a), to = id(b);
         int left = x0 + 12, right = x1 - 12;
-        y += 10;
-        chip(g, left, y, "‹  " + mixTitle, false, mx, my, () -> {
-            mixEdit = -1;
-            scroll = 0;
-        });
+        chip(g, left, y, "‹  " + tr("cuemymusic.mix.back"), false, mx, my, () -> mixFrom = mixTo = null);
         y += 22;
         g.text(font, tr("cuemymusic.mix.transition"), left, y, WHITE, false);
         y += 14;
@@ -1361,11 +1364,10 @@ public final class CueScreen extends Screen {
         }
         // Preview: from a few seconds before the transition.
         int pbs = 20, pbx = (left + right) / 2 - pbs / 2, pby = laneA + laneH + (gapH - pbs) / 2;
-        boolean previewing = now != null && (now.equals(a) || now.equals(b)) && player.isPlayingList(key) && player.isPlaying();
+        boolean previewing = now != null && (now.equals(a) || now.equals(b)) && player.isPlayingList(listKey) && player.isPlaying();
         roundButton(g, pbx, pby, pbs, WHITE);
         if (previewing) pauseIcon(g, pbx + 7, pby + 6, 8, BLACK);
         else playIcon(g, pbx + 8, pby + 6, 8, BLACK);
-        String listKey = key;
         int edit = mixEdit;
         nextHits.add(new Hit(pbx, pby, pbx + pbs, pby + pbs, () -> {
             if (previewing) {
