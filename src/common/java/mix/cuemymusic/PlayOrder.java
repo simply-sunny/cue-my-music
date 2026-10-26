@@ -142,4 +142,19 @@ public final class PlayOrder<T> {
         fromQueue = true;
         return queue.remove(index);
     }
+
+    /**
+     * {@code list} with the items in {@code moving} taken out and put back,
+     * in their order in the list, just before {@code before}, or at the end
+     * if that's null. Dropped on one of themselves, nothing moves. For
+     * dragging songs in a playlist.
+     */
+    public static <E> java.util.List<E> moved(java.util.List<E> list, java.util.Collection<E> moving, E before) {
+        if (before != null && moving.contains(before)) return list;
+        java.util.List<E> taken = list.stream().filter(moving::contains).toList();
+        java.util.List<E> rest = new java.util.ArrayList<>(list.stream().filter(e -> !moving.contains(e)).toList());
+        int at = before == null ? rest.size() : rest.indexOf(before);
+        rest.addAll(at < 0 ? rest.size() : at, taken);
+        return rest;
+    }
 }

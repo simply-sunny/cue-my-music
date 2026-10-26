@@ -3,6 +3,7 @@ package mix.cuemymusic;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 public final class PlayOrderTest {
     private static final List<String> ALBUM = List.of("a", "b", "c", "d");
@@ -147,6 +148,15 @@ public final class PlayOrderTest {
             same(PlayOrder.Repeat.OFF.cycle(), PlayOrder.Repeat.ALL);
             same(PlayOrder.Repeat.ALL.cycle(), PlayOrder.Repeat.ONE);
             same(PlayOrder.Repeat.ONE.cycle(), PlayOrder.Repeat.OFF);
+        });
+
+        run("dragging songs in a playlist moves them before the song dropped on, keeping their order", () -> {
+            List<String> l = List.of("a", "b", "c", "d", "e");
+            same(PlayOrder.moved(l, Set.of("d"), "b"), List.of("a", "d", "b", "c", "e"));
+            same(PlayOrder.moved(l, Set.of("a"), "d"), List.of("b", "c", "a", "d", "e"));
+            same(PlayOrder.moved(l, Set.of("e", "b"), "a"), List.of("b", "e", "a", "c", "d"));
+            same(PlayOrder.moved(l, Set.of("b"), null), List.of("a", "c", "d", "e", "b"));
+            same(PlayOrder.moved(l, Set.of("b", "c"), "c"), l);
         });
 
         System.out.println(checks - failures + "/" + checks + " checks passed");

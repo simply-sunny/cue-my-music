@@ -207,6 +207,14 @@ public final class CueScreen extends Screen {
     private final java.util.LinkedHashSet<String> selected = new java.util.LinkedHashSet<>();
     private int anchor = -1, focusRow = -1;
     private boolean selectDragging;
+    // A plain press on a playlist row: where, and whether it has become a drag to reorder.
+    private RowHit pressed;
+    private double pressX, pressY;
+    private boolean reordering;
+    // The search box in a page's toolbar: whether it's open, and whether to put the cursor in it.
+    private boolean pageFilterOpen;
+    private boolean focusPageFilter;
+    private static final String PAGE_FILTER = "page-filter";
     /** The page's track list as shown last frame, and the y of its first row. */
     private List<Track> shownTracks = List.of();
     private int shownTop;
@@ -263,8 +271,8 @@ public final class CueScreen extends Screen {
         centerX1 = width - GAP - (rightW > 0 ? rightW + GAP : 0);
         centerY0 = top;
         centerY1 = bottom - GAP;
-        // Dragging a selection to the list's top or bottom edge, or past it, scrolls the list.
-        if (selectDragging) {
+        // Dragging a selection or a song to the list's top or bottom edge, or past it, scrolls the list.
+        if (selectDragging || reordering) {
             if (mouseY < centerY0 + 10) scroll = Math.max(0, scroll - 6);
             else if (mouseY > centerY1 - 10) scroll = Math.min(scrollMax, scroll + 6);
         }
@@ -285,6 +293,7 @@ public final class CueScreen extends Screen {
         drawBottomBar(g, 0, bottom, width, height, mouseX, mouseY);
         if (renameBox != null) renameBox.extractRenderState(g, mouseX, mouseY, partialTick);
         drawSelectionBar(g);
+        drawReorder(g, mouseX, mouseY);
         drawMenu(g, mouseX, mouseY);
         drawToast(g);
 
@@ -441,6 +450,7 @@ public final class CueScreen extends Screen {
             fields.clear();
             fieldSubmits.clear();
             unfocusField();
+            pageFilterOpen = false;
         }
         view = v;
         key = k;
@@ -831,6 +841,43 @@ public final class CueScreen extends Screen {
         return drawTrackList(g, x0, y, x1, mx, my, listKey, unsorted);
     }
 
+    /** What's typed in the page's search box, or "" when it's closed. */
+    private String pageFilter() {
+        EditBox box = fields.get(PAGE_FILTER);
+        return pageFilterOpen && box != null ? box.getValue() : "";
+    }
+
+    /**
+     * The page's search, ending at {@code right}: a magnifier, or once clicked,
+     * a box that filters the songs shown as you type. It closes when it's empty
+     * and you click elsewhere or press Esc.
+     */
+    private void drawPageFilter(GuiGraphicsExtractor g, int right, int y, int mx, int my) {
+        if (!pageFilterOpen) {
+            int ix = right - 10;
+            boolean hover = mx >= ix - 3 && mx < right + 3 && my >= y && my < y + 18;
+            searchIcon(g, ix, y + 5, hover ? WHITE : DIM);
+            nextHits.add(new Hit(ix - 3, y, right + 3, y + 18, () -> {
+                pageFilterOpen = true;
+                focusPageFilter = true;
+            }));
+            return;
+        }
+        int w = Math.min(140, Math.max(60, right - centerX0 - 200));
+        Canvas c = new Canvas(g, right - w - Canvas.PAD, y, right + Canvas.PAD, mx, my);
+        c.textField(PAGE_FILTER, Component.translatable("cuemymusic.page.filter"), w, text -> unfocusField());
+        EditBox box = fields.get(PAGE_FILTER);
+        if (focusPageFilter) {
+            focusPageFilter = false;
+            unfocusField();
+            focusedField = box;
+            box.setFocused(true);
+            setFocused(box);
+        } else if (box != focusedField && box.getValue().isEmpty()) {
+            pageFilterOpen = false;
+        }
+    }
+
     /** A page's header: art, kind, big title, and a summary line. Returns the y below it. */
     private int drawHeader(GuiGraphicsExtractor g, int x0, int y, int x1, Art art, String kind, String title, String summary,
             int color) {
@@ -858,7 +905,12 @@ public final class CueScreen extends Screen {
 
     /** The big play button, add all to queue, the column headings, and the songs. Returns the y below them. */
     private int drawTrackList(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my, String listKey, List<Track> unsorted) {
-        List<Track> tracks = sorted(unsorted);
+        String filter = pageFilter();
+        List<String> filterTerms = terms(filter);
+        List<Track> tracks = sorted(unsorted).stream()
+                .filter(t -> filterTerms.isEmpty() || matches(normalize(t.title() + " " + t.artist() + " " + t.album()), filterTerms))
+                .toList();
+        int toolRight = x1 - 10;
 
         // Big play button for the whole list: pauses and resumes it once it's the one playing.
         int pb = 18;
@@ -876,6 +928,7 @@ public final class CueScreen extends Screen {
             String del = tr(System.currentTimeMillis() < deleteArmedUntil ? "cuemymusic.playlists.delete_confirm" : "cuemymusic.playlists.delete");
             String ren = tr("cuemymusic.playlists.rename");
             int dx = x1 - 10 - font.width(del), rx = dx - 12 - font.width(ren), ay = y + 11;
+            toolRight = rx - 14;
             boolean delHover = mx >= dx - 2 && mx < x1 - 8 && my >= ay - 3 && my < ay + 11;
             boolean renHover = mx >= rx - 2 && mx < dx - 10 && my >= ay - 3 && my < ay + 11;
             g.text(font, ren, rx, ay, renHover ? WHITE : DIM, false);
@@ -892,6 +945,7 @@ public final class CueScreen extends Screen {
                 }
             }));
         }
+        drawPageFilter(g, toolRight, y + 6, mx, my);
         // Add the whole list to the queue, in the order shown.
         if (!tracks.isEmpty()) {
             int qx = x0 + 10 + pb + 10, qy = y + 6;
@@ -927,6 +981,10 @@ public final class CueScreen extends Screen {
         y += 11;
         g.fill(x0 + 8, y, x1 - 8, y + 1, 0xFF2A2A2A);
         y += 4;
+        if (tracks.isEmpty() && !filterTerms.isEmpty()) {
+            g.text(font, clip(tr("cuemymusic.page.filter_none", filter.strip()), x1 - x0 - 20), x0 + 10, y + 6, DIM, false);
+            y += 20;
+        }
 
         shownTracks = tracks;
         shownTop = y;
@@ -2397,6 +2455,43 @@ public final class CueScreen extends Screen {
         return Math.clamp((int) Math.floor((inside - shownTop) / ROW), 0, shownTracks.size() - 1);
     }
 
+    /** Songs can be dragged into a new order on a playlist shown in its own order, without a search. */
+    private boolean canReorder() {
+        return view == View.LIST && sort == Sort.NONE && pageFilter().isBlank() && !shownTracks.isEmpty();
+    }
+
+    /** Where a dragged song would go: the gap before row n, from 0 to the number of rows. */
+    private int dropGap(double y) {
+        double inside = Math.clamp(y, centerY0, centerY1 - 1);
+        return Math.clamp((int) Math.round((inside - shownTop) / ROW), 0, shownTracks.size());
+    }
+
+    /** Drops the dragged song, or the selection if it was in it, into the gap at {@code y}. */
+    private void dropRows(RowHit r, double y) {
+        if (view != View.LIST) return;
+        List<String> moving = selected.contains(id(r.track())) && selected.size() > 1 ? List.copyOf(selected) : List.of(id(r.track()));
+        int gap = dropGap(y);
+        String before = gap < shownTracks.size() ? id(shownTracks.get(gap)) : null;
+        // Dropped just under itself: no change.
+        if (moving.size() == 1 && gap == r.index() + 1) return;
+        cfg.movePlaylistSongs(key, moving, before);
+    }
+
+    /** While a song is dragged: a green line where it would go, and its title by the pointer. */
+    private void drawReorder(GuiGraphicsExtractor g, int mx, int my) {
+        if (pressed == null || !reordering) return;
+        int gy = shownTop + dropGap(my) * ROW;
+        if (gy >= centerY0 - 1 && gy <= centerY1) {
+            g.fill(centerX0 + 8, gy - 1, centerX1 - 8, gy + 1, GREEN);
+            g.fill(centerX0 + 6, gy - 3, centerX0 + 10, gy + 3, GREEN);
+        }
+        int n = selected.contains(id(pressed.track())) && selected.size() > 1 ? selected.size() : 1;
+        String label = n > 1 ? tr("cuemymusic.page.moving", n) : pressed.track().title();
+        int w = font.width(label) + 10;
+        g.fill(mx + 10, my - 4, mx + 10 + w, my + 10, 0xEE282828);
+        g.text(font, label, mx + 15, my, WHITE, false);
+    }
+
     /** Scrolls just enough to show row {@code i}. */
     private void revealRow(int i) {
         int top = shownTop + i * ROW;
@@ -2415,8 +2510,16 @@ public final class CueScreen extends Screen {
         for (RowHit r : rowHits) {
             if (!r.contains(event.x(), event.y())) continue;
             if (!shift && !toggle) {
-                clearSelection();
-                return false;
+                if (!canReorder()) {
+                    clearSelection();
+                    return false;
+                }
+                // Wait to see if it's a click (play, like...) or a drag to move the song.
+                pressed = r;
+                pressX = event.x();
+                pressY = event.y();
+                reordering = false;
+                return true;
             }
             if (toggle && !shift) {
                 if (!selected.remove(id(r.track()))) selected.add(id(r.track()));
@@ -2865,6 +2968,10 @@ public final class CueScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (pressed != null) {
+            if (!reordering && Math.abs(event.y() - pressY) > 4) reordering = true;
+            return true;
+        }
         if (selectDragging) {
             int row = rowAt(event.y());
             if (row >= 0) {
@@ -2886,6 +2993,24 @@ public final class CueScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        if (pressed != null) {
+            RowHit r = pressed;
+            pressed = null;
+            if (reordering) {
+                reordering = false;
+                dropRows(r, event.y());
+            } else {
+                // Just a click: what it would have done straight away.
+                clearSelection();
+                for (int i = hits.size() - 1; i >= 0; i--) {
+                    if (hits.get(i).contains(pressX, pressY)) {
+                        hits.get(i).click().run();
+                        break;
+                    }
+                }
+            }
+            return true;
+        }
         if (selectDragging) {
             selectDragging = false;
             return true;

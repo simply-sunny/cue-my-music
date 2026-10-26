@@ -52,6 +52,7 @@ All keys are rebindable under **Options → Controls → Key Binds → Cue My Mu
 - The repeat button next to play cycles through off, repeat all (the page starts over at its end), and repeat one (the song plays again). Next and previous still move on.
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
 - Music pauses while Minecraft is in the background and resumes when you return, following Minecraft's **Pause on lost focus** (F3+P turns it on and off).
+- The magnifier at the right of a page's toolbar opens **Search in this list**, which narrows the songs shown as you type. Esc or clicking away with it empty closes it.
 - Space plays and pauses while the player is open. Click or drag the progress bar to seek.
 - Select several songs: shift-click or shift-drag for a run of songs, Cmd-click (Ctrl-click on Windows and Linux) to add or take out one, shift+↑/↓ to grow or shrink the selection, and Cmd/Ctrl+A for the whole page. Right-click a selected song for one menu for all of them: queue, like, dislike, or add to a playlist. Delete or Backspace takes them off the page you're on: out of a playlist, off Liked Songs, or off Disliked Songs. Esc clears the selection.
 
@@ -74,7 +75,7 @@ A partial title works if only one song matches, such as `/cmm play subwoofer`.
 
 ### Playlists
 
-Click **New playlist** in the library, then right-click songs anywhere and pick **Add to playlist**, then the playlist, or **New playlist** to make one with that song. On a playlist's page, click its name or **Rename** to rename it, and click **Delete** twice to delete it. Right-click a song there to remove it. Playlists are saved with your settings.
+Click **New playlist** in the library, then right-click songs anywhere and pick **Add to playlist**, then the playlist, or **New playlist** to make one with that song. On a playlist's page, click its name or **Rename** to rename it, and click **Delete** twice to delete it. Right-click a song there to remove it. Drag a song up or down to move it; a green line shows where it will go. Drag a selected song to move the whole selection. Moving needs the playlist in its own order, so turn off sorting by title, album or time first. Playlists are saved with your settings.
 
 ### Your stats
 
