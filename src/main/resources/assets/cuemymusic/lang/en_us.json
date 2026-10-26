@@ -84,5 +84,17 @@
 	"cuemymusic.eq.preset.treble_booster": "Treble Booster",
 	"cuemymusic.eq.preset.treble_reducer": "Treble Reducer",
 	"cuemymusic.eq.preset.vocal_booster": "Vocal Booster",
-	"cuemymusic.eq.preset.small_speakers": "Small Speakers"
+	"cuemymusic.eq.preset.small_speakers": "Small Speakers",
+	"cuemymusic.section.artists": "ARTISTS",
+	"cuemymusic.section.packs": "PACKS",
+	"cuemymusic.section.playlists": "YOUR PLAYLISTS",
+	"cuemymusic.disliked.title": "Disliked Songs",
+	"cuemymusic.disliked.byline": "Never picked by the game",
+	"cuemymusic.disliked.empty": "Right-click a song and pick Dislike to keep the game from playing it. You can still play it here.",
+	"cuemymusic.disliked.added": "The game won't play this song",
+	"cuemymusic.disliked.removed": "Back in the game's music",
+	"cuemymusic.menu.dislike": "Dislike",
+	"cuemymusic.menu.undislike": "Remove dislike",
+	"cuemymusic.command.disliked": "Disliked %s. The game won't play it.",
+	"cuemymusic.command.undisliked": "%s is back in the game's music."
 }

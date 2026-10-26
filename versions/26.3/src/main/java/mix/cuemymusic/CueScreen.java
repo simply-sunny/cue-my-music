@@ -56,6 +56,9 @@ public final class CueScreen extends Screen {
     private static final Art PLAYLIST_ART = Art.block("block/jukebox_top");
     private static final Art SETTINGS_ART = Art.block("block/crafting_table_top");
     private static final Art LIKED_ART = new Art.Sprite(Identifier.withDefaultNamespace("hud/heart/full"), 0xFF5A3BD6, 0xFF8FB6E0);
+    private static final Art DISLIKED_ART = new Art.Initials("\u2298", 0xFF5A2A2A, 0xFF3A1E1E);
+    private static final int LIB_ROW = 12;
+    private static final int LIB_SECTION = 14;
     private static final Art NEW_PLAYLIST_ART = new Art.Initials("+", 0xFF2E2E2E, 0xFF242424);
     private static final long TOAST_MILLIS = 1500;
 
@@ -73,7 +76,7 @@ public final class CueScreen extends Screen {
     }
 
     /** PLAYLIST is all game music; LIST is one of the player's own playlists; PANEL is an add-on's page. */
-    private enum View { PLAYLIST, LIKED, LIST, ARTIST, PACK, SETTINGS, PANEL }
+    private enum View { PLAYLIST, LIKED, DISLIKED, LIST, ARTIST, PACK, SETTINGS, PANEL }
 
     /** A track row that opens the song menu when right-clicked. */
     private record RowHit(int x0, int y0, int x1, int y1, Track track) {
@@ -153,6 +156,10 @@ public final class CueScreen extends Screen {
     private List<FieldHit> fieldHits = new ArrayList<>();
     private List<FieldHit> nextFieldHits = new ArrayList<>();
     private float partialTick;
+    // The library's scroll, and where its scrolling part was drawn last frame.
+    private double libraryScroll;
+    private int libraryScrollMax;
+    private int libraryX0, libraryX1, libraryTop, libraryBottom, libraryScrollTop, libraryScrollBottom;
 
     // Queue panel layout from the last frame, and the row being dragged.
     private int queueX0, queueX1, queueTop, queueRows;
@@ -231,63 +238,123 @@ public final class CueScreen extends Screen {
         List<CuePanel> panels = CuePanels.all();
         List<PackInfo> packs = MusicLibrary.packs().stream()
                 .filter(p -> panels.stream().noneMatch(panel -> p.id().equals(panel.packId()))).toList();
-
-        // Rows shrink to a single line when the window is short, so every entry still fits.
         List<CueConfig.Playlist> playlists = cfg.playlists;
-        int rows = artists.size() + packs.size() + playlists.size() + panels.size() + 4;
-        int h = Math.clamp((y1 - y0 - 24) / rows, 12, 22);
-        int last = y1 - h - 2;
-        int y = y0 + 20;
-        y = libraryItem(g, x0, y, x1, h, PLAYLIST_ART, tr("cuemymusic.playlist.title"),
+        List<Track> disliked = disliked();
+
+        // Settings stays at the bottom; everything above it scrolls.
+        int big = y1 - y0 > 200 ? 22 : 14;
+        int settingsY = y1 - big - 2;
+        libraryX0 = x0;
+        libraryX1 = x1;
+        libraryTop = y0 + 18;
+        libraryBottom = settingsY - 2;
+        g.enableScissor(x0, libraryTop, x1, libraryBottom);
+        int y = libraryTop + 2 - (int) libraryScroll;
+        int start = y;
+
+        y = libraryItem(g, x0, y, x1, big, PLAYLIST_ART, tr("cuemymusic.playlist.title"),
                 tr("cuemymusic.playlist.subtitle", all.size()), view == View.PLAYLIST, mx, my, () -> open(View.PLAYLIST, null));
-        y = libraryItem(g, x0, y, x1, h, LIKED_ART, tr("cuemymusic.liked.title"),
+        y = libraryItem(g, x0, y, x1, big, LIKED_ART, tr("cuemymusic.liked.title"),
                 tr("cuemymusic.playlist.subtitle", liked().size()), view == View.LIKED, mx, my, () -> open(View.LIKED, null));
-        for (CueConfig.Playlist p : playlists) {
-            if (y + h > last) break;
-            y = libraryItem(g, x0, y, x1, h, Art.initials(p.name()), p.name(),
-                    tr("cuemymusic.playlist.subtitle", p.songs().size()), view == View.LIST && p.id().equals(key), mx, my,
-                    () -> open(View.LIST, p.id()));
-        }
-        if (y + h <= last) {
-            y = libraryItem(g, x0, y, x1, h, NEW_PLAYLIST_ART, tr("cuemymusic.playlists.new"), tr("cuemymusic.playlists.new.subtitle"),
-                    false, mx, my, this::newPlaylist);
+        if (!disliked.isEmpty() || view == View.DISLIKED) {
+            y = libraryItem(g, x0, y, x1, big, DISLIKED_ART, tr("cuemymusic.disliked.title"),
+                    tr("cuemymusic.playlist.subtitle", disliked.size()), view == View.DISLIKED, mx, my, () -> open(View.DISLIKED, null));
         }
         for (CuePanel panel : panels) {
-            if (y + h > last) break;
-            y = libraryItem(g, x0, y, x1, h, panel.icon(), panel.title(), panel.subtitle(),
+            y = libraryItem(g, x0, y, x1, big, panel.icon(), panel.title(), panel.subtitle(),
                     view == View.PANEL && panel.id().equals(key), mx, my, () -> open(View.PANEL, panel.id()));
         }
-        for (String a : artists) {
-            if (y + h > last) break;
-            Art art = Art.block(Catalog.ARTIST_ART.get(a).texture());
-            y = libraryItem(g, x0, y, x1, h, art, a, tr("cuemymusic.artist"),
-                    view == View.ARTIST && a.equals(key), mx, my, () -> open(View.ARTIST, a));
+
+        y += 4;
+        y = librarySection(g, x0, y, x1, "artists", tr("cuemymusic.section.artists"), artists.size(), mx, my);
+        if (!cfg.isCollapsed("artists")) {
+            for (String a : artists) {
+                Art art = Art.block(Catalog.ARTIST_ART.get(a).texture());
+                y = libraryItem(g, x0, y, x1, LIB_ROW, art, a, null, view == View.ARTIST && a.equals(key), mx, my,
+                        () -> open(View.ARTIST, a));
+            }
         }
-        for (PackInfo p : packs) {
-            if (y + h > last) break;
-            y = libraryItem(g, x0, y, x1, h, p.art(), p.name(), tr("cuemymusic.pack"),
-                    view == View.PACK && p.id().equals(key), mx, my, () -> open(View.PACK, p.id()));
+        if (!packs.isEmpty()) {
+            y = librarySection(g, x0, y, x1, "packs", tr("cuemymusic.section.packs"), packs.size(), mx, my);
+            if (!cfg.isCollapsed("packs")) {
+                for (PackInfo p : packs) {
+                    y = libraryItem(g, x0, y, x1, LIB_ROW, p.art(), p.name(), null, view == View.PACK && p.id().equals(key), mx, my,
+                            () -> open(View.PACK, p.id()));
+                }
+            }
+        }
+        y = librarySection(g, x0, y, x1, "playlists", tr("cuemymusic.section.playlists"), playlists.size(), mx, my);
+        if (!cfg.isCollapsed("playlists")) {
+            for (CueConfig.Playlist p : playlists) {
+                y = libraryItem(g, x0, y, x1, LIB_ROW, Art.initials(p.name()), p.name(), null,
+                        view == View.LIST && p.id().equals(key), mx, my, () -> open(View.LIST, p.id()));
+            }
+            y = libraryItem(g, x0, y, x1, LIB_ROW, NEW_PLAYLIST_ART, tr("cuemymusic.playlists.new"), null, false, mx, my,
+                    this::newPlaylist);
+        }
+        g.disableScissor();
+        libraryScrollTop = libraryTop;
+        libraryScrollBottom = libraryBottom;
+        libraryScrollMax = Math.max(0, y - start + 4 - (libraryBottom - libraryTop));
+        libraryScroll = Math.clamp(libraryScroll, 0, libraryScrollMax);
+        if (libraryScrollMax > 0) {
+            // A thin bar showing how far the library is scrolled.
+            int track = libraryBottom - libraryTop, bar = Math.max(12, track * track / (track + libraryScrollMax));
+            int by = libraryTop + (int) ((track - bar) * libraryScroll / libraryScrollMax);
+            g.fill(x1 - 3, by, x1 - 1, by + bar, 0xFF4D4D4D);
         }
 
-        libraryItem(g, x0, last, x1, h, SETTINGS_ART, tr("cuemymusic.settings"), tr("cuemymusic.settings.subtitle"),
+        libraryTop = y0;
+        libraryBottom = y1;
+        libraryItem(g, x0, settingsY, x1, big, SETTINGS_ART, tr("cuemymusic.settings"), tr("cuemymusic.settings.subtitle"),
                 view == View.SETTINGS, mx, my, () -> open(View.SETTINGS, null));
     }
 
+    /** A section heading that folds its rows away when clicked. Shows the count while folded. */
+    private int librarySection(GuiGraphicsExtractor g, int x0, int y, int x1, String id, String label, int count, int mx, int my) {
+        boolean folded = cfg.isCollapsed(id);
+        boolean hover = libraryHover(x0, y, x1, y + LIB_SECTION, mx, my);
+        int color = hover ? WHITE : DIM;
+        int ay = y + 5;
+        if (folded) {
+            for (int i = 0; i < 3; i++) g.fill(x0 + 7 + i, ay + i - 1, x0 + 8 + i, ay + 4 - i, color);
+        } else {
+            for (int i = 0; i < 3; i++) g.fill(x0 + 6 + i, ay + i, x0 + 11 - i, ay + i + 1, color);
+        }
+        String text = folded ? label + "  " + count : label;
+        g.text(font, clip(text, x1 - x0 - 20), x0 + 15, y + 3, color, false);
+        libraryHit(x0, y, x1, y + LIB_SECTION, () -> cfg.toggleCollapsed(id));
+        return y + LIB_SECTION;
+    }
+
+    private boolean libraryHover(int x0, int y0, int x1, int y1, int mx, int my) {
+        return mx >= x0 && mx < x1 && my >= Math.max(y0, libraryTop) && my < Math.min(y1, libraryBottom);
+    }
+
+    /** A click area in the library, cut to the part that's scrolled into view. */
+    private void libraryHit(int x0, int y0, int x1, int y1, Runnable click) {
+        int top = Math.max(y0, libraryTop), bottom = Math.min(y1, libraryBottom);
+        if (bottom > top) nextHits.add(new Hit(x0, top, x1, bottom, click));
+    }
+
+    /** A library row. With a {@code subtitle} and room for it, two lines; otherwise one compact line. */
     private int libraryItem(GuiGraphicsExtractor g, int x0, int y, int x1, int h, Art art, String title,
             String subtitle, boolean selected, int mx, int my, Runnable click) {
-        boolean hover = mx >= x0 && mx < x1 && my >= y && my < y + h;
+        if (y + h < libraryTop || y > libraryBottom) return y + h;
+        boolean hover = libraryHover(x0, y, x1, y + h, mx, my);
         if (selected || hover) g.fill(x0 + 2, y, x1 - 2, y + h, selected ? SELECTED : ROW_HOVER);
         int artSize = Math.min(16, h - 2);
-        art(g, art, x0 + 5, y + (h - artSize) / 2, artSize);
-        int tx = x0 + 9 + artSize;
-        int w = x1 - tx - 4;
-        if (h >= 21) {
+        int ax = subtitle == null ? x0 + 15 : x0 + 5;
+        art(g, art, ax, y + (h - artSize) / 2, artSize);
+        int tx = ax + artSize + 4;
+        int w = x1 - tx - 5;
+        if (subtitle != null && h >= 21) {
             g.text(font, clip(title, w), tx, y + 3, selected ? GREEN : WHITE, false);
             g.text(font, clip(subtitle, w), tx, y + 12, DIM, false);
         } else {
-            g.text(font, clip(title, w), tx, y + (h - 8) / 2, selected ? GREEN : WHITE, false);
+            g.text(font, clip(title, w), tx, y + (h - 8) / 2, selected ? GREEN : subtitle == null && !hover ? DIM : WHITE, false);
         }
-        nextHits.add(new Hit(x0, y, x1, y + h, click));
+        libraryHit(x0, y, x1, y + h, click);
         return y + h;
     }
 
@@ -343,6 +410,8 @@ public final class CueScreen extends Screen {
             showToast(tr("cuemymusic.queue.added"));
         }));
         items.add(new MenuItem(tr(isLiked(t) ? "cuemymusic.menu.unlike" : "cuemymusic.menu.like"), () -> toggleLiked(t)));
+        items.add(new MenuItem(tr(isDisliked(t) ? "cuemymusic.menu.undislike" : "cuemymusic.menu.dislike"), () ->
+                showToast(tr(player.toggleDisliked(t) ? "cuemymusic.disliked.added" : "cuemymusic.disliked.removed"))));
         for (CueConfig.Playlist p : cfg.playlists) {
             if (view == View.LIST && p.id().equals(key)) continue;
             items.add(new MenuItem(tr("cuemymusic.menu.add_to", clip(p.name(), 120)), () -> showToast(cfg.addToPlaylist(p.id(), song)
@@ -438,6 +507,8 @@ public final class CueScreen extends Screen {
                     tr("cuemymusic.playlist"), tr("cuemymusic.playlist.title"), null, 0xFF1E3A2A);
             case LIKED -> drawTrackPage(g, x0, contentTop, x1, mx, my, "liked", liked(), LIKED_ART,
                     tr("cuemymusic.playlist"), tr("cuemymusic.liked.title"), null, 0xFF3A2E6E);
+            case DISLIKED -> drawTrackPage(g, x0, contentTop, x1, mx, my, "disliked", disliked(), DISLIKED_ART,
+                    tr("cuemymusic.playlist"), tr("cuemymusic.disliked.title"), tr("cuemymusic.disliked.byline"), 0xFF4A2424);
             case LIST -> {
                 CueConfig.Playlist p = cfg.playlist(key);
                 if (p == null) {
@@ -568,7 +639,8 @@ public final class CueScreen extends Screen {
                 art(g, t.art(), colTitle, y + 2, 16);
                 int textX = colTitle + 20;
                 int titleW = (showAlbum ? colAlbum - 6 : colTime - 60) - textX;
-                g.text(font, clip(t.title(), titleW), textX, y + 2, isCurrent ? GREEN : WHITE, false);
+                boolean disliked = isDisliked(t);
+                g.text(font, clip(t.title(), titleW), textX, y + 2, isCurrent ? GREEN : disliked ? FAINT : WHITE, false);
                 g.text(font, clip(t.artist(), titleW), textX, y + 11, DIM, false);
                 // Stops short of the heart and + when they show.
                 int albumEnd = hover || isLiked(t) ? colTime - 60 : colTime - 48;
@@ -580,6 +652,10 @@ public final class CueScreen extends Screen {
                 nextRowHits.add(new RowHit(x0, top, x1, bottom, t));
                 // Like: always shown once liked, otherwise on hover, left of add to queue.
                 boolean liked = isLiked(t);
+                if (disliked && !hover) {
+                    // Disliked: the game won't pick it. A small no-entry mark where the heart goes.
+                    g.text(font, "\u2298", colTime - 57, y + 6, FAINT, false);
+                }
                 if (hover || liked) {
                     int hx = colTime - 56, hy = y + 6;
                     boolean heartHover = hover && mx >= hx - 2 && mx < hx + 9 && my >= hy - 2 && my < hy + 8;
@@ -600,8 +676,9 @@ public final class CueScreen extends Screen {
             }
             y += ROW;
         }
-        if (tracks.isEmpty() && (view == View.LIKED || view == View.LIST)) {
+        if (tracks.isEmpty() && (view == View.LIKED || view == View.LIST || view == View.DISLIKED)) {
             Component hint = view == View.LIKED ? Component.translatable("cuemymusic.liked.empty")
+                    : view == View.DISLIKED ? Component.translatable("cuemymusic.disliked.empty")
                     : Component.translatable("cuemymusic.playlists.empty");
             g.textWithWordWrap(font, hint, x0 + 10, y + 4, x1 - x0 - 20, DIM, false);
             y += font.wordWrapHeight(hint, x1 - x0 - 20) + 4;
@@ -611,6 +688,14 @@ public final class CueScreen extends Screen {
 
     private List<Track> liked() {
         return MusicLibrary.liked(cfg.liked);
+    }
+
+    private List<Track> disliked() {
+        return MusicLibrary.tracks(cfg.disliked);
+    }
+
+    private boolean isDisliked(Track t) {
+        return cfg.isDisliked(t.location().toString());
     }
 
     private boolean isLiked(Track t) {
@@ -1337,6 +1422,10 @@ public final class CueScreen extends Screen {
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
         if (queueFit > 0 && x >= queueX0 && x < queueX1 && y >= queueTop && y < queueTop + queueFit * QROW) {
             queueScroll -= vertical;
+            return true;
+        }
+        if (x >= libraryX0 && x < libraryX1 && y >= libraryScrollTop && y < libraryScrollBottom && libraryScrollMax > 0) {
+            libraryScroll = Math.clamp(libraryScroll - vertical * 24, 0, libraryScrollMax);
             return true;
         }
         if (x >= centerX0 && x < centerX1 && y >= centerY0 && y < centerY1) {

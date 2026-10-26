@@ -19,7 +19,7 @@ import mix.cuemymusic.library.Track;
 
 /**
  * {@code /cmm play [song]}, {@code /cmm queue <song>}, {@code /cmm next},
- * {@code /cmm prev}, {@code /cmm pause} and {@code /cmm repeat [off|all|one]}. Client-side, so they work on any server.
+ * {@code /cmm prev}, {@code /cmm pause}, {@code /cmm repeat [off|all|one]} and {@code /cmm dislike [song]}. Client-side, so they work on any server.
  * Songs are named by title; the chat suggests them as you type.
  */
 final class CueCommands {
@@ -55,11 +55,30 @@ final class CueCommands {
                     return nowPlaying(c.getSource());
                 }))
                 .then(ClientCommands.literal("pause").executes(CueCommands::pause))
+                .then(ClientCommands.literal("dislike")
+                        .executes(c -> {
+                            Track t = CuePlayer.INSTANCE.current();
+                            if (t == null) {
+                                c.getSource().sendError(Component.translatable("cuemymusic.command.nothing"));
+                                return 0;
+                            }
+                            return dislike(c.getSource(), t);
+                        })
+                        .then(ClientCommands.argument("song", StringArgumentType.greedyString())
+                                .suggests(CueCommands::suggestSongs)
+                                .executes(c -> withSong(c, CueCommands::dislike))))
                 .then(ClientCommands.literal("repeat")
                         .executes(c -> repeat(c.getSource(), CueConfig.INSTANCE.repeatMode().cycle()))
                         .then(ClientCommands.literal("off").executes(c -> repeat(c.getSource(), PlayOrder.Repeat.OFF)))
                         .then(ClientCommands.literal("all").executes(c -> repeat(c.getSource(), PlayOrder.Repeat.ALL)))
                         .then(ClientCommands.literal("one").executes(c -> repeat(c.getSource(), PlayOrder.Repeat.ONE)))));
+    }
+
+    /** Dislikes the song, or takes the dislike away if it already has one. */
+    private static int dislike(FabricClientCommandSource src, Track t) {
+        boolean disliked = CuePlayer.INSTANCE.toggleDisliked(t);
+        src.sendFeedback(Component.translatable(disliked ? "cuemymusic.command.disliked" : "cuemymusic.command.undisliked", t.title()));
+        return 1;
     }
 
     private static int repeat(FabricClientCommandSource src, PlayOrder.Repeat mode) {

@@ -411,10 +411,38 @@ public final class CuePlayer {
         return Math.min(((MusicFrequencyInvoker) (Object) frequency).cuemymusic$nextSongDelay(music, random), music.maxDelay());
     }
 
-    /** One draw from the music's sounds, weighted as in sounds.json, the same draw the game makes when it starts a song. */
+    /**
+     * One draw from the music's sounds, weighted as in sounds.json, the same draw the game makes when it starts a song.
+     * Disliked songs are drawn again, which keeps the others' weights as they were. If every draw is disliked,
+     * it's silence, so the game waits for the next break instead.
+     */
     private Sound pick(Music music) {
         WeighedSoundEvents events = Minecraft.getInstance().getSoundManager().getSoundEvent(music.sound().value().location());
-        return events == null ? null : events.getSound(random);
+        if (events == null) return null;
+        for (int i = 0; i < 64; i++) {
+            Sound s = events.getSound(random);
+            Track t = track(s);
+            if (t == null || !CueConfig.INSTANCE.isDisliked(t.location().toString())) return s;
+        }
+        return SoundManager.EMPTY_SOUND;
+    }
+
+    /**
+     * Dislikes the song, or takes the dislike away. A disliked song the game had
+     * planned is swapped for another, keeping the same break, and one the game
+     * is playing now is skipped. Returns whether it's disliked now.
+     */
+    public boolean toggleDisliked(Track track) {
+        CueConfig.INSTANCE.toggleDisliked(track.location().toString());
+        boolean disliked = CueConfig.INSTANCE.isDisliked(track.location().toString());
+        if (disliked) {
+            if (track.equals(planned) && plannedFor != null) {
+                plannedSound = pick(plannedFor);
+                planned = track(plannedSound);
+            }
+            if (track.equals(current) && ours != null && !picked) next();
+        }
+        return disliked;
     }
 
     private static Track track(Sound sound) {
