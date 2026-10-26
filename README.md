@@ -97,7 +97,7 @@ A pack can name its songs itself with `assets/<namespace>/cuemymusic.json`. Keys
 
 The player lists every sound event whose name starts with `music.`. Put songs in one the game never plays, such as `mypack:music.extra`, and they play from the player only.
 
-[Cue My Music: Downloads](https://github.com/simply-sunny/cue-my-music-downloads) is a separate add-on that saves songs from a link into such a pack with yt-dlp.
+[Cue My Music: Downloads](https://github.com/simply-sunny/cue-my-music-downloads) is a separate add-on that saves songs from a link into such a pack with yt-dlp, from its own page in the player.
 
 ## Configure
 
@@ -141,6 +141,10 @@ Pitch and speed use a WSOLA time-stretch followed by resampling, and the equaliz
 ```bash
 java scripts/MakeIcon.java <26.3 client jar> src/main/resources/assets/cuemymusic/icon.png src/main/resources/assets/cuemymusic/textures/gui/sprites/music.png
 ```
+
+### Add-ons
+
+An add-on can give itself a page in the player's library. Implement `mix.cuemymusic.api.CuePanel` and call `CuePanels.register(panel)` from your client initializer. The page draws through a `PanelCanvas`, which has the player's header, headings, text, text fields, buttons, progress bar, and song list, so it matches the rest of the player. A panel can also take over a resource pack's entry (`packId`) and add items to the right-click menu of its songs (`songActions`). The API is new in 1.1.0 and may still change.
 
 ## Troubleshooting
 

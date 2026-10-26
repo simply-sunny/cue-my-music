@@ -11,6 +11,7 @@ All notable changes to Cue My Music are documented here. This project follows [S
 - Right-click menu on songs: add to queue, like, add to a playlist.
 - Resource packs can credit each song with `assets/<namespace>/cuemymusic.json`.
 - Pitch, speed, and EQ changes show a loading ring until they're heard.
+- Add-ons can add their own page to the player's library (`mix.cuemymusic.api`).
 
 ### Fixed
 
