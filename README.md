@@ -28,18 +28,22 @@ Jars are named `cue-my-music-<jar>-<version>.jar`.
 
 ## Use
 
-Open **Mod Menu → Cue My Music**, or bind **Open player** under **Options → Controls → Key Binds → Cue My Music**.
+Open it from the music button in the pause menu, from **Mod Menu → Cue My Music**, or with the **Open player** key. The key works on any screen, including the title screen and the pause menu, and closes the player again.
 
 The player has four parts:
 
-- **Library** (left): **All game music**, then one page per artist (C418, Lena Raine, Aaron Cherof, Kumi Tanioka, Amos Roddy, fingerspit), then one page per resource pack that adds music. **Settings** is at the bottom. Artists with no tracks loaded are hidden.
-- **Track list** (middle): click a track to play it. Hover it and press **+** to add it to the queue. Click **Title**, **Album** or the clock to sort: up, down, then back to the original order.
-- **Now playing** (right): album, art, title and artist. Long names scroll. Below that is the queue. Hidden when the window is narrow.
+- **Library** (left): **All game music**, **Liked Songs**, then one page per artist (C418, Lena Raine, Aaron Cherof, Kumi Tanioka, Amos Roddy, fingerspit), then one page per resource pack that adds music. **Settings** is at the bottom. Artists with no tracks loaded are hidden.
+- **Track list** (middle): click a track to play it. Hover it and click the heart to like it, or **+** to add it to the queue. Click **Title**, **Album** or the clock to sort: up, down, then back to the original order.
+- **Now playing** (right): album, art, title and artist, with a heart to like the song. Long names scroll. Below that is the queue. Hidden when the window is narrow.
 - **Controls** (bottom): previous, play/pause, next and a progress bar. Click or drag the bar to seek.
 
 Space plays and pauses while the player is open.
 
 Album art comes from game textures, one block per album. Resource pack tracks use the pack's icon, or its initials on a colour gradient if it has none.
+
+### Liked Songs
+
+Liked songs are collected on their own page, newest first, and saved in `config/cuemymusic.json`.
 
 ### The queue
 
@@ -47,19 +51,19 @@ Songs you queue play one after another, as soon as the current song ends. Drag a
 
 After the queue comes the game's own music. The game still decides when music plays: a random break of up to 20 minutes between songs on the default setting (**Options → Music & Sounds → Frequency**), and different music on the title screen, underwater, in the Nether and so on. Cue My Music picks the game's next song and break ahead of time, with the same rules, so the queue can show them: **In 0:42** while waiting, or **After a 12:30 break** while a song plays. Click it to play it now and skip the break. **Next** with an empty queue does the same.
 
-Songs the game starts play through the player too, with the usual "Now playing" toast. Songs you pick yourself aren't cut off when you change dimension or open a menu; the game's songs still are, as in vanilla. While a song is paused, the game's music stays quiet.
+Songs the game starts play through the player too, and behave exactly as in vanilla: the same weighted pick from `sounds.json`, the same break, each file's own volume and pitch, the same "Now playing" toast, and they still stop when you change dimension or when music that replaces them starts (the dragon fight, the credits). The only differences are things you do yourself: songs you pick or queue aren't cut off, the queue plays straight after the current song, and while a song is paused the game's music stays quiet.
 
 ### Keys
 
-Bind them under **Options → Controls → Key Binds**.
+All five are under **Options → Controls → Key Binds → Cue My Music**. They work in game and on any screen without a text box in focus.
 
-| Key | Category | Default |
-| --- | --- | --- |
-| Open player | Cue My Music | None |
-| Turn effects on/off | Cue My Music | None |
-| Previous song | Miscellaneous | F7 on macOS, none elsewhere |
-| Play/pause music | Miscellaneous | F8 on macOS, none elsewhere |
-| Next song | Miscellaneous | F9 on macOS, none elsewhere |
+| Key | Default |
+| --- | --- |
+| Open player | None |
+| Turn effects on/off | None |
+| Previous song | F7 on macOS, none elsewhere |
+| Play/pause music | F8 on macOS, none elsewhere |
+| Next song | F9 on macOS, none elsewhere |
 
 F7 to F9 are the media keys on a Mac keyboard. macOS keeps them unless you hold **fn**, or turn on **System Settings → Keyboard → Keyboard Shortcuts → Function Keys → Use F1, F2, etc. keys as standard function keys**.
 
@@ -99,6 +103,14 @@ The game's music manager still runs its timers. When it would start a song, the 
 
 Game streams can't rewind, so pause, seek and resume restart the track at a position and skip ahead to it. Track lengths for vanilla songs are built in. Resource pack songs are measured from their Ogg file the first time they show up.
 
+## Icon
+
+The icon is built from the game's own textures by `scripts/MakeIcon.java`: the note block, three note particles tinted the way the game tints them, and the player's controls. The pause menu button uses the notes from the game's "Now playing" toast. To rebuild both:
+
+```bash
+java scripts/MakeIcon.java <path to the 26.3 client jar> src/main/resources/assets/cuemymusic/icon.png src/main/resources/assets/cuemymusic/textures/gui/sprites/music.png
+```
+
 ## Develop
 
 Requires JDK 25.
@@ -133,7 +145,7 @@ Logs are in `.minecraft/logs/latest.log`. Include the log and your Minecraft, mo
 - **Other music mods:** mods that replace the music stream (custom players, streaming radios) may bypass it.
 - **Extreme settings:** WSOLA sounds best within about ±5 semitones and 0.75–1.5× speed. Beyond that you'll hear some smearing or echo.
 - **Quilt:** expected to work through Fabric compatibility. Not tested yet.
-- **Tested:** Fabric Loader 0.20.1, Fabric API 0.165.0 and Mod Menu 21.0.0 on 26.3, macOS. Play, pause, seek, next and previous were checked in game, plus the playlist, artist, pack and settings pages at the default and a larger window size. The queue, sorting, and the game's break and next song were checked on the title screen. Packs tested: True Ending Dragon Music, C4Music 4.3, Golden Days Music, C418 Background Music Only.
+- **Tested:** Fabric Loader 0.20.1, Fabric API 0.165.0 and Mod Menu 21.0.0 on 26.3, macOS. Play, pause, seek, next and previous were checked in game, plus the playlist, artist, pack and settings pages at the default and a larger window size. The queue, sorting, and the game's break and next song were checked on the title screen; the pause menu button, Liked Songs and the open key on the pause menu were checked in a world. Packs tested: True Ending Dragon Music, C4Music 4.3, Golden Days Music, C418 Background Music Only.
 
 ## License
 

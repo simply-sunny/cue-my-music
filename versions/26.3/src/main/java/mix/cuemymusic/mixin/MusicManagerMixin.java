@@ -47,7 +47,7 @@ abstract class MusicManagerMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/sounds/MusicManager$MusicFrequency;getNextSongDelay(Lnet/minecraft/sounds/Music;Lnet/minecraft/util/RandomSource;)I"))
     private int cuemymusic$plannedBreak(MusicManager.MusicFrequency frequency, Music music, RandomSource random,
             Operation<Integer> original) {
-        return CuePlayer.INSTANCE.takeBreak();
+        return CuePlayer.INSTANCE.takeBreak(music, frequency, () -> original.call(frequency, music, random));
     }
 
     /** Music that replaces the current song (the boss fight, the credits) stops it on purpose: it didn't end. */

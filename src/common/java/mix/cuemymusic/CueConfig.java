@@ -5,6 +5,9 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -30,6 +33,8 @@ public final class CueConfig {
     /** dB per band, see {@link Equalizer#FREQUENCIES}. Replaced whole, never mutated in place. */
     public volatile double[] eqGains = new double[Equalizer.FREQUENCIES.length];
     public volatile String eqPreset = "flat";
+    /** Liked songs as sound file ids ("minecraft:music/game/sweden"), oldest first. Replaced whole, never mutated in place. */
+    public volatile List<String> liked = List.of();
 
     private CueConfig() {
     }
@@ -47,6 +52,18 @@ public final class CueConfig {
         return enabled && eqEnabled ? eqGains : null;
     }
 
+    public boolean isLiked(String id) {
+        return liked.contains(id);
+    }
+
+    /** Likes the song, or unlikes it if it's already liked, and saves. */
+    public void toggleLiked(String id) {
+        List<String> next = new ArrayList<>(liked);
+        if (!next.remove(id)) next.add(id);
+        liked = List.copyOf(next);
+        save();
+    }
+
     public void clamp() {
         pitchSemitones = Math.clamp(pitchSemitones, -12, 12);
         speed = Math.clamp(Double.isFinite(speed) ? Math.round(speed * 100) / 100.0 : 1, 0.5, 2.0);
@@ -57,6 +74,7 @@ public final class CueConfig {
         }
         eqGains = g;
         if (eqPreset == null) eqPreset = "custom";
+        liked = liked == null ? List.of() : liked.stream().filter(Objects::nonNull).distinct().toList();
     }
 
     private static Path path() {
@@ -97,5 +115,6 @@ public final class CueConfig {
         eqEnabled = o.eqEnabled;
         eqGains = o.eqGains;
         eqPreset = o.eqPreset;
+        liked = o.liked;
     }
 }

@@ -15,6 +15,7 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 import mix.cuemymusic.dsp.Equalizer;
 import mix.cuemymusic.library.Art;
@@ -45,6 +46,7 @@ public final class CueScreen extends Screen {
     private static final int ROW = 20;
     private static final Art PLAYLIST_ART = Art.block("block/jukebox_top");
     private static final Art SETTINGS_ART = Art.block("block/crafting_table_top");
+    private static final Art LIKED_ART = new Art.Sprite(Identifier.withDefaultNamespace("hud/heart/full"), 0xFF5A3BD6, 0xFF8FB6E0);
     private static final long TOAST_MILLIS = 1500;
 
     /** EQ presets, in dB for each band of {@link Equalizer#FREQUENCIES}. */
@@ -60,7 +62,7 @@ public final class CueScreen extends Screen {
         PRESETS.put("small_speakers", new double[] {-6, -2, 1, 2, 2, -1});
     }
 
-    private enum View { PLAYLIST, ARTIST, PACK, SETTINGS }
+    private enum View { PLAYLIST, LIKED, ARTIST, PACK, SETTINGS }
 
     /** Track list order. Clicking a column heading cycles it through ascending, descending and off. */
     private enum Sort { NONE, TITLE, ALBUM, TIME }
@@ -168,12 +170,14 @@ public final class CueScreen extends Screen {
         List<PackInfo> packs = MusicLibrary.packs();
 
         // Rows shrink to a single line when the window is short, so every entry still fits.
-        int rows = artists.size() + packs.size() + 2;
+        int rows = artists.size() + packs.size() + 3;
         int h = Math.clamp((y1 - y0 - 24) / rows, 12, 22);
         int last = y1 - h - 2;
         int y = y0 + 20;
         y = libraryItem(g, x0, y, x1, h, PLAYLIST_ART, tr("cuemymusic.playlist.title"),
                 tr("cuemymusic.playlist.subtitle", all.size()), view == View.PLAYLIST, mx, my, () -> open(View.PLAYLIST, null));
+        y = libraryItem(g, x0, y, x1, h, LIKED_ART, tr("cuemymusic.liked.title"),
+                tr("cuemymusic.playlist.subtitle", liked().size()), view == View.LIKED, mx, my, () -> open(View.LIKED, null));
         for (String a : artists) {
             if (y + h > last) break;
             Art art = Art.block(Catalog.ARTIST_ART.get(a).texture());
@@ -232,6 +236,8 @@ public final class CueScreen extends Screen {
                     tr("cuemymusic.pack"), pack.name(), pack.author(), PackNames.gradient(pack.name())[1]);
             case PLAYLIST -> drawTrackPage(g, x0, contentTop, x1, mx, my, MusicLibrary.all(), PLAYLIST_ART,
                     tr("cuemymusic.playlist"), tr("cuemymusic.playlist.title"), null, 0xFF1E3A2A);
+            case LIKED -> drawTrackPage(g, x0, contentTop, x1, mx, my, liked(), LIKED_ART,
+                    tr("cuemymusic.playlist"), tr("cuemymusic.liked.title"), null, 0xFF3A2E6E);
         };
         g.disableScissor();
         scrollMax = Math.max(0, contentBottom + (int) scroll - y1 + 8);
@@ -295,7 +301,7 @@ public final class CueScreen extends Screen {
                 else g.text(font, Integer.toString(i + 1), x0 + 10, y + 6, isCurrent ? GREEN : DIM, false);
                 art(g, t.art(), colTitle, y + 2, 16);
                 int textX = colTitle + 20;
-                int titleW = (showAlbum ? colAlbum - 6 : colTime - 44) - textX;
+                int titleW = (showAlbum ? colAlbum - 6 : colTime - 60) - textX;
                 g.text(font, clip(t.title(), titleW), textX, y + 2, isCurrent ? GREEN : WHITE, false);
                 g.text(font, clip(t.artist(), titleW), textX, y + 11, DIM, false);
                 if (showAlbum) g.text(font, clip(t.album(), colTime - 48 - colAlbum), colAlbum, y + 6, DIM, false);
@@ -303,6 +309,15 @@ public final class CueScreen extends Screen {
                 g.text(font, len, colTime - font.width(len), y + 6, DIM, false);
                 int top = Math.max(y, centerY0), bottom = Math.min(y + ROW, centerY1);
                 nextHits.add(new Hit(x0, top, x1, bottom, () -> player.play(t, 0, tracks)));
+                // Like: always shown once liked, otherwise on hover, left of add to queue.
+                boolean liked = isLiked(t);
+                if (hover || liked) {
+                    int hx = colTime - 56, hy = y + 6;
+                    boolean heartHover = hover && mx >= hx - 2 && mx < hx + 9 && my >= hy - 2 && my < hy + 8;
+                    heartIcon(g, hx, hy, liked, liked ? GREEN : heartHover ? WHITE : DIM);
+                    if (hover) nextHits.add(new Hit(hx - 2, Math.max(hy - 2, centerY0), hx + 9, Math.min(hy + 8, centerY1),
+                            () -> toggleLiked(t)));
+                }
                 if (hover) {
                     // Add to queue, just left of the length.
                     int px = colTime - 40, py = y + 4;
@@ -316,7 +331,26 @@ public final class CueScreen extends Screen {
             }
             y += ROW;
         }
+        if (tracks.isEmpty() && view == View.LIKED) {
+            Component hint = Component.translatable("cuemymusic.liked.empty");
+            g.textWithWordWrap(font, hint, x0 + 10, y + 4, x1 - x0 - 20, DIM, false);
+            y += font.wordWrapHeight(hint, x1 - x0 - 20) + 4;
+        }
         return y + 8;
+    }
+
+    private List<Track> liked() {
+        return MusicLibrary.liked(cfg.liked);
+    }
+
+    private boolean isLiked(Track t) {
+        return cfg.isLiked(t.location().toString());
+    }
+
+    private void toggleLiked(Track t) {
+        boolean was = isLiked(t);
+        cfg.toggleLiked(t.location().toString());
+        showToast(tr(was ? "cuemymusic.liked.removed" : "cuemymusic.liked.added"));
     }
 
     private void heading(GuiGraphicsExtractor g, String label, int x, int y, Sort column, int mx, int my) {
@@ -486,7 +520,12 @@ public final class CueScreen extends Screen {
         int y = y0 + 25 + size;
         marquee(g, t.title(), left, y, w, WHITE, 1.5f);
         y += 15;
-        marquee(g, t.artist(), left, y, w, DIM, 1);
+        marquee(g, t.artist(), left, y, w - 12, DIM, 1);
+        boolean liked = isLiked(t);
+        int hx = left + w - 7;
+        boolean heartHover = mx >= hx - 2 && mx < hx + 9 && my >= y - 2 && my < y + 8;
+        heartIcon(g, hx, y + 1, liked, liked ? GREEN : heartHover ? WHITE : DIM);
+        nextHits.add(new Hit(hx - 2, y - 2, hx + 9, y + 8, () -> toggleLiked(t)));
         y += 16;
         drawQueue(g, x0, y, x1, y1, mx, my);
     }
@@ -669,6 +708,10 @@ public final class CueScreen extends Screen {
             player.togglePause();
             return true;
         }
+        if (CueMyMusicClient.openKey(event)) {
+            onClose();
+            return true;
+        }
         if (CueMyMusicClient.mediaKey(event)) return true;
         return super.keyPressed(event);
     }
@@ -755,6 +798,11 @@ public final class CueScreen extends Screen {
         switch (art) {
             case Art.Texture tex -> g.blit(RenderPipelines.GUI_TEXTURED, tex.id(), x, y, 0, 0, size, size,
                     tex.width(), tex.height(), tex.width(), tex.height());
+            case Art.Sprite sp -> {
+                g.fillGradient(x, y, x + size, y + size, sp.top(), sp.bottom());
+                int s = Math.max(5, size * 9 / 16);
+                g.blitSprite(RenderPipelines.GUI_TEXTURED, sp.sprite(), x + (size - s) / 2, y + (size - s) / 2, s, s);
+            }
             case Art.Initials ini -> {
                 g.fillGradient(x, y, x + size, y + size, ini.top(), ini.bottom());
                 float scale = Math.min(size * 0.7f / Math.max(1, font.width(ini.text())), size * 0.45f / 8);
@@ -850,6 +898,18 @@ public final class CueScreen extends Screen {
         for (int i = 0; i < 3; i++) {
             int row = up ? i : 2 - i;
             g.fill(x + 2 - row, y + i + 1, x + 3 + row, y + i + 2, color);
+        }
+    }
+
+    /** A 7×6 heart, filled when the song is liked. */
+    private static void heartIcon(GuiGraphicsExtractor g, int x, int y, boolean filled, int color) {
+        String[] rows = filled
+                ? new String[] {".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X..."}
+                : new String[] {".XX.XX.", "X..X..X", "X.....X", ".X...X.", "..X.X..", "...X..."};
+        for (int r = 0; r < rows.length; r++) {
+            for (int c = 0; c < 7; c++) {
+                if (rows[r].charAt(c) == 'X') g.fill(x + c, y + r, x + c + 1, y + r + 1, color);
+            }
         }
     }
 
