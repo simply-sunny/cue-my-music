@@ -29,7 +29,7 @@ public final class AutomixTest {
         });
         run("a profile reads back as it was written; another format reads as none", () -> {
             Automix.Profile p = new Automix.Profile(48000, 2, 1_000_000, 1200, 990_000, .2, .9, 127.6, "4A",
-                    new float[] {.1f, .5f}, new float[] {.2f}, new float[0]);
+                    new float[] {.1f, .5f}, new float[] {.2f}, new float[0], 0.42);
             java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
             try {
                 p.write(new java.io.DataOutputStream(bytes));
@@ -42,6 +42,7 @@ public final class AutomixTest {
                 same(q.key(), p.key());
                 same(java.util.Arrays.toString(q.low()), java.util.Arrays.toString(p.low()));
                 same(q.high().length, 0);
+                same(q.downbeat(), 0.42);
                 data[3]++;
                 same(Automix.Profile.read(new java.io.DataInputStream(new java.io.ByteArrayInputStream(data))), null);
             } catch (java.io.IOException e) {
@@ -62,12 +63,56 @@ public final class AutomixTest {
         run("a raised song never clips", () -> {
             close(profile(0.1, 0.8).gain(), 0.98 / 0.8);
         });
-        run("auto transition: 16 beats, 4 to 12 seconds, or 8 with no tempo; never over a quarter of a song", () -> {
+        run("auto length: a blend 32 beats (8 to 24 s), a fade 16 (4 to 12 s), 8 s with no tempo; never over a quarter of a song", () -> {
             Automix.Profile slow = song(100, 100_000, 60), fast = song(100, 100_000, 240), none = song(100, 100_000, 0);
             same(Automix.plan(none, none, Automix.Transition.AUTO).fadeFrames(), 800L);
-            same(Automix.plan(slow, slow, Automix.Transition.AUTO).fadeFrames(), 1200L);
-            same(Automix.plan(fast, fast, Automix.Transition.AUTO).fadeFrames(), 400L);
+            same(Automix.plan(slow, slow, Automix.Transition.AUTO).fadeFrames(), 2400L);
+            same(Automix.plan(fast, fast, Automix.Transition.AUTO).fadeFrames(), 800L);
+            same(Automix.plan(song(100, 100_000, 90), song(100, 100_000, 100), Automix.Transition.AUTO).fadeFrames(), 1067L);
             same(Automix.plan(none, song(100, 1_000, 0), Automix.Transition.AUTO).fadeFrames(), 250L);
+        });
+        run("auto start lines up both songs' bars", () -> {
+            Automix.Profile a = new Automix.Profile(100, 2, 100_000, 0, 100_000, .1, .5, 120, "", new float[0], new float[0], new float[0], 0.3);
+            Automix.Profile b = new Automix.Profile(100, 2, 100_000, 0, 100_000, .1, .5, 120, "", new float[0], new float[0], new float[0], 0.5);
+            Automix.Plan p = Automix.plan(a, b, Automix.Transition.AUTO);
+            same(p.fadeFrames(), 1600L);
+            same(p.enterAt(), 0L);
+            // B's first bar is 50 frames in; A's bar there: bars at 30 + 200k.
+            same(Math.floorMod(p.fadeStart() + 50 - 30, 200L), 0L);
+            if (Math.abs(p.fadeStart() - 98_400) > 100) throw new AssertionError("moved too far: " + p.fadeStart());
+        });
+        run("a long fade-out: the transition ends where the music fades, not in the quiet tail", () -> {
+            float[] low = new float[80 * 25];
+            for (int i = 0; i < low.length; i++) low[i] = i < 60 * 25 ? 1f : 1f - (i - 60 * 25) / (20f * 25);
+            Automix.Profile a = new Automix.Profile(100, 2, 8_000, 0, 8_000, .1, .5, 0, "", low, new float[low.length], new float[low.length]);
+            long end = Automix.musicalEnd(a);
+            if (end < 7_100 || end > 7_350) throw new AssertionError("ends at " + end);
+            Automix.Plan p = Automix.plan(a, a, Automix.Transition.AUTO);
+            same(p.fadeStart() + p.fadeFrames(), end);
+            same(Automix.musicalEnd(song(100, 8_000, 0)), 8_000L);
+        });
+        run("finds where bars start from the hits", () -> {
+            float[] e = new float[60 * 100];
+            java.util.Arrays.fill(e, 0.01f);
+            for (int k = 0; 30 + k * 50 + 3 < e.length; k++) {
+                float hit = k % 4 == 0 ? 0.6f : 0.3f;
+                for (int j = 0; j < 3; j++) e[30 + k * 50 + j] = hit / (j + 1);
+            }
+            close(Automix.bpm(e), 120);
+            double db = Automix.downbeat(e, 120);
+            if (Math.abs(db - 0.3) > 0.03) throw new AssertionError("downbeat at " + db);
+            same(Automix.downbeat(e, 0), -1.0);
+        });
+        run("keys that mix: same, relative, one step; tempo gaps count double time", () -> {
+            same(Automix.keysMix("4A", "4A"), true);
+            same(Automix.keysMix("4A", "4B"), true);
+            same(Automix.keysMix("4A", "5A"), true);
+            same(Automix.keysMix("12A", "1A"), true);
+            same(Automix.keysMix("4A", "6A"), false);
+            same(Automix.keysMix("4A", "5B"), false);
+            same(Automix.keysMix("", "5B"), true);
+            close(Automix.tempoGap(90, 180), 0);
+            close(Automix.tempoGap(100, 110), 1 / 11.0);
         });
         run("auto transition ends at the end of the first song's sound and starts the second past its silence", () -> {
             Automix.Profile a = new Automix.Profile(100, 2, 100_000, 500, 90_000, .1, .5);
@@ -93,10 +138,13 @@ public final class AutomixTest {
             close(Automix.volumeOut(cut, 0.45), 1);
             close(Automix.volumeIn(cut, 0.55), 1);
         });
-        run("auto preset: blend for close tempos (or double/half), fade otherwise", () -> {
+        run("auto preset: blend for close tempos and keys, rise for a key clash, fade for a small tempo gap, echo for a big one", () -> {
             same(Automix.autoPreset(song(1, 1, 120), song(1, 1, 124)), Automix.Preset.BLEND);
             same(Automix.autoPreset(song(1, 1, 90), song(1, 1, 178)), Automix.Preset.BLEND);
-            same(Automix.autoPreset(song(1, 1, 90), song(1, 1, 120)), Automix.Preset.FADE);
+            same(Automix.autoPreset(keyed(120, "4A"), keyed(122, "5A")), Automix.Preset.BLEND);
+            same(Automix.autoPreset(keyed(120, "4A"), keyed(122, "9B")), Automix.Preset.RISE);
+            same(Automix.autoPreset(song(1, 1, 100), song(1, 1, 110)), Automix.Preset.FADE);
+            same(Automix.autoPreset(song(1, 1, 90), song(1, 1, 120)), Automix.Preset.ECHO);
             same(Automix.autoPreset(song(1, 1, 0), song(1, 1, 120)), Automix.Preset.FADE);
         });
         run("parts set by hand make a custom transition and are used as set", () -> {
@@ -231,6 +279,10 @@ public final class AutomixTest {
 
         System.out.println(checks - failures + "/" + checks + " checks passed");
         if (failures > 0) System.exit(1);
+    }
+
+    private static Automix.Profile keyed(double bpm, String key) {
+        return new Automix.Profile(1, 2, 1, 0, 1, .1, .5, bpm, key, new float[0], new float[0], new float[0]);
     }
 
     private static Automix.Profile song(float rate, long frames, double bpm) {
