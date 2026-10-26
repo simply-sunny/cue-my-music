@@ -108,6 +108,9 @@ public final class CueScreen extends Screen {
 
     // Queue panel layout from the last frame, and the row being dragged.
     private int queueX0, queueX1, queueTop, queueRows;
+    /** Rows of the queue that fit in the panel, and how far it's scrolled, in rows. */
+    private int queueFit;
+    private double queueScroll;
     private int queueDrag = -1;
     private double queueDragY;
 
@@ -152,6 +155,7 @@ public final class CueScreen extends Screen {
             drawNowPlaying(g, width - GAP - rightW, top, width - GAP, bottom - GAP, mouseX, mouseY);
         } else {
             queueRows = 0;
+            queueFit = 0;
         }
         drawBottomBar(g, 0, bottom, width, height, mouseX, mouseY);
         drawToast(g);
@@ -509,6 +513,7 @@ public final class CueScreen extends Screen {
         int w = x1 - x0 - pad * 2;
         int left = x0 + pad;
         queueRows = 0;
+        queueFit = 0;
         if (t == null) {
             g.text(font, tr("cuemymusic.now_playing"), left, y0 + 7, WHITE, false);
             g.textWithWordWrap(font, Component.translatable("cuemymusic.now_playing.none"), left, y0 + 24, w, DIM, false);
@@ -569,14 +574,21 @@ public final class CueScreen extends Screen {
         queueX1 = x1;
         queueTop = y + 12;
         // The queue gets the room first; the game's song only shows if the whole queue fits above it.
+        // A longer queue scrolls.
         int fit = Math.max(0, (y1 - queueTop - 4) / QROW);
         boolean showGame = game != null && queue.size() <= (y1 - gameH - queueTop - 4) / QROW;
-        boolean more = queue.size() > fit;
-        queueRows = more ? Math.max(0, fit - 1) : queue.size();
+        queueFit = fit;
+        // Dragging a row past the top or bottom edge scrolls the queue.
+        if (queueDrag >= 0 && queueDragY < queueTop + 4) queueScroll -= 0.15;
+        if (queueDrag >= 0 && queueDragY > queueTop + fit * QROW - 4) queueScroll += 0.15;
+        queueScroll = Math.clamp(queueScroll, 0, Math.max(0, queue.size() - fit));
+        int first = (int) Math.round(queueScroll);
+        queueRows = Math.min(fit, queue.size() - first);
 
-        for (int i = 0; i < queueRows; i++) {
+        for (int k = 0; k < queueRows; k++) {
+            int i = first + k;
             if (i == queueDrag) continue;
-            int ry = queueTop + i * QROW;
+            int ry = queueTop + k * QROW;
             boolean hover = queueDrag < 0 && mx >= x0 && mx < x1 && my >= ry && my < ry + QROW;
             if (hover) g.fill(x0 + 4, ry, x1 - 4, ry + QROW, ROW_HOVER);
             compactQueueRow(g, queue.get(i), left, ry, right - left - (hover ? 10 : 0));
@@ -586,9 +598,13 @@ public final class CueScreen extends Screen {
             }
         }
         int end = queueTop + queueRows * QROW;
-        if (more) {
-            g.text(font, tr("cuemymusic.queue.more", queue.size() - queueRows), left, end + 2, FAINT, false);
-            end += QROW;
+        if (queue.size() > fit && fit > 0) {
+            // Scrollbar along the right edge.
+            int barH = fit * QROW;
+            int thumbH = Math.max(6, barH * fit / queue.size());
+            int thumbY = queueTop + (int) Math.round((barH - thumbH) * queueScroll / (queue.size() - fit));
+            g.fill(x1 - 3, queueTop, x1 - 2, queueTop + barH, 0xFF2A2A2A);
+            g.fill(x1 - 3, thumbY, x1 - 2, thumbY + thumbH, FAINT);
         }
         if (showGame) {
             g.text(font, tr("cuemymusic.queue.from_game"), left, end + 6, WHITE, false);
@@ -598,7 +614,7 @@ public final class CueScreen extends Screen {
         // The row being dragged follows the mouse, with a line where it will land.
         if (queueDrag >= 0 && queueDrag < queue.size()) {
             int slot = dropSlot(queueDragY);
-            int ly = queueTop + slot * QROW;
+            int ly = queueTop + (slot - first) * QROW;
             g.fill(x0 + 4, ly - 1, x1 - 4, ly + 1, GREEN);
             int ry = (int) Math.round(queueDragY) - QROW / 2;
             g.fill(x0 + 4, ry, x1 - 4, ry + QROW, 0xFF333333);
@@ -634,7 +650,8 @@ public final class CueScreen extends Screen {
 
     /** Where a dragged queue row would land, as an index between rows. */
     private int dropSlot(double y) {
-        return Math.clamp((int) Math.round((y - queueTop) / QROW), 0, queueRows);
+        int first = (int) Math.round(queueScroll);
+        return first + Math.clamp((int) Math.round((y - queueTop) / QROW), 0, queueRows);
     }
 
     // ------------------------------------------------------------- bottom bar
@@ -754,7 +771,7 @@ public final class CueScreen extends Screen {
     /** Queue rows: × removes, a double click plays, and pressing anywhere else starts a drag to reorder. */
     private boolean queueClicked(double x, double y, boolean doubleClick) {
         if (queueRows == 0 || x < queueX0 || x >= queueX1 || y < queueTop || y >= queueTop + queueRows * QROW) return false;
-        int i = (int) ((y - queueTop) / QROW);
+        int i = (int) Math.round(queueScroll) + (int) ((y - queueTop) / QROW);
         if (x >= queueX1 - 17) {
             player.unqueue(i);
         } else if (doubleClick) {
@@ -798,6 +815,10 @@ public final class CueScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        if (queueFit > 0 && x >= queueX0 && x < queueX1 && y >= queueTop && y < queueTop + queueFit * QROW) {
+            queueScroll -= vertical;
+            return true;
+        }
         if (x >= centerX0 && x < centerX1 && y >= centerY0 && y < centerY1) {
             scroll = Math.clamp(scroll - vertical * 24, 0, scrollMax);
             return true;

@@ -47,7 +47,7 @@ Liked songs are collected on their own page, newest first, and saved in `config/
 
 ### The queue
 
-Queued songs are listed one per line, so a long queue fits. Songs you queue play one after another, as soon as the current song ends. Drag a row to reorder it, click × to remove it, or double-click it to play it now.
+Queued songs are listed one per line; a long queue scrolls. Songs you queue play one after another, as soon as the current song ends. Drag a row to reorder it, click × to remove it, or double-click it to play it now.
 
 After the queue comes the game's own music. The game still decides when music plays: a random break of up to 20 minutes between songs on the default setting (**Options → Music & Sounds → Frequency**), and different music on the title screen, underwater, in the Nether and so on. Cue My Music picks the game's next song and break ahead of time, with the same rules, so the queue can show them: **In 0:42** while waiting, or **After a 12:30 break** while a song plays. Click it to play it now and skip the break. **Next** with an empty queue does the same.
 
