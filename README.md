@@ -1,6 +1,8 @@
+<p align="center"><img src="src/main/resources/assets/cuemymusic/icon.png" width="128" alt="Cue My Music icon"></p>
+
 <h1 align="center">Cue My Music</h1>
 
-<p align="center">A music player for Minecraft's own soundtrack, with pitch, speed and an equalizer.<br>Fabric &amp; Quilt &nbsp;|&nbsp; 26.3</p>
+<p align="center">A music player for Minecraft's own soundtrack.<br>Fabric &amp; Quilt &nbsp;|&nbsp; 26.3</p>
 
 <p align="center">
 <a href="https://github.com/simply-sunny/cue-my-music/releases"><img src="https://img.shields.io/github/v/release/simply-sunny/cue-my-music?label=release&color=2ea44f" alt="Latest release"></a>
@@ -9,7 +11,7 @@
 
 ---
 
-Pick any game track and play it, queue up what's next, or let the game keep choosing and see what it picked and when. Drop the music 2 semitones, play it at 1.2× speed, or both. Pitch and speed are separate settings: changing one doesn't change the other. A 6-band equalizer applies to every song.
+Browse every song in the game by artist, album, or resource pack, play any of them, like them, and queue up what's next. When the queue runs out, the game takes over exactly as it would without the mod, and the queue shows which song it picked and how long until it plays. Pitch, speed, and a 6-band equalizer apply to every song. Pitch and speed are separate: drop the music 2 semitones without slowing it down, or play it at 1.2× without raising it.
 
 Only background music is affected. Jukeboxes and sound effects play as normal.
 
@@ -17,7 +19,7 @@ Only background music is affected. Jukeboxes and sound effects play as normal.
 
 Client-side only. Servers don't need it.
 
-1. Install [Fabric Loader](https://fabricmc.net/use/) (or Quilt Loader), [Fabric API](https://modrinth.com/mod/fabric-api) and [Mod Menu](https://modrinth.com/mod/modmenu).
+1. Install [Fabric Loader](https://fabricmc.net/use/) (or Quilt Loader), [Fabric API](https://modrinth.com/mod/fabric-api), and [Mod Menu](https://modrinth.com/mod/modmenu) for your Minecraft version. Mod Menu is required.
 2. Put the jar in `mods`.
 
 | Minecraft | Jar | Java | Mod Menu |
@@ -28,88 +30,59 @@ Jars are named `cue-my-music-<jar>-<version>.jar`.
 
 ## Use
 
-Open it from the music button on the title screen or in the pause menu, from **Mod Menu → Cue My Music**, or with the **Open player** key. The key works on any screen, including the title screen and the pause menu, and closes the player again.
+| Action | Default key |
+| --- | --- |
+| Open player | Unbound. Bind it in Controls. |
+| Play/pause music | `F8` on macOS, unbound elsewhere |
+| Next song | `F9` on macOS, unbound elsewhere |
+| Previous song | `F7` on macOS, unbound elsewhere |
+| Turn effects on/off | Unbound |
 
-The player has four parts:
+All keys are rebindable under **Options → Controls → Key Binds → Cue My Music**. They work in game and on any screen without a text box in focus. On a Mac, F7 to F9 are media keys: hold **fn**, or turn on **System Settings → Keyboard → Keyboard Shortcuts → Function Keys → Use F1, F2, etc. keys as standard function keys**.
 
-- **Library** (left): **All game music**, **Liked Songs**, then one page per artist (C418, Lena Raine, Aaron Cherof, Kumi Tanioka, Amos Roddy, fingerspit), then one page per resource pack that adds music. **Settings** is at the bottom. Artists with no tracks loaded are hidden.
-- **Track list** (middle): click a track to play it. Hover it and click the heart to like it, or **+** to add it to the queue. Click **Title**, **Album** or the clock to sort: up, down, then back to the original order.
-- **Now playing** (right): album, art, title and artist, with a heart to like the song. Long names scroll. Below that is the queue. Hidden when the window is narrow.
-- **Controls** (bottom): previous, play/pause, next and a progress bar. Click or drag the bar to seek.
-
-Space plays and pauses while the player is open.
-
-Album art comes from game textures, one block per album. Resource pack tracks use the pack's icon, or its initials on a colour gradient if it has none.
-
-### Liked Songs
-
-Liked songs are collected on their own page, newest first, and saved in `config/cuemymusic.json`.
+- Open the player from the music button on the title screen or pause menu, from **Mod Menu → Cue My Music**, or with **Open player**. The same key closes it.
+- The library on the left has **All game music**, **Liked Songs**, one page per artist, one page per resource pack that adds music, and **Settings**.
+- Click a song to play it. Hover it and click the heart to like it, or **+** to add it to the queue.
+- Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
+- Space plays and pauses while the player is open. Click or drag the progress bar to seek.
 
 ### The queue
 
-Queued songs are listed one per line; a long queue scrolls. Songs you queue play one after another, as soon as the current song ends. Drag a row to reorder it, click × to remove it, or double-click it to play it now.
+Queued songs play one after another, as soon as the current song ends. Drag a song to reorder it, click × to remove it, or double-click it to play it now. A long queue scrolls.
 
-After the queue comes the game's own music. The game still decides when music plays: a random break of up to 20 minutes between songs on the default setting (**Options → Music & Sounds → Frequency**), and different music on the title screen, underwater, in the Nether and so on. Cue My Music picks the game's next song and break ahead of time, with the same rules, so the queue can show them: **In 0:42** while waiting, or **After a 12:30 break** while a song plays. Click it to play it now and skip the break. **Next** with an empty queue does the same.
+After the queue comes the game's own music. The game still decides when music plays: a random break of up to 20 minutes between songs on the default **Music Frequency**, and different music on the title screen, underwater, in the Nether, and so on. The queue shows the game's next song with **In 0:42** while waiting, or **After a 12:30 break** while a song plays. Click it to play it now.
 
-Songs the game starts play through the player too, and behave exactly as in vanilla: the same weighted pick from `sounds.json`, the same break, each file's own volume and pitch, the same "Now playing" toast, and they still stop when you change dimension or when music that replaces them starts (the dragon fight, the credits). The only differences are things you do yourself: songs you pick or queue aren't cut off, the queue plays straight after the current song, and while a song is paused the game's music stays quiet.
-
-### Keys
-
-All five are under **Options → Controls → Key Binds → Cue My Music**. They work in game and on any screen without a text box in focus.
-
-| Key | Default |
-| --- | --- |
-| Open player | None |
-| Turn effects on/off | None |
-| Previous song | F7 on macOS, none elsewhere |
-| Play/pause music | F8 on macOS, none elsewhere |
-| Next song | F9 on macOS, none elsewhere |
-
-F7 to F9 are the media keys on a Mac keyboard. macOS keeps them unless you hold **fn**, or turn on **System Settings → Keyboard → Keyboard Shortcuts → Function Keys → Use F1, F2, etc. keys as standard function keys**.
+Songs the game starts play exactly as in vanilla: the same weighted pick from `sounds.json`, the same break, each file's own volume and pitch, and the same "Now playing" toast. They still stop when you change dimension or when music that replaces them starts, such as the dragon fight. Songs you pick or queue yourself aren't cut off, and while a song is paused the game's music stays quiet.
 
 ### Resource packs
 
-Any pack that adds or replaces music shows up as its own page. The album is the pack's name, the art is its icon, and the artist is the "By ..." line of its description if it has one (otherwise **Unknown artist**).
+A pack that adds or replaces music gets its own page. The album is the pack's name, the art is its icon (or its initials on a gradient if it has none), and the artist is the "By ..." line of its description, or **Unknown artist**.
 
-Packs written for older versions sometimes point at file names that no longer exist. Those songs can't play in vanilla either, so they're left out.
+## Configure
 
-### Settings
-
-Changes apply to the song that's playing within a few seconds, which is how much audio the game has already queued.
+Open the player and click **Settings**. Changes apply to the song that's playing within a few seconds, which is how much audio the game has already queued.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Effects | On | Turns pitch, speed and EQ off together. Also bindable as **Turn effects on/off**. |
-| Pitch | 0 semitones | −12 to +12. 12 is one octave. |
-| Speed | ×1.00 | 0.5 to 2.0, in steps of 0.05. `1.2` is 20% faster. |
+| Effects | On | Turns pitch, speed, and EQ off together. |
+| Pitch | 0 | −12 to +12 semitones. 12 is one octave. |
+| Speed | ×1.00 | 0.5 to 2.0, in steps of 0.05. |
 | Use equalizer | Off | Moving a band or picking a preset turns it on. |
-| EQ bands | 0 dB | 60, 150, 400, 1k, 2.4k and 15k Hz, ±12 dB each. |
+| EQ bands | 0 dB | 60, 150, 400, 1k, 2.4k, and 15k Hz, ±12 dB each. |
 
-Presets: Flat, Bass Booster, Bass Reducer, Treble Booster, Treble Reducer, Vocal Booster, Small Speakers.
+Presets: Flat, Bass Booster, Bass Reducer, Treble Booster, Treble Reducer, Vocal Booster, and Small Speakers.
 
-Settings are saved to `config/cuemymusic.json`. Delete the file to reset. In the JSON, `speed` takes any value from 0.5 to 2.0 to two decimals, such as `1.08`.
+Settings and liked songs are saved to `config/cuemymusic.json` in your Minecraft folder:
 
-## How it works
+- **Windows:** `%appdata%\.minecraft\config\cuemymusic.json`
+- **macOS:** `~/Library/Application Support/minecraft/config/cuemymusic.json`
+- **Linux:** `~/.minecraft/config/cuemymusic.json`
 
-Every streamed song in the `music` sound category gets wrapped before it reaches OpenAL. Samples go through three stages:
+Delete the file to reset to defaults. One value goes further in the JSON than in the screen. Edit it, then restart:
 
-1. **WSOLA time-stretch** by `speed / pitch`. This cuts the audio into overlapping slices of about 40 to 125 ms and lines each one up with the previous before crossfading. It changes length without changing pitch.
-2. **Resampling** by `pitch`. This raises or lowers pitch and changes length by the same amount, so the net result is the requested pitch at the requested speed.
-3. **Equalizer:** six biquad filters, a low shelf, four peaks and a high shelf. Output is turned down by half the largest boost, so boosting doesn't clip.
-
-All three are written from scratch, in plain Java with no native code. Processing runs about 500× faster than realtime on an M-series Mac.
-
-The game's music manager still runs its timers. When it would start a song, the player plays the song it planned instead, and the game sees that song as its own, so it waits for it to end before starting its break.
-
-Game streams can't rewind, so pause, seek and resume restart the track at a position and skip ahead to it. Track lengths for vanilla songs are built in. Resource pack songs are measured from their Ogg file the first time they show up.
-
-## Icon
-
-The icon is built from the game's own textures by `scripts/MakeIcon.java`: the note block, three note particles tinted the way the game tints them, and the player's controls. The pause menu button uses the notes from the game's "Now playing" toast. To rebuild both:
-
-```bash
-java scripts/MakeIcon.java <path to the 26.3 client jar> src/main/resources/assets/cuemymusic/icon.png src/main/resources/assets/cuemymusic/textures/gui/sprites/music.png
-```
+| Key | Default | Notes |
+| --- | --- | --- |
+| `speed` | `1.0` | Any value from 0.5 to 2.0, to two decimals, such as `1.08`. |
 
 ## Develop
 
@@ -119,10 +92,16 @@ Requires JDK 25.
 ./gradlew clean buildAll
 ```
 
-This runs the headless DSP checks (pitch and length on test tones, EQ response on sine waves) and builds every target. Jars land in `build/libs/`. To build one target:
+This runs the headless checks (pitch and length on test tones, EQ response on sine waves, and pack names, initials, and credits) and builds every target. Jars land in `build/libs/`. To build one target:
 
 ```bash
 ./gradlew :26.3:build
+```
+
+Pitch and speed use a WSOLA time-stretch followed by resampling, and the equalizer is six biquad filters, all in plain Java. The icon and the pause menu button are built from the game's textures by `scripts/MakeIcon.java`:
+
+```bash
+java scripts/MakeIcon.java <26.3 client jar> src/main/resources/assets/cuemymusic/icon.png src/main/resources/assets/cuemymusic/textures/gui/sprites/music.png
 ```
 
 ## Troubleshooting
@@ -130,23 +109,25 @@ This runs the headless DSP checks (pitch and length on test tones, EQ response o
 | Problem | Fix |
 | --- | --- |
 | `requires modmenu` | Install Mod Menu for your Minecraft version. |
-| Change doesn't apply | Wait a few seconds. Already-queued audio plays out first. |
-| Seek is slow on a long track | Seeking decodes up to that point. Far into a 6-minute track can take a moment. |
+| Open player key does nothing | Bind **Open player** under Controls. |
+| F7–F9 change brightness or volume | Hold **fn**, or turn on standard function keys in macOS settings. |
+| A change doesn't apply | Wait a few seconds. Already-queued audio plays out first. |
+| Seek is slow on a long song | Seeking decodes up to that point. Far into a 6-minute song can take a moment. |
+| A pack's songs are missing | The pack points at files that don't exist in this version. Vanilla can't play them either. |
 | Jukebox isn't affected | Expected. Only background music is. |
-| F7–F9 change brightness or volume instead | Hold **fn**, or turn on standard function keys in macOS settings. |
-| A pack's songs are missing | The pack points at files that don't exist in this version. |
 | Broken config | Delete `config/cuemymusic.json` and relaunch. |
 
-Logs are in `.minecraft/logs/latest.log`. Include the log and your Minecraft, mod and loader versions when you report an issue.
+Logs are in `.minecraft/logs/latest.log`. Include the log and your Minecraft, mod, and loader versions when you report an issue.
 
 ## Limits
 
 - **Sound effects and jukeboxes:** not affected, only background music.
-- **Other music mods:** mods that replace the music stream (custom players, streaming radios) may bypass it.
-- **Extreme settings:** WSOLA sounds best within about ±5 semitones and 0.75–1.5× speed. Beyond that you'll hear some smearing or echo.
-- **Quilt:** expected to work through Fabric compatibility. Not tested yet.
-- **Tested:** Fabric Loader 0.20.1, Fabric API 0.165.0 and Mod Menu 21.0.0 on 26.3, macOS. Play, pause, seek, next and previous were checked in game, plus the playlist, artist, pack and settings pages at the default and a larger window size. The queue, sorting, and the game's break and next song were checked on the title screen; the pause menu button, Liked Songs and the open key on the pause menu were checked in a world. Packs tested: True Ending Dragon Music, C4Music 4.3, Golden Days Music, C418 Background Music Only.
+- **Other music mods:** mods that replace the music stream, such as custom players or radios, may bypass it.
+- **Extreme settings:** pitch and speed sound best within about ±5 semitones and 0.75–1.5×. Beyond that you'll hear some smearing or echo.
+- **Quilt:** expected to work through Fabric compatibility, but not tested in 1.0.0.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Copyright © 2026 Saunak Karnati (simply-sunny). Minecraft is a trademark of Mojang Studios.
+MIT, see [LICENSE](LICENSE). Copyright © 2026 Saunak Karnati (simply-sunny).
+
+The icon and the pause menu button are made from Minecraft's note block, note particle, and "Now playing" textures. Minecraft is a trademark of Mojang Studios.
