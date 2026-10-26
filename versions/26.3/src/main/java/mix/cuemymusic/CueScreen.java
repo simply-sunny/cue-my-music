@@ -325,7 +325,9 @@ public final class CueScreen extends Screen {
                 int titleW = (showAlbum ? colAlbum - 6 : colTime - 60) - textX;
                 g.text(font, clip(t.title(), titleW), textX, y + 2, isCurrent ? GREEN : WHITE, false);
                 g.text(font, clip(t.artist(), titleW), textX, y + 11, DIM, false);
-                if (showAlbum) g.text(font, clip(t.album(), colTime - 48 - colAlbum), colAlbum, y + 6, DIM, false);
+                // Stops short of the heart and + when they show.
+                int albumEnd = hover || isLiked(t) ? colTime - 60 : colTime - 48;
+                if (showAlbum) g.text(font, clip(t.album(), albumEnd - colAlbum), colAlbum, y + 6, DIM, false);
                 String len = Double.isNaN(t.seconds()) ? "-:--" : time(t.seconds());
                 g.text(font, len, colTime - font.width(len), y + 6, DIM, false);
                 int top = Math.max(y, centerY0), bottom = Math.min(y + ROW, centerY1);
@@ -572,7 +574,7 @@ public final class CueScreen extends Screen {
         Track listNext = player.listNext();
         if (queue.isEmpty() && listNext != null) {
             if (y + 12 + ROW > y1) return;
-            g.text(font, tr("cuemymusic.queue.next_up"), left, y, WHITE, false);
+            g.text(font, clip(tr("cuemymusic.queue.next_up"), right - left), left, y, WHITE, false);
             nextRow(g, listNext, listNext.artist(), x0, y + 12, x1, mx, my, player::next);
             return;
         }
@@ -580,12 +582,12 @@ public final class CueScreen extends Screen {
         if (queue.isEmpty()) {
             if (game == null || y + 12 + ROW > y1) {
                 if (y + 20 < y1) {
-                    g.text(font, tr("cuemymusic.queue"), left, y, WHITE, false);
+                    g.text(font, clip(tr("cuemymusic.queue"), right - left), left, y, WHITE, false);
                     g.textWithWordWrap(font, Component.translatable("cuemymusic.queue.empty"), left, y + 12, right - left, FAINT, false);
                 }
                 return;
             }
-            g.text(font, tr("cuemymusic.queue.next_up"), left, y, WHITE, false);
+            g.text(font, clip(tr("cuemymusic.queue.next_up"), right - left), left, y, WHITE, false);
             gameRow(g, game, gameWhen, x0, y + 12, x1, mx, my);
             int hy = y + 12 + ROW + 8;
             Component hint = Component.translatable("cuemymusic.queue.empty");
@@ -594,7 +596,7 @@ public final class CueScreen extends Screen {
         }
 
         int gameH = game != null ? 12 + ROW + 6 : 0;
-        g.text(font, tr("cuemymusic.queue"), left, y, WHITE, false);
+        g.text(font, clip(tr("cuemymusic.queue"), right - left), left, y, WHITE, false);
         queueX0 = x0;
         queueX1 = x1;
         queueTop = y + 12;
@@ -632,7 +634,7 @@ public final class CueScreen extends Screen {
             g.fill(x1 - 3, thumbY, x1 - 2, thumbY + thumbH, FAINT);
         }
         if (showGame) {
-            g.text(font, tr("cuemymusic.queue.from_game"), left, end + 6, WHITE, false);
+            g.text(font, clip(tr("cuemymusic.queue.from_game"), right - left), left, end + 6, WHITE, false);
             gameRow(g, game, gameWhen, x0, end + 18, x1, mx, my);
         }
 

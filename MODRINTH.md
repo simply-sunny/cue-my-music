@@ -21,6 +21,7 @@ This file is the source of truth for the Modrinth project settings, version meta
 | Discord | *(none)* |
 | Donation links | *(none)* |
 | Icon | `src/main/resources/assets/cuemymusic/icon.png` (512×512, built by `scripts/MakeIcon.java`) |
+| Gallery | Player (featured), Settings, Pause menu, Commands. 1920 px wide screenshots from 26.3. |
 
 ## Version metadata
 
