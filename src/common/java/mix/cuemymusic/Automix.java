@@ -128,9 +128,38 @@ public final class Automix {
      * mids and highs.
      */
     public record Profile(float rate, int channels, long frames, long start, long end, double rms, double peak, double bpm,
-            String key, float[] low, float[] mid, float[] high) {
+            String key, float[] low, float[] mid, float[] high, double downbeat) {
         public Profile(float rate, int channels, long frames, long start, long end, double rms, double peak) {
             this(rate, channels, frames, start, end, rms, peak, 0, "", new float[0], new float[0], new float[0]);
+        }
+
+        public Profile(float rate, int channels, long frames, long start, long end, double rms, double peak, double bpm,
+                String key, float[] low, float[] mid, float[] high) {
+            this(rate, channels, frames, start, end, rms, peak, bpm, key, low, mid, high, -1);
+        }
+
+        /** Seconds a beat lasts, or 0 with no tempo. */
+        public double beat() {
+            return bpm > 0 ? 60 / bpm : 0;
+        }
+
+        /** True if the song's bars are known: its tempo, and where one bar starts ({@link #downbeat}, in seconds). */
+        public boolean hasBars() {
+            return bpm > 0 && downbeat >= 0;
+        }
+
+        /** The first frame a bar starts at, at or after {@code frame}; {@code frame} itself if the bars aren't known. */
+        public long barAtOrAfter(long frame) {
+            if (!hasBars()) return frame;
+            double bar = 4 * beat(), t = seconds(frame);
+            return frame(downbeat + Math.ceil((t - downbeat) / bar - 1e-9) * bar);
+        }
+
+        /** The frame of the bar start nearest {@code frame}; {@code frame} itself if the bars aren't known. */
+        public long barNearest(long frame) {
+            if (!hasBars()) return frame;
+            double bar = 4 * beat(), t = seconds(frame);
+            return frame(downbeat + Math.round((t - downbeat) / bar) * bar);
         }
 
         /** The gain that brings this song to the target loudness without clipping. */
@@ -156,7 +185,7 @@ public final class Automix {
          * Bump whenever analysis changes what a profile holds, so profiles saved
          * by an older version are worked out again instead of read.
          */
-        public static final int FORMAT = 1;
+        public static final int FORMAT = 2;
 
         /** Writes this profile, for {@link #read} to read back. */
         public void write(DataOutputStream out) throws IOException {
@@ -174,6 +203,7 @@ public final class Automix {
                 out.writeInt(band.length);
                 for (float v : band) out.writeFloat(v);
             }
+            out.writeDouble(downbeat);
         }
 
         /** A profile {@link #write} wrote, or null if an older version of the analysis wrote it. */
@@ -191,7 +221,7 @@ public final class Automix {
                 bands[b] = new float[n];
                 for (int i = 0; i < n; i++) bands[b][i] = in.readFloat();
             }
-            return new Profile(rate, channels, frames, start, end, rms, peak, bpm, key, bands[0], bands[1], bands[2]);
+            return new Profile(rate, channels, frames, start, end, rms, peak, bpm, key, bands[0], bands[1], bands[2], in.readDouble());
         }
     }
 
@@ -199,19 +229,57 @@ public final class Automix {
     public record Plan(Preset preset, Shape shape, long fadeStart, long fadeFrames, long enterAt) {
     }
 
-    /** The automatic preset for two songs: Blend when their tempos are within 6% (or double/half), else Fade. */
+    /**
+     * The automatic preset for two songs, as a DJ would pick: Blend when the
+     * tempos are within 6% (or double/half) and the keys go together, Rise
+     * when the tempos match but the keys clash (the filter hides the clash),
+     * Fade for a small tempo gap, and Echo for a big one, so the first song
+     * trails off before the new tempo comes in. Fade when a tempo isn't known.
+     */
     public static Preset autoPreset(Profile a, Profile b) {
         if (a.bpm() <= 0 || b.bpm() <= 0) return Preset.FADE;
-        double r = a.bpm() / b.bpm();
-        for (double m : new double[] {0.5, 1, 2}) {
-            if (Math.abs(r / m - 1) <= 0.06) return Preset.BLEND;
-        }
-        return Preset.FADE;
+        double gap = tempoGap(a.bpm(), b.bpm());
+        if (gap <= 0.06) return keysMix(a.key(), b.key()) ? Preset.BLEND : Preset.RISE;
+        return gap <= 0.15 ? Preset.FADE : Preset.ECHO;
     }
 
-    /** The automatic length: 16 beats of the first song, 4 to 12 seconds, or 8 seconds with no tempo. */
-    public static double autoSeconds(Profile a) {
-        return a.bpm() > 0 ? Math.clamp(AUTO_BEATS * 60 / a.bpm(), 4, 12) : AUTO_SECONDS;
+    /** How far apart two tempos are, as a fraction, counting double and half time as the same. */
+    static double tempoGap(double a, double b) {
+        double r = a / b, best = Double.MAX_VALUE;
+        for (double m : new double[] {0.5, 1, 2}) best = Math.min(best, Math.abs(r / m - 1));
+        return best;
+    }
+
+    /**
+     * True if two Camelot keys mix well: the same key, its relative major or
+     * minor (same number), or one step round the wheel (same letter). True if
+     * either isn't known.
+     */
+    static boolean keysMix(String a, String b) {
+        if (a == null || b == null || a.length() < 2 || b.length() < 2) return true;
+        try {
+            int na = Integer.parseInt(a.substring(0, a.length() - 1)), nb = Integer.parseInt(b.substring(0, b.length() - 1));
+            boolean sameLetter = a.charAt(a.length() - 1) == b.charAt(b.length() - 1);
+            int step = Math.floorMod(na - nb, 12);
+            return na == nb || (sameLetter && (step == 1 || step == 11));
+        } catch (NumberFormatException e) {
+            return true;
+        }
+    }
+
+    /**
+     * The automatic length for a transition, in beats of the first song: a
+     * Blend 8 bars (8 to 24 seconds), an Echo 2 bars (3 to 8), a Drop 16 bars
+     * (15 to 40), a Cut a second, and anything else 4 bars (4 to 12). With no
+     * tempo, a fixed length.
+     */
+    public static double autoSeconds(Profile a, Shape shape, Preset preset) {
+        if (shape.volume() == Volume.CUT) return CUT_SECONDS;
+        if (shape.volume() == Volume.DROP) return dropSeconds(a);
+        double beat = a.beat();
+        if (preset == Preset.BLEND) return beat > 0 ? Math.clamp(32 * beat, 8, 24) : 12;
+        if (preset == Preset.ECHO) return beat > 0 ? Math.clamp(8 * beat, 3, 8) : 5;
+        return beat > 0 ? Math.clamp(AUTO_BEATS * beat, 4, 12) : AUTO_SECONDS;
     }
 
     /** A drop's automatic length: 16 bars (64 beats) of the first song, 15 to 40 seconds, or 30 with no tempo. */
@@ -219,21 +287,59 @@ public final class Automix {
         return a.bpm() > 0 ? Math.clamp(DROP_BEATS * 60 / a.bpm(), 15, 40) : 30;
     }
 
-    /** Works out {@code t} for songs {@code a} into {@code b}. Never longer than a quarter of the shorter song's sound. */
+    /**
+     * Where a song's music really ends, before a long fade-out or quiet tail:
+     * the end of the last second still at least 40% as loud as the song
+     * usually is. At most 30 seconds before the end of its sound; the end of
+     * its sound if there's no waveform.
+     */
+    static long musicalEnd(Profile p) {
+        int n = Math.min(p.low().length, Math.min(p.mid().length, p.high().length));
+        int s = (int) Math.floor(p.seconds(p.start()) * WAVE_RATE), t = Math.min(n, (int) Math.ceil(p.seconds(p.end()) * WAVE_RATE));
+        if (t - s < WAVE_RATE * 20) return p.end();
+        float[] e = new float[t - s];
+        for (int i = s; i < t; i++) e[i - s] = p.low()[i] + p.mid()[i] + p.high()[i];
+        float[] sorted = e.clone();
+        Arrays.sort(sorted);
+        double usual = sorted[(int) (sorted.length * 0.7)];
+        if (usual <= 0) return p.end();
+        double run = 0;
+        int last = -1;
+        for (int i = 0; i < e.length; i++) {
+            run += e[i] - (i >= WAVE_RATE ? e[i - WAVE_RATE] : 0);
+            if (i >= WAVE_RATE - 1 && run / WAVE_RATE >= 0.4 * usual) last = i;
+        }
+        if (last < 0) return p.end();
+        long at = p.frame((s + last + 1) / (double) WAVE_RATE);
+        return Math.clamp(at, Math.max(p.start(), p.end() - p.frame(30)), p.end());
+    }
+
+    /**
+     * Works out {@code t} for songs {@code a} into {@code b}. Never longer
+     * than a quarter of the shorter song's sound. Left automatic, the
+     * transition ends where the first song's music ends (see
+     * {@link #musicalEnd}), the second song comes in from the start of its
+     * sound, and the start moves by under a bar so both songs' bars line up.
+     */
     public static Plan plan(Profile a, Profile b, Transition t) {
         Preset preset = t.preset() == Preset.AUTO ? autoPreset(a, b) : t.preset();
         Shape shape = preset == Preset.CUSTOM && t.shape() != null ? t.shape() : shape(preset);
-        double auto = switch (shape.volume()) {
-            case CUT -> CUT_SECONDS;
-            case DROP -> dropSeconds(a);
-            default -> autoSeconds(a);
-        };
-        double seconds = t.seconds() >= 0 ? t.seconds() : auto;
+        double seconds = t.seconds() >= 0 ? t.seconds() : autoSeconds(a, shape, preset);
         long most = Math.min(a.end() - a.start(), b.end() - b.start()) / 4;
         long fadeFrames = Math.clamp(a.frame(seconds), 1, Math.max(1, most));
-        double before = t.startBeforeEnd() >= 0 ? t.startBeforeEnd() : a.seconds(fadeFrames);
-        long fadeStart = Math.clamp(a.end() - a.frame(before), a.start(), Math.max(a.start(), a.frames() - 1));
         long enterAt = t.enterAt() >= 0 ? Math.clamp(b.frame(t.enterAt()), 0, Math.max(0, b.frames() - 1)) : b.start();
+        long fadeStart;
+        if (t.startBeforeEnd() >= 0) {
+            fadeStart = a.end() - a.frame(t.startBeforeEnd());
+        } else {
+            fadeStart = musicalEnd(a) - fadeFrames;
+            if (a.hasBars() && shape.volume() != Volume.CUT) {
+                // The second song's first bar starts this long after it comes in; a bar of the first song should start there too.
+                long lead = b.hasBars() ? a.frame(b.seconds(b.barAtOrAfter(enterAt) - enterAt)) : 0;
+                fadeStart = a.barNearest(fadeStart + lead) - lead;
+            }
+        }
+        fadeStart = Math.clamp(fadeStart, a.start(), Math.max(a.start(), a.frames() - 1));
         return new Plan(preset, shape, fadeStart, fadeFrames, enterAt);
     }
 
@@ -396,8 +502,10 @@ public final class Automix {
         public Profile finish() {
             float[] l = Arrays.copyOf(low, wavePoints), m = Arrays.copyOf(mid, wavePoints), h = Arrays.copyOf(high, wavePoints);
             if (start < 0) return new Profile(rate, channels, frames, 0, frames, 0, 0, 0, "", l, m, h);
+            float[] e = Arrays.copyOf(energy, beatPoints);
+            double tempo = bpm(e);
             return new Profile(rate, channels, frames, start, end, Math.sqrt(sumSquares / Math.max(1, counted)), peak,
-                    bpm(Arrays.copyOf(energy, beatPoints)), key(chroma), l, m, h);
+                    tempo, key(chroma), l, m, h, downbeat(e, tempo));
         }
     }
 
@@ -410,17 +518,7 @@ public final class Automix {
     static double bpm(float[] energy) {
         int n = energy.length;
         if (n < BEAT_RATE * 10) return 0;
-        // Rises in loudness, on a log scale, less their local average.
-        double[] onset = new double[n];
-        for (int i = 1; i < n; i++) onset[i] = Math.max(0, Math.log1p(100 * energy[i]) - Math.log1p(100 * energy[i - 1]));
-        double[] flux = new double[n];
-        int w = BEAT_RATE / 4;
-        double run = 0;
-        for (int i = 0; i < n; i++) {
-            run += onset[i] - (i >= 2 * w ? onset[i - 2 * w] : 0);
-            int c = i - w;
-            if (c >= 0) flux[c] = Math.max(0, onset[c] - run / Math.min(i + 1, 2 * w));
-        }
+        double[] flux = flux(energy);
         int maxLag = BEAT_RATE * 5;
         double[] ac = new double[maxLag + 2];
         for (int lag = 1; lag <= maxLag + 1; lag++) {
@@ -455,6 +553,54 @@ public final class Automix {
         while (fine >= 140) fine /= 2;
         while (fine < 70) fine *= 2;
         return Math.round(fine * 10) / 10.0;
+    }
+
+    /** Rises in loudness, on a log scale, less their local average: where beats and other hits are. */
+    private static double[] flux(float[] energy) {
+        int n = energy.length;
+        double[] onset = new double[n];
+        for (int i = 1; i < n; i++) onset[i] = Math.max(0, Math.log1p(100 * energy[i]) - Math.log1p(100 * energy[i - 1]));
+        double[] flux = new double[n];
+        int w = BEAT_RATE / 4;
+        double run = 0;
+        for (int i = 0; i < n; i++) {
+            run += onset[i] - (i >= 2 * w ? onset[i - 2 * w] : 0);
+            int c = i - w;
+            if (c >= 0) flux[c] = Math.max(0, onset[c] - run / Math.min(i + 1, 2 * w));
+        }
+        return flux;
+    }
+
+    /**
+     * Where a bar starts, in seconds from the song's start, for a song at
+     * {@code bpm}: first the beats, at the offset where the hits line up best
+     * on a grid of that tempo; then which of each four beats starts the bar,
+     * the one with the strongest hits. -1 with no tempo.
+     */
+    static double downbeat(float[] energy, double bpm) {
+        if (bpm <= 0 || energy.length < BEAT_RATE * 10) return -1;
+        double[] flux = flux(energy);
+        double lag = BEAT_RATE * 60 / bpm;
+        double bestPhase = 0, bestScore = -1;
+        for (double phase = 0; phase < lag; phase += 0.5) {
+            double sum = 0;
+            for (double i = phase; i < flux.length - 1; i += lag) sum += at(flux, i);
+            if (sum > bestScore) {
+                bestScore = sum;
+                bestPhase = phase;
+            }
+        }
+        int bestBeat = 0;
+        double strongest = -1;
+        for (int b = 0; b < 4; b++) {
+            double sum = 0;
+            for (double i = bestPhase + b * lag; i < flux.length - 1; i += 4 * lag) sum += at(flux, i);
+            if (sum > strongest) {
+                strongest = sum;
+                bestBeat = b;
+            }
+        }
+        return (bestPhase + bestBeat * lag) / BEAT_RATE;
     }
 
     private static double at(double[] a, double i) {
