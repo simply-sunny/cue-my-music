@@ -411,7 +411,9 @@ public final class CueScreen extends Screen {
             showToast(tr("cuemymusic.queue.added"));
         }));
         items.add(new MenuItem(tr(isLiked(t) ? "cuemymusic.menu.unlike" : "cuemymusic.menu.like"), () -> toggleLiked(t)));
-        items.add(new MenuItem(tr(isDisliked(t) ? "cuemymusic.menu.undislike" : "cuemymusic.menu.dislike"), () -> toggleDisliked(t)));
+        if (MusicLibrary.isGameMusic(t)) {
+            items.add(new MenuItem(tr(isDisliked(t) ? "cuemymusic.menu.undislike" : "cuemymusic.menu.dislike"), () -> toggleDisliked(t)));
+        }
         for (CueConfig.Playlist p : cfg.playlists) {
             if (view == View.LIST && p.id().equals(key)) continue;
             items.add(new MenuItem(tr("cuemymusic.menu.add_to", clip(p.name(), 120)), () -> showToast(cfg.addToPlaylist(p.id(), song)
@@ -652,8 +654,8 @@ public final class CueScreen extends Screen {
                 nextRowHits.add(new RowHit(x0, top, x1, bottom, t));
                 // Like: always shown once liked, otherwise on hover, left of add to queue.
                 boolean liked = isLiked(t);
-                // Dislike: always shown once disliked, otherwise on hover, left of the heart.
-                if (hover || disliked) {
+                // Dislike: always shown once disliked, otherwise on hover, left of the heart. Only for songs the game plays.
+                if ((hover || disliked) && MusicLibrary.isGameMusic(t)) {
                     int dx = colTime - 70, dy = y + 6;
                     boolean dislikeHover = hover && mx >= dx - 2 && mx < dx + 9 && my >= dy - 2 && my < dy + 9;
                     dislikeIcon(g, dx, dy, disliked ? RED : dislikeHover ? WHITE : DIM);
@@ -903,10 +905,12 @@ public final class CueScreen extends Screen {
         boolean heartHover = mx >= hx - 2 && mx < hx + 9 && my >= y - 2 && my < y + 8;
         heartIcon(g, hx, y + 1, liked, liked ? GREEN : heartHover ? WHITE : DIM);
         nextHits.add(new Hit(hx - 2, y - 2, hx + 9, y + 8, () -> toggleLiked(t)));
-        int dx = hx - 13;
-        boolean dislikeHover = mx >= dx - 2 && mx < dx + 9 && my >= y - 2 && my < y + 9;
-        dislikeIcon(g, dx, y + 1, isDisliked(t) ? RED : dislikeHover ? WHITE : DIM);
-        nextHits.add(new Hit(dx - 2, y - 2, dx + 9, y + 9, () -> toggleDisliked(t)));
+        if (MusicLibrary.isGameMusic(t)) {
+            int dx = hx - 13;
+            boolean dislikeHover = mx >= dx - 2 && mx < dx + 9 && my >= y - 2 && my < y + 9;
+            dislikeIcon(g, dx, y + 1, isDisliked(t) ? RED : dislikeHover ? WHITE : DIM);
+            nextHits.add(new Hit(dx - 2, y - 2, dx + 9, y + 9, () -> toggleDisliked(t)));
+        }
         y += 16;
         drawQueue(g, x0, y, x1, y1, mx, my);
     }
