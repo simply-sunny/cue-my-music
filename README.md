@@ -43,10 +43,11 @@ Jars are named `cue-my-music-<jar>-<version>.jar`.
 All keys are rebindable under **Options → Controls → Key Binds → Cue My Music**. They work in game and on any screen without a text box in focus. On a Mac, F7 to F9 are media keys: hold **fn**, or turn on **System Settings → Keyboard → Keyboard Shortcuts → Function Keys → Use F1, F2, etc. keys as standard function keys**.
 
 - Open the player from the music button on the title screen or pause menu, from **Mod Menu → Cue My Music**, or with **Open player**. The same key closes it.
-- The library on the left has **All game music**, **Liked Songs**, your playlists, one page per artist, one page per resource pack that adds music, and **Settings**.
+- The library on the left has **All game music**, **Liked Songs**, **Disliked Songs** once you have any, and pages added by add-ons. Below them are three sections: **Artists**, **Packs** (one page per resource pack that adds music), and **Your playlists**. Click a section's heading to fold it away; it shows its count while folded. Scroll the library when it's longer than the window. **Settings** stays at the bottom.
 - Click a song to play it. The rest of the page plays after it, in the order shown. The big green button plays the page from the top, or pauses it while it's playing.
 - Hover a song and click the heart to like it, or **+** to add it to the queue. **Add all to queue** adds the whole page.
-- Right-click a song to queue it, like it, or add it to a playlist.
+- Right-click a song to queue it, like or dislike it, or add it to a playlist.
+- **Dislike** keeps the game from ever picking a song for its own music. If the game is playing it, it skips to another. You can still play it yourself, and it still plays through a page you started. Disliked songs are greyed with a ⊘, and listed on **Disliked Songs**, where right-click → **Remove dislike** brings one back. Liking a song takes its dislike away, and the other way round.
 - The repeat button next to play cycles through off, repeat all (the page starts over at its end), and repeat one (the song plays again). Next and previous still move on.
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
 - Space plays and pauses while the player is open. Click or drag the progress bar to seek.
@@ -64,6 +65,7 @@ Client-side, so they work on any server. Songs are named by title, and chat sugg
 | `/cmm prev` | Previous song, or the start of this one. |
 | `/cmm pause` | Pauses. |
 | `/cmm repeat [off\|all\|one]` | Sets repeat, or cycles it with no argument. |
+| `/cmm dislike [song]` | Dislikes the song, or the one playing. Again to take the dislike away. |
 
 A partial title works if only one song matches, such as `/cmm play subwoofer`.
 
@@ -79,7 +81,7 @@ Queued songs play next, before the rest of the page. The page then picks up afte
 
 After that, the game's own music returns. The game still decides when music plays: a random break of up to 20 minutes between songs on the default **Music Frequency**, and different music on the title screen, underwater, in the Nether, and so on. The queue shows the game's next song with **In 0:42** while waiting, or **After a 12:30 break** while a song plays. Click it to play it now.
 
-Songs the game starts play exactly as in vanilla: the same weighted pick from `sounds.json`, the same break, each file's own volume and pitch, and the same "Now playing" toast. They still stop when you change dimension or when music that replaces them starts, such as the dragon fight. Songs you pick or queue yourself aren't cut off: they carry on through dimension changes and menus, and while a song is paused the game's music stays quiet.
+Songs the game starts play exactly as in vanilla, apart from disliked songs: the same weighted pick from `sounds.json` (a disliked song is drawn again, so the rest keep their odds; if every song for the situation is disliked, the game stays quiet until its next break), the same break, each file's own volume and pitch, and the same "Now playing" toast. They still stop when you change dimension or when music that replaces them starts, such as the dragon fight. Songs you pick or queue yourself aren't cut off: they carry on through dimension changes and menus, and while a song is paused the game's music stays quiet.
 
 ### Resource packs
 
@@ -114,7 +116,7 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 
 Presets: Flat, Bass Booster, Bass Reducer, Treble Booster, Treble Reducer, Vocal Booster, and Small Speakers.
 
-Settings, liked songs, and playlists are saved to `config/cuemymusic.json` in your Minecraft folder:
+Settings, liked and disliked songs, and playlists are saved to `config/cuemymusic.json` in your Minecraft folder:
 
 - **Windows:** `%appdata%\.minecraft\config\cuemymusic.json`
 - **macOS:** `~/Library/Application Support/minecraft/config/cuemymusic.json`

@@ -11,6 +11,8 @@ All notable changes to Cue My Music are documented here. This project follows [S
 - Right-click menu on songs: add to queue, like, add to a playlist.
 - Resource packs can credit each song with `assets/<namespace>/cuemymusic.json`.
 - Pitch, speed, and EQ changes show a loading ring until they're heard.
+- Dislike: right-click a song or `/cmm dislike` and the game never picks it for its own music. It still plays when you pick it. Disliked songs get their own page.
+- The library is grouped into Artists, Packs, and Your playlists, with one-line rows. Click a heading to fold it. The library scrolls when it's long.
 - Add-ons can add their own page to the player's library (`mix.cuemymusic.api`).
 
 ### Fixed

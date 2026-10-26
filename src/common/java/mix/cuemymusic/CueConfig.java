@@ -41,6 +41,10 @@ public final class CueConfig {
     public volatile List<Playlist> playlists = List.of();
     /** "off", "all" or "one". */
     public volatile String repeat = "off";
+    /** Songs the game never picks for its own music, as sound file ids. They still play when picked in the player. */
+    public volatile List<String> disliked = List.of();
+    /** Library sections folded shut: "artists", "packs", "playlists". */
+    public volatile List<String> collapsed = List.of();
 
     private CueConfig() {
     }
@@ -124,11 +128,40 @@ public final class CueConfig {
         return liked.contains(id);
     }
 
-    /** Likes the song, or unlikes it if it's already liked, and saves. */
+    /** Likes the song, or unlikes it if it's already liked, and saves. Liking takes away a dislike. */
     public void toggleLiked(String id) {
         List<String> next = new ArrayList<>(liked);
-        if (!next.remove(id)) next.add(id);
+        if (!next.remove(id)) {
+            next.add(id);
+            disliked = disliked.stream().filter(d -> !d.equals(id)).toList();
+        }
         liked = List.copyOf(next);
+        save();
+    }
+
+    public boolean isDisliked(String id) {
+        return disliked.contains(id);
+    }
+
+    /** Dislikes the song, or takes the dislike away, and saves. Disliking takes away a like. */
+    public void toggleDisliked(String id) {
+        List<String> next = new ArrayList<>(disliked);
+        if (!next.remove(id)) {
+            next.add(id);
+            liked = liked.stream().filter(l -> !l.equals(id)).toList();
+        }
+        disliked = List.copyOf(next);
+        save();
+    }
+
+    public boolean isCollapsed(String section) {
+        return collapsed.contains(section);
+    }
+
+    public void toggleCollapsed(String section) {
+        List<String> next = new ArrayList<>(collapsed);
+        if (!next.remove(section)) next.add(section);
+        collapsed = List.copyOf(next);
         save();
     }
 
@@ -143,6 +176,8 @@ public final class CueConfig {
         eqGains = g;
         if (eqPreset == null) eqPreset = "custom";
         liked = liked == null ? List.of() : liked.stream().filter(Objects::nonNull).distinct().toList();
+        disliked = disliked == null ? List.of() : disliked.stream().filter(Objects::nonNull).distinct().toList();
+        collapsed = collapsed == null ? List.of() : collapsed.stream().filter(Objects::nonNull).distinct().toList();
         repeat = repeatMode().name().toLowerCase(java.util.Locale.ROOT);
         playlists = playlists == null ? List.of() : playlists.stream()
                 .filter(p -> p != null && p.id() != null)
@@ -193,5 +228,7 @@ public final class CueConfig {
         pauseOnTravel = o.pauseOnTravel;
         repeat = o.repeat;
         playlists = o.playlists;
+        disliked = o.disliked;
+        collapsed = o.collapsed;
     }
 }
