@@ -73,7 +73,7 @@ subprojects {
 // Headless checks run the real DSP code; nothing from Minecraft is needed.
 def regressionProject = subprojects.first()
 def compileRegressionTests = regressionProject.tasks.register('compileRegressionTests', JavaCompile) {
-	source rootProject.file('src/common/java/mix/cuemymusic/dsp'), rootProject.file('src/common/java/mix/cuemymusic/library/PackNames.java'), rootProject.file('src/common/java/mix/cuemymusic/PlayOrder.java'), rootProject.file('src/common/java/mix/cuemymusic/ListeningStats.java'), rootProject.file('src/common/java/mix/cuemymusic/Automix.java'), rootProject.file('src/common/java/mix/cuemymusic/VoiceMix.java'), rootProject.file('tests/java')
+	source rootProject.file('src/common/java/mix/cuemymusic/dsp'), rootProject.file('src/common/java/mix/cuemymusic/library/PackNames.java'), rootProject.file('src/common/java/mix/cuemymusic/PlayOrder.java'), rootProject.file('src/common/java/mix/cuemymusic/ListeningStats.java'), rootProject.file('src/common/java/mix/cuemymusic/Automix.java'), rootProject.file('tests/java')
 	classpath = files()
 	destinationDirectory = rootProject.layout.buildDirectory.dir('classes/regression')
 	options.release = minecraftTargets[regressionProject.name].java

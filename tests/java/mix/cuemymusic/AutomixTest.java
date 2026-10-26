@@ -27,40 +27,6 @@ public final class AutomixTest {
             same(p.end(), 4L);
             same(p.frames(), 5L);
         });
-        run("a voice is resampled to the music's rate, at its volume", () -> {
-            float[] v = VoiceMix.resample(new float[] {0, 1, 0, -1}, 22050, 44100, 0.5);
-            same(v.length, 8);
-            close(v[2], 0.5);
-            close(v[1], 0.25);
-        });
-        run("music dips under a voice, the voice is heard, then the music comes back", () -> {
-            float rate = 1000;
-            float[] said = new float[1000];
-            java.util.Arrays.fill(said, 0.2f);
-            VoiceMix mix = new VoiceMix(said, rate, rate, 1);
-            close(mix.duck(0), 1);
-            close(mix.duck(400 + 500), VoiceMix.DUCK);
-            close(mix.duck(400 + 1000 + 900), 1);
-            float[] music = new float[3000 * 2];
-            java.util.Arrays.fill(music, 0.5f);
-            mix.process(music, 3000, 2);
-            close(music[0], 0.5);
-            close(music[(400 + 500) * 2], 0.5 * VoiceMix.DUCK + 0.2);
-            close(music[(400 + 500) * 2 + 1], 0.5 * VoiceMix.DUCK + 0.2);
-            close(music[2400 * 2], 0.5);
-            same(mix.done(), true);
-        });
-        run("a voice over loud music never goes past full scale", () -> {
-            float[] said = new float[100];
-            java.util.Arrays.fill(said, 1f);
-            VoiceMix mix = new VoiceMix(said, 100, 100, 1.5);
-            float[] music = new float[400];
-            java.util.Arrays.fill(music, 1f);
-            mix.process(music, 400, 1);
-            for (float m : music) {
-                if (Math.abs(m) > 1) throw new AssertionError("clipped: " + m);
-            }
-        });
         run("a profile reads back as it was written; another format reads as none", () -> {
             Automix.Profile p = new Automix.Profile(48000, 2, 1_000_000, 1200, 990_000, .2, .9, 127.6, "4A",
                     new float[] {.1f, .5f}, new float[] {.2f}, new float[0]);

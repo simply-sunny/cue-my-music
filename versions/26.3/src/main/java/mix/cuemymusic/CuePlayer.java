@@ -404,14 +404,6 @@ public final class CuePlayer {
 
     // The game's music.
 
-    /** What plays after the current song: the queue's first, the list's next, or the game's pick. Null if unknown. */
-    public Track following() {
-        List<Track> queued = order.queue();
-        if (!queued.isEmpty()) return queued.getFirst();
-        Track n = listNext();
-        return n != null ? n : planned;
-    }
-
     /** The song the game will play next, after the queue. Null if there's no music for where the player is. */
     public Track upcoming() {
         return planned;
