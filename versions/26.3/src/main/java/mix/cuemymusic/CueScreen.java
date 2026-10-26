@@ -1399,11 +1399,15 @@ public final class CueScreen extends Screen {
 
         // Timing.
         boolean cut = shape.volume() == Automix.Volume.CUT;
-        double most = cut ? 4 : 20;
-        y = sliderRow(g, left, y, right, tr("cuemymusic.mix.length"), tr("cuemymusic.mix.seconds", String.format("%.1f", len)),
+        double most = cut ? 4 : 40;
+        double autoLen = cut ? 1 : shape.volume() == Automix.Volume.DROP ? Automix.dropSeconds(pa) : Automix.autoSeconds(pa);
+        // In bars too, as DJs count, when the tempo is known.
+        String lenText = tr("cuemymusic.mix.seconds", String.format("%.1f", len));
+        if (pa.bpm() > 0 && !cut) lenText = tr("cuemymusic.mix.seconds_bars", String.format("%.1f", len), String.format("%.1f", len * pa.bpm() / 240).replace(".0", ""));
+        y = sliderRow(g, left, y, right, tr("cuemymusic.mix.length"), lenText,
                 (len - 0.5) / (most - 0.5), f -> cfg.setTransition(from, to,
                         cfg.transition(from, to).withSeconds(Math.round((0.5 + f * (most - 0.5)) * 10) / 10.0)),
-                ((cut ? 1 : Automix.autoSeconds(pa)) - 0.5) / (most - 0.5), -1);
+                (autoLen - 0.5) / (most - 0.5), -1);
         y = sliderRow(g, left, y, right, tr("cuemymusic.mix.start"), tr("cuemymusic.mix.before_end", String.format("%.1f", aEnd - start)),
                 (aEnd - start) / 60, f -> cfg.setTransition(from, to, cfg.transition(from, to).withStart(Math.round(f * 600) / 10.0)),
                 len / 60, -1);

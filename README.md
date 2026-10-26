@@ -98,9 +98,9 @@ Click a transition to edit it:
 
 - Both songs' waveforms, bass in blue, mids in orange and highs in white, lined up where they overlap. The light blue line is each song's volume, and the yellow line is its bass during a bass swap. Drag along a song to move where the transition starts.
 - The button between them plays from a few seconds before the transition.
-- **Presets**: Auto (Blend when the tempos are close, otherwise Fade), Fade, Rise, Blend, Echo and Cut.
+- **Presets**: Auto (Blend when the tempos are close, otherwise Fade), Fade, Rise, Blend, Drop, Echo and Cut. Drop brings the next song in at full volume as the first loses its bass, then fades the first out over the second half, across 16 bars. Where both songs are loud together, the mix is gently limited so it doesn't clip.
 - **Volume**, **EQ**, **Filter** and **Effects** set the parts one by one: the crossfade curve, where the bass swaps, a filter sweep in or out, and an echo out. Changing one makes the transition Custom.
-- **Length**, **Starts** (seconds before the first song's end) and **Next song comes in at**.
+- **Length** (in seconds, and in bars when the tempo is known), **Starts** (seconds before the first song's end) and **Next song comes in at**.
 
 Songs keep their own speed, so there's no beatmatching. Tempo and key are worked out from the audio in the background and can be off, such as half or double the tempo.
 
