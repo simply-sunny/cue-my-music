@@ -25,17 +25,19 @@ This file is the source of truth for the Modrinth project settings, version meta
 
 ## Version metadata
 
-Upload one Modrinth version per JAR, version number `1.0.0`, channel `release`, loaders `fabric` and `quilt`, environment `client_only`. Quilt loads Fabric mods and is confirmed to work.
+Upload one Modrinth version per JAR, version number as in `gradle.properties`, channel `release`, loaders `fabric` and `quilt`, environment `client_only`. Quilt loads Fabric mods and is confirmed to work.
 
 | JAR | Version ID |
 | --- | --- |
 | `cue-my-music-26.3-1.0.0.jar` | `bjLhbMkU` |
+| `cue-my-music-26.3-1.1.0.jar` | *(pending)* |
 
 | JAR | Modrinth `game_versions` |
 | --- | --- |
 | `cue-my-music-26.3-1.0.0.jar` | `26.3` |
+| `cue-my-music-26.3-1.1.0.jar` | `26.3` |
 
-Version name format: `Cue My Music 1.0.0 (26.3)`.
+Version name format: `Cue My Music 1.1.0 (26.3)`.
 
 ### Dependencies
 
@@ -55,17 +57,20 @@ Pitch, speed, and a 6-band equalizer apply to every song. Pitch and speed are se
 ## Features
 
 - **Player:** opens from a music button on the title screen or pause menu, from Mod Menu, or with a key.
-- **Pages:** all game music, Liked Songs, each artist, and each resource pack that adds music.
+- **Pages:** all game music, Liked Songs, each artist, and each resource pack that adds music, in a library with folding sections.
+- **Playlists:** make your own; right-click any song to add it.
 - **Play-through:** a song plays the rest of its page after it.
 - **Queue:** add a song or a whole page, drag to reorder. It shows the game's next song and the break before it.
+- **Repeat:** off, all, or one.
+- **Dislike:** the game never picks a disliked song for its own music. You can still play it.
 - **Vanilla timing:** the game still picks its songs and breaks exactly as usual.
 - **Pitch:** −12 to +12 semitones, same speed.
 - **Speed:** 0.5× to 2.0×, same pitch.
 - **Equalizer:** 6 bands with presets.
-- **Commands:** `/cmm play`, `queue`, `next`, `prev`, and `pause`.
+- **Commands:** `/cmm play`, `queue`, `next`, `prev`, `pause`, `repeat`, and `dislike`.
 - **Keys:** play/pause, next, and previous, on any screen. F7–F9 by default on macOS.
 - **Travel:** your song keeps playing through dimension changes, or pauses until the new one loads.
-- **Resource packs:** each gets its own page, with its name, icon, and author.
+- **Resource packs:** each gets its own page, with its name, icon, and author. A pack can name its songs with a `cuemymusic.json`.
 
 ## Installation
 

@@ -2,7 +2,7 @@
 
 All notable changes to Cue My Music are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.1.0 — 2026-10-26
 
 ### Added
 
@@ -18,7 +18,6 @@ All notable changes to Cue My Music are documented here. This project follows [S
 ### Fixed
 
 - Songs a resource pack adds or removes show up after a reload without reopening the player.
-
 - Queue headings and album names no longer run past their columns in a small window.
 
 ## 1.0.0 — 2026-10-25

@@ -137,13 +137,16 @@ public final class MusicLibrary {
      * downloads: those aren't the game's music and only play from their page.
      */
     public static synchronized List<Track> gameMusic() {
-        java.util.Set<String> addOnPacks = new java.util.HashSet<>();
+        return all().stream().filter(MusicLibrary::isGameMusic).toList();
+    }
+
+    /** False for songs in a pack an add-on page stands in for: the game never plays those, so there's nothing to dislike. */
+    public static boolean isGameMusic(Track t) {
+        if (t.packId() == null) return true;
         for (mix.cuemymusic.api.CuePanel p : mix.cuemymusic.api.CuePanels.all()) {
-            if (p.packId() != null) addOnPacks.add(p.packId());
+            if (t.packId().equals(p.packId())) return false;
         }
-        List<Track> all = all();
-        if (addOnPacks.isEmpty()) return all;
-        return all.stream().filter(t -> t.packId() == null || !addOnPacks.contains(t.packId())).toList();
+        return true;
     }
 
     public static synchronized List<Track> byArtist(String artist) {

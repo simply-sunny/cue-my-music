@@ -76,6 +76,10 @@ final class CueCommands {
 
     /** Dislikes the song, or takes the dislike away if it already has one. */
     private static int dislike(FabricClientCommandSource src, Track t) {
+        if (!MusicLibrary.isGameMusic(t)) {
+            src.sendError(Component.translatable("cuemymusic.command.not_game_music", t.title()));
+            return 0;
+        }
         boolean disliked = CuePlayer.INSTANCE.toggleDisliked(t);
         src.sendFeedback(Component.translatable(disliked ? "cuemymusic.command.disliked" : "cuemymusic.command.undisliked", t.title()));
         return 1;

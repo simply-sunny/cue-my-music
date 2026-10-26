@@ -96,5 +96,6 @@
 	"cuemymusic.menu.dislike": "Dislike",
 	"cuemymusic.menu.undislike": "Remove dislike",
 	"cuemymusic.command.disliked": "Disliked %s. The game won't play it.",
-	"cuemymusic.command.undisliked": "%s is back in the game's music."
+	"cuemymusic.command.undisliked": "%s is back in the game's music.",
+	"cuemymusic.command.not_game_music": "The game never plays %s by itself, so there's nothing to dislike."
 }

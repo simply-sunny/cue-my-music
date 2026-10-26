@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Draft the Modrinth project and version from MODRINTH.md. Nothing is submitted for review.
+"""Create the Modrinth project and version from MODRINTH.md, and keep the listing body in sync.
 
 Creates the project as a draft if the slug isn't taken yet (with the icon and the listing
-body from MODRINTH.md), then uploads the built jar as a draft version if that version number
-isn't there yet. Submitting the project for review is done by hand on modrinth.com.
+body from MODRINTH.md); otherwise updates its summary and body from MODRINTH.md. Then uploads
+the built jar, at the version in gradle.properties, if that version isn't there yet: as a draft
+while the project is a draft, else listed. Submitting the project for review is done by hand.
 
 Usage: MODRINTH_API_KEY=... python3 scripts/publish-modrinth.py [--dry-run]
 """
@@ -19,7 +20,7 @@ from pathlib import Path
 API = "https://api.modrinth.com/v2"
 USER_AGENT = "simply-sunny/cue-my-music (github.com/simply-sunny/cue-my-music)"
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = "1.0.0"
+VERSION = re.search(r"^mod_version=(.+)$", (ROOT / "gradle.properties").read_text(), re.M).group(1).strip()
 SLUG = "cue-my-music"
 
 # jar suffix -> (label, Minecraft versions)
@@ -109,6 +110,12 @@ def main():
         print(f"created draft project {project['id']} ({project['slug']})")
     else:
         print(f"project {project['id']} exists, status {project['status']}")
+        if dry_run:
+            print(f"would update summary and body (<{len(body)} chars>)")
+        else:
+            request("PATCH", f"/project/{project['id']}", json.dumps({"description": summary, "body": body}).encode(),
+                    "application/json")
+            print("updated summary and body")
 
     # Draft versions aren't listed by the API, so the ones already uploaded are the IDs recorded in MODRINTH.md.
     existing = {v["name"] for v in request("GET", f"/project/{project['id']}/version") or []}
@@ -133,7 +140,7 @@ def main():
             "version_type": "release",
             "loaders": LOADERS,
             "featured": True,
-            "status": "draft",
+            "status": "draft" if project["status"] == "draft" else "listed",
             "file_parts": ["file"],
             "primary_file": "file",
         }
@@ -145,7 +152,7 @@ def main():
         # Client or server side is set per version, and only through v3.
         request("PATCH", f"/version/{version['id']}", json.dumps({"environment": "client_only"}).encode(),
                 "application/json", api=API.replace("/v2", "/v3"))
-        print(f"{jar.name} -> draft version {version['id']}; add it to the version table in MODRINTH.md")
+        print(f"{jar.name} -> version {version['id']}; add it to the version table in MODRINTH.md")
 
 
 if __name__ == "__main__":

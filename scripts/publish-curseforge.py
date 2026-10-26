@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload the built 1.0.0 jars to CurseForge, mirroring the Modrinth release in MODRINTH.md.
+"""Upload the built jars, at the version in gradle.properties, to CurseForge, mirroring the Modrinth release in MODRINTH.md.
 
 CurseForge projects can't be created through the API: create it by hand from CURSEFORGE.md
 first. An upload goes to CurseForge's review and is published when approved, so only run
@@ -17,7 +17,7 @@ from pathlib import Path
 
 API = "https://minecraft.curseforge.com/api"
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = "1.0.0"
+VERSION = re.search(r"^mod_version=(.+)$", (ROOT / "gradle.properties").read_text(), re.M).group(1).strip()
 
 # jar suffix -> (display range, Minecraft versions, Java version)
 JARS = {
