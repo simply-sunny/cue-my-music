@@ -99,8 +99,6 @@ A pack can name its songs itself with `assets/<namespace>/cuemymusic.json`. Keys
 
 The player lists every sound event whose name starts with `music.`. Put songs in one the game never plays, such as `mypack:music.extra`, and they play from the player only.
 
-[Cue My Music: Downloads](https://github.com/simply-sunny/cue-my-music-downloads) is a separate add-on that saves songs from a link into such a pack with yt-dlp, from its own page in the player.
-
 ## Configure
 
 Open the player and click **Settings**. Changes apply to the song that's playing within a few seconds, which is how much audio the game has already queued. Until then a small ring shows next to the value.
