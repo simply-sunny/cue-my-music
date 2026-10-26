@@ -114,6 +114,41 @@ public final class PlayOrderTest {
             plays(o, "x", null);
         });
 
+        run("repeat all starts the list over after the queue", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.setRepeat(PlayOrder.Repeat.ALL);
+            o.play("album", ALBUM, 2);
+            o.enqueue("x");
+            plays(o, "x", "d", "a", "b");
+            o.play("album", ALBUM, 3);
+            same(o.listNext(), "a");
+        });
+        run("repeat one replays the song that ended, but next moves on", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.setRepeat(PlayOrder.Repeat.ONE);
+            o.play("album", ALBUM, 1);
+            same(o.finished("b"), "b");
+            same(o.finished("b"), "b");
+            plays(o, "c");
+            same(o.finished("game song"), "game song");
+        });
+        run("repeat off: finished is next", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.play("album", ALBUM, 3);
+            same(o.finished("d"), null);
+        });
+        run("repeat all with no list hands back to the game", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.setRepeat(PlayOrder.Repeat.ALL);
+            o.enqueue("x");
+            plays(o, "x", null);
+        });
+        run("repeat cycles off, all, one", () -> {
+            same(PlayOrder.Repeat.OFF.cycle(), PlayOrder.Repeat.ALL);
+            same(PlayOrder.Repeat.ALL.cycle(), PlayOrder.Repeat.ONE);
+            same(PlayOrder.Repeat.ONE.cycle(), PlayOrder.Repeat.OFF);
+        });
+
         System.out.println(checks - failures + "/" + checks + " checks passed");
         if (failures > 0) System.exit(1);
     }

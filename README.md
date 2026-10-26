@@ -43,9 +43,11 @@ Jars are named `cue-my-music-<jar>-<version>.jar`.
 All keys are rebindable under **Options → Controls → Key Binds → Cue My Music**. They work in game and on any screen without a text box in focus. On a Mac, F7 to F9 are media keys: hold **fn**, or turn on **System Settings → Keyboard → Keyboard Shortcuts → Function Keys → Use F1, F2, etc. keys as standard function keys**.
 
 - Open the player from the music button on the title screen or pause menu, from **Mod Menu → Cue My Music**, or with **Open player**. The same key closes it.
-- The library on the left has **All game music**, **Liked Songs**, one page per artist, one page per resource pack that adds music, and **Settings**.
+- The library on the left has **All game music**, **Liked Songs**, your playlists, one page per artist, one page per resource pack that adds music, and **Settings**.
 - Click a song to play it. The rest of the page plays after it, in the order shown. The big green button plays the page from the top, or pauses it while it's playing.
 - Hover a song and click the heart to like it, or **+** to add it to the queue. **Add all to queue** adds the whole page.
+- Right-click a song to queue it, like it, or add it to a playlist.
+- The repeat button next to play cycles through off, repeat all (the page starts over at its end), and repeat one (the song plays again). Next and previous still move on.
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
 - Space plays and pauses while the player is open. Click or drag the progress bar to seek.
 
@@ -61,8 +63,13 @@ Client-side, so they work on any server. Songs are named by title, and chat sugg
 | `/cmm next` | Next song. |
 | `/cmm prev` | Previous song, or the start of this one. |
 | `/cmm pause` | Pauses. |
+| `/cmm repeat [off\|all\|one]` | Sets repeat, or cycles it with no argument. |
 
 A partial title works if only one song matches, such as `/cmm play subwoofer`.
+
+### Playlists
+
+Click **New playlist** in the library, then right-click songs anywhere and pick **Add to** the playlist, or **Add to new playlist** to make one with that song. On a playlist's page, click its name or **Rename** to rename it, and click **Delete** twice to delete it. Right-click a song there to remove it. Playlists are saved with your settings.
 
 ### The queue
 
@@ -78,9 +85,23 @@ Songs the game starts play exactly as in vanilla: the same weighted pick from `s
 
 A pack that adds or replaces music gets its own page. The album is the pack's name, the art is its icon (or its initials on a gradient if it has none), and the artist is the "By ..." line of its description, or **Unknown artist**.
 
+A pack can name its songs itself with `assets/<namespace>/cuemymusic.json`. Keys are sound files as in `sounds.json`, and any field left out falls back to the above:
+
+```json
+{
+  "tracks": {
+    "mypack:music/rain": { "title": "Rain", "artist": "Someone", "album": "Weather" }
+  }
+}
+```
+
+The player lists every sound event whose name starts with `music.`. Put songs in one the game never plays, such as `mypack:music.extra`, and they play from the player only.
+
+[Cue My Music: Downloads](https://github.com/simply-sunny/cue-my-music-downloads) is a separate add-on that saves songs from a link into such a pack with yt-dlp.
+
 ## Configure
 
-Open the player and click **Settings**. Changes apply to the song that's playing within a few seconds, which is how much audio the game has already queued.
+Open the player and click **Settings**. Changes apply to the song that's playing within a few seconds, which is how much audio the game has already queued. Until then a small ring shows next to the value.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
@@ -93,7 +114,7 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 
 Presets: Flat, Bass Booster, Bass Reducer, Treble Booster, Treble Reducer, Vocal Booster, and Small Speakers.
 
-Settings and liked songs are saved to `config/cuemymusic.json` in your Minecraft folder:
+Settings, liked songs, and playlists are saved to `config/cuemymusic.json` in your Minecraft folder:
 
 - **Windows:** `%appdata%\.minecraft\config\cuemymusic.json`
 - **macOS:** `~/Library/Application Support/minecraft/config/cuemymusic.json`
@@ -128,7 +149,7 @@ java scripts/MakeIcon.java <26.3 client jar> src/main/resources/assets/cuemymusi
 | `requires modmenu` | Install Mod Menu for your Minecraft version. |
 | Open player key does nothing | Bind **Open player** under Controls. |
 | F7–F9 change brightness or volume | Hold **fn**, or turn on standard function keys in macOS settings. |
-| A change doesn't apply | Wait a few seconds. Already-queued audio plays out first. |
+| A change doesn't apply | Wait for the ring next to it to go. Already-queued audio plays out first. |
 | Seek is slow on a long song | Seeking decodes up to that point. Far into a 6-minute song can take a moment. |
 | A pack's songs are missing | The pack points at files that don't exist in this version. Vanilla can't play them either. |
 | Jukebox isn't affected | Expected. Only background music is. |

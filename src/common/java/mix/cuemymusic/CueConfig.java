@@ -37,8 +37,62 @@ public final class CueConfig {
     public volatile List<String> liked = List.of();
     /** Pause the player's song while a new dimension loads, rather than carry on. */
     public volatile boolean pauseOnTravel = false;
+    /** Playlists made in the player, in the order they were made. Replaced whole, never mutated in place. */
+    public volatile List<Playlist> playlists = List.of();
+    /** "off", "all" or "one". */
+    public volatile String repeat = "off";
 
     private CueConfig() {
+    }
+
+    /** A playlist: its songs as sound file ids, in the order they were added. */
+    public record Playlist(String id, String name, List<String> songs) {
+    }
+
+    public Playlist playlist(String id) {
+        for (Playlist p : playlists) {
+            if (p.id().equals(id)) return p;
+        }
+        return null;
+    }
+
+    /** Makes an empty playlist and saves. Returns its id. */
+    public String createPlaylist(String name) {
+        String id = Long.toString(System.currentTimeMillis(), 36);
+        while (playlist(id) != null) id += "x";
+        List<Playlist> next = new ArrayList<>(playlists);
+        next.add(new Playlist(id, name, List.of()));
+        playlists = List.copyOf(next);
+        save();
+        return id;
+    }
+
+    public void renamePlaylist(String id, String name) {
+        replacePlaylist(id, p -> new Playlist(p.id(), name, p.songs()));
+    }
+
+    public void deletePlaylist(String id) {
+        playlists = playlists.stream().filter(p -> !p.id().equals(id)).toList();
+        save();
+    }
+
+    /** Adds the song unless it's already there. Returns false if it was. */
+    public boolean addToPlaylist(String id, String song) {
+        Playlist p = playlist(id);
+        if (p == null || p.songs().contains(song)) return false;
+        List<String> songs = new ArrayList<>(p.songs());
+        songs.add(song);
+        replacePlaylist(id, old -> new Playlist(old.id(), old.name(), List.copyOf(songs)));
+        return true;
+    }
+
+    public void removeFromPlaylist(String id, String song) {
+        replacePlaylist(id, p -> new Playlist(p.id(), p.name(), p.songs().stream().filter(s -> !s.equals(song)).toList()));
+    }
+
+    private void replacePlaylist(String id, java.util.function.UnaryOperator<Playlist> change) {
+        playlists = playlists.stream().map(p -> p.id().equals(id) ? change.apply(p) : p).toList();
+        save();
     }
 
     public double pitchRatio() {
@@ -52,6 +106,18 @@ public final class CueConfig {
     /** Band gains to apply right now, or null for none. */
     public double[] activeEq() {
         return enabled && eqEnabled ? eqGains : null;
+    }
+
+    public PlayOrder.Repeat repeatMode() {
+        for (PlayOrder.Repeat r : PlayOrder.Repeat.values()) {
+            if (r.name().equalsIgnoreCase(repeat)) return r;
+        }
+        return PlayOrder.Repeat.OFF;
+    }
+
+    public void setRepeat(PlayOrder.Repeat mode) {
+        repeat = mode.name().toLowerCase(java.util.Locale.ROOT);
+        save();
     }
 
     public boolean isLiked(String id) {
@@ -77,6 +143,12 @@ public final class CueConfig {
         eqGains = g;
         if (eqPreset == null) eqPreset = "custom";
         liked = liked == null ? List.of() : liked.stream().filter(Objects::nonNull).distinct().toList();
+        repeat = repeatMode().name().toLowerCase(java.util.Locale.ROOT);
+        playlists = playlists == null ? List.of() : playlists.stream()
+                .filter(p -> p != null && p.id() != null)
+                .map(p -> new Playlist(p.id(), p.name() == null || p.name().isBlank() ? "Playlist" : p.name(),
+                        p.songs() == null ? List.of() : p.songs().stream().filter(Objects::nonNull).distinct().toList()))
+                .toList();
     }
 
     private static Path path() {
@@ -119,5 +191,7 @@ public final class CueConfig {
         eqPreset = o.eqPreset;
         liked = o.liked;
         pauseOnTravel = o.pauseOnTravel;
+        repeat = o.repeat;
+        playlists = o.playlists;
     }
 }

@@ -13,9 +13,21 @@ import java.util.Objects;
  * and the list then resumes after the song that was playing before the queue
  * started. Previous only walks the list.
  *
+ * <p>Repeat all starts the list over at its end, and repeat one plays the
+ * song that just ended again. Next and previous still move on either way.
+ *
  * <p>Plain Java, so the rules can be checked without the game.
  */
 public final class PlayOrder<T> {
+    public enum Repeat {
+        OFF, ALL, ONE;
+
+        /** Off, all, one, then off again: the order the repeat button steps through. */
+        public Repeat cycle() {
+            return values()[(ordinal() + 1) % values().length];
+        }
+    }
+
     private final List<T> queue = new ArrayList<>();
     private List<T> list = List.of();
     private Object listKey;
@@ -23,6 +35,20 @@ public final class PlayOrder<T> {
     private int cursor = -1;
     /** True if the song that's playing came from the queue. */
     private boolean fromQueue;
+    private Repeat repeat = Repeat.OFF;
+
+    public Repeat repeat() {
+        return repeat;
+    }
+
+    public void setRepeat(Repeat repeat) {
+        this.repeat = repeat;
+    }
+
+    /** What plays after {@code ended} finishes by itself: the same song again on repeat one, otherwise {@link #next}. */
+    public T finished(T ended) {
+        return repeat == Repeat.ONE && ended != null ? ended : next();
+    }
 
     /** Starts {@code list} at {@code index}, which plays through to the end. The queue is kept. */
     public T play(Object key, List<T> list, int index) {
@@ -42,6 +68,10 @@ public final class PlayOrder<T> {
         }
         fromQueue = false;
         if (cursor + 1 < list.size()) return list.get(++cursor);
+        if (repeat != Repeat.OFF && !list.isEmpty()) {
+            cursor = 0;
+            return list.getFirst();
+        }
         endList();
         return null;
     }
@@ -62,7 +92,9 @@ public final class PlayOrder<T> {
 
     /** What {@link #next} would play from the list, if the queue is empty. Null otherwise. */
     public T listNext() {
-        return queue.isEmpty() && cursor + 1 < list.size() ? list.get(cursor + 1) : null;
+        if (!queue.isEmpty() || list.isEmpty()) return null;
+        if (cursor + 1 < list.size()) return list.get(cursor + 1);
+        return repeat != Repeat.OFF ? list.getFirst() : null;
     }
 
     /** The key of the list that's playing through, or null. */

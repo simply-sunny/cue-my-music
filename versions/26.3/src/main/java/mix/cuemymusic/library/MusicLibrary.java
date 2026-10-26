@@ -13,6 +13,9 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.blaze3d.platform.NativeImage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +40,10 @@ import mix.cuemymusic.mixin.WeighedSoundEventsAccessor;
  * with credits from {@link Catalog}, plus anything resource packs add or
  * replace. Pack files are credited to the pack: its name as the album, its
  * icon as the art, and the "By ..." line of its description as the artist.
+ *
+ * <p>A pack can name each song itself with {@code assets/<namespace>/cuemymusic.json}:
+ * <pre>{"tracks": {"namespace:music/file": {"title": "...", "artist": "...", "album": "..."}}}</pre>
+ * Any field it leaves out falls back to the above.
  */
 public final class MusicLibrary {
     private static final Logger LOG = LoggerFactory.getLogger("cuemymusic");
@@ -95,6 +102,7 @@ public final class MusicLibrary {
         extra.sort(Comparator.comparing((Identifier id) -> !VANILLA.equals(sources.get(id).sourcePackId()))
                 .thenComparing(id -> sources.get(id).sourcePackId())
                 .thenComparing(Identifier::toString));
+        Map<String, JsonObject> credits = new HashMap<>();
         for (Identifier id : extra) {
             Resource r = sources.get(id);
             String title = Catalog.titleFromPath(id.getPath());
@@ -107,7 +115,11 @@ public final class MusicLibrary {
                 PackInfo pack = pack(r.source());
                 PACKS.putIfAbsent(pack.id(), pack);
                 String artist = pack.author() != null ? pack.author() : Catalog.UNKNOWN_ARTIST;
-                t = new Track(id, title, artist, pack.name(), pack.art(), pack.id(), seconds);
+                JsonObject named = credits.computeIfAbsent(id.getNamespace(), ns -> credits(resources, ns));
+                JsonObject c = named.has(id.toString()) && named.get(id.toString()).isJsonObject()
+                        ? named.getAsJsonObject(id.toString()) : new JsonObject();
+                t = new Track(id, text(c, "title", title), text(c, "artist", artist), text(c, "album", pack.name()),
+                        pack.art(), pack.id(), seconds);
             }
             TRACKS.put(id, t);
             if (Double.isNaN(t.seconds())) measure(t);
@@ -156,6 +168,38 @@ public final class MusicLibrary {
         List<Track> out = new ArrayList<>();
         for (int i = ids.size() - 1; i >= 0; i--) {
             Identifier id = Identifier.tryParse(ids.get(i));
+            Track t = id == null ? null : TRACKS.get(id);
+            if (t != null) out.add(t);
+        }
+        return out;
+    }
+
+    /** The {@code tracks} object of a namespace's {@code cuemymusic.json}, or empty if there's none or it's broken. */
+    private static JsonObject credits(ResourceManager resources, String namespace) {
+        Optional<Resource> file = resources.getResource(Identifier.fromNamespaceAndPath(namespace, "cuemymusic.json"));
+        if (file.isEmpty()) return new JsonObject();
+        try (var reader = file.get().openAsReader()) {
+            JsonElement root = JsonParser.parseReader(reader);
+            if (root.isJsonObject() && root.getAsJsonObject().get("tracks") instanceof JsonObject tracks) return tracks;
+        } catch (Exception e) {
+            LOG.warn("Couldn't read {}:cuemymusic.json", namespace, e);
+        }
+        return new JsonObject();
+    }
+
+    private static String text(JsonObject o, String field, String fallback) {
+        JsonElement e = o.get(field);
+        if (e == null || !e.isJsonPrimitive()) return fallback;
+        String s = e.getAsString().strip();
+        return s.isEmpty() ? fallback : s;
+    }
+
+    /** The tracks for these sound file ids, in order, skipping any that aren't loaded. */
+    public static synchronized List<Track> tracks(List<String> ids) {
+        all();
+        List<Track> out = new ArrayList<>();
+        for (String s : ids) {
+            Identifier id = Identifier.tryParse(s);
             Track t = id == null ? null : TRACKS.get(id);
             if (t != null) out.add(t);
         }
