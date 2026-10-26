@@ -85,7 +85,7 @@ public final class CueScreen extends Screen {
     }
 
     /** PLAYLIST is all game music; LIST is one of the player's own playlists; PANEL is an add-on's page. */
-    private enum View { PLAYLIST, LIKED, DISLIKED, LIST, ARTIST, PACK, STATS, SEARCH, SETTINGS, PANEL }
+    private enum View { PLAYLIST, LIKED, DISLIKED, LIST, ARTIST, PACK, STATS, SEARCH, MIX, SETTINGS, PANEL }
 
     /** A track row that opens the song menu when right-clicked. */
     private record RowHit(int x0, int y0, int x1, int y1, Track track, int index) {
@@ -164,6 +164,12 @@ public final class CueScreen extends Screen {
     private String searchQuery = "";
     /** Puts the cursor in the search box the next time it's drawn. */
     private boolean focusSearch;
+    // The mix page: its songs, its title, and the transition being edited (the index of its first song), or -1 for the list.
+    private List<Track> mixTracks = List.of();
+    private String mixTitle = "";
+    private int mixEdit = -1;
+    /** The title of the page header drawn last, for the mix editor. */
+    private String headerTitle = "";
     // An add-on page's text fields, by key, and the one being typed in.
     private final Map<String, EditBox> fields = new LinkedHashMap<>();
     private final Map<String, Consumer<String>> fieldSubmits = new HashMap<>();
@@ -539,6 +545,7 @@ public final class CueScreen extends Screen {
             case SETTINGS -> drawSettings(g, x0, contentTop, x1, mx, my);
             case STATS -> drawStats(g, x0, contentTop, x1, mx, my);
             case SEARCH -> drawSearch(g, x0, contentTop, x1, mx, my);
+            case MIX -> drawMix(g, x0, contentTop, x1, mx, my);
             case PANEL -> {
                 Canvas canvas = new Canvas(g, x0, contentTop, x1, mx, my);
                 try {
@@ -589,6 +596,7 @@ public final class CueScreen extends Screen {
     private int drawHeader(GuiGraphicsExtractor g, int x0, int y, int x1, Art art, String kind, String title, String summary,
             int color) {
         int headerH = 70;
+        headerTitle = title;
         g.fillGradient(x0, y, x1, y + headerH, color, PANEL);
         art(g, art, x0 + 10, y + 12, 48);
         int tx = x0 + 66;
@@ -657,6 +665,11 @@ public final class CueScreen extends Screen {
                 player.enqueueAll(tracks);
                 showToast(tr("cuemymusic.queue.added_all", tracks.size()));
             }));
+            // Edit the transitions, once two of the page's songs can blend.
+            if (tracks.stream().filter(AutomixProfiles::applies).limit(2).count() == 2) {
+                String title = headerTitle;
+                chip(g, qx + qw + 14, qy + 3, tr("cuemymusic.mix.open"), false, mx, my, () -> openMix(listKey, tracks, title));
+            }
         }
         y += pb + 12;
 
@@ -801,6 +814,415 @@ public final class CueScreen extends Screen {
         if (by == null) return tracks;
         // Stable sort, so tracks with the same album keep their listed order.
         return tracks.stream().sorted(ascending ? by : by.reversed()).toList();
+    }
+
+    // -------------------------------------------------------------------- mix
+
+    private static final Art MIX_ART = Art.block("block/amethyst_block");
+    private static final int MIX_PURPLE = 0xFFB18CFF;
+
+    // Waveform and curve colours, as in Spotify's mix editor: bass blue, mids orange, highs white;
+    // the volume curve light blue and the bass swap yellow.
+    private static final int WAVE_LOW = 0xFF2F6BFF;
+    private static final int WAVE_MID = 0xFFFF8A2A;
+    private static final int WAVE_HIGH = 0xFFF2F2F2;
+    private static final int CURVE_VOLUME = 0xFF8CCBFF;
+    private static final int CURVE_EQ = 0xFFFFD84A;
+
+    /** Opens the mix page for a page's songs, in the order shown. */
+    private void openMix(String listKey, List<Track> tracks, String title) {
+        open(View.MIX, listKey);
+        mixTracks = List.copyOf(tracks);
+        mixTitle = title;
+        mixEdit = -1;
+    }
+
+    /** True if songs {@code i} and {@code i + 1} of the mix blend, or would once both are analysed. */
+    private boolean blends(int i) {
+        Track a = mixTracks.get(i), b = mixTracks.get(i + 1);
+        if (!AutomixProfiles.applies(a) || !AutomixProfiles.applies(b) || a.equals(b)) return false;
+        Automix.Profile pa = AutomixProfiles.get(a), pb = AutomixProfiles.get(b);
+        return pa == null || pb == null || pa.blendsWith(pb);
+    }
+
+    /** The mix page: the songs in order, each with its tempo and key, and the transition between each pair. Or one transition's editor. */
+    private int drawMix(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my) {
+        if (mixEdit >= 0 && (mixEdit + 1 >= mixTracks.size() || !blends(mixEdit))) mixEdit = -1;
+        if (mixEdit >= 0) return drawTransitionEditor(g, x0, y, x1, mx, my);
+        int transitions = 0;
+        for (int i = 0; i + 1 < mixTracks.size(); i++) {
+            if (blends(i)) transitions++;
+        }
+        y = drawHeader(g, x0, y, x1, MIX_ART, tr("cuemymusic.mix.kind"), mixTitle,
+                tr("cuemymusic.mix.summary", mixTracks.size(), transitions), 0xFF3A2466);
+
+        // Play the mix, and turn automix on or off.
+        int pb = 18;
+        boolean thisList = player.current() != null && player.isPlayingList(key);
+        roundButton(g, x0 + 10, y + 6, pb, GREEN);
+        if (thisList && player.isPlaying()) pauseIcon(g, x0 + 16, y + 11, 8, BLACK);
+        else playIcon(g, x0 + 17, y + 11, 8, BLACK);
+        String listKey = key;
+        nextHits.add(new Hit(x0 + 10, y + 6, x0 + 10 + pb, y + 6 + pb, () -> {
+            if (thisList) player.togglePause();
+            else if (!mixTracks.isEmpty()) player.play(listKey, mixTracks, 0);
+        }));
+        chip(g, x0 + 10 + pb + 10, y + 9, tr(cfg.automix ? "cuemymusic.mix.on" : "cuemymusic.mix.off"), cfg.automix, mx, my, () -> {
+            cfg.automix = !cfg.automix;
+            cfg.save();
+        });
+        y += pb + 14;
+        int left = x0 + 10, right = x1 - 10;
+        if (!cfg.automix) {
+            g.text(font, clip(tr("cuemymusic.mix.off.hint"), right - left), left, y, DIM, false);
+            y += 14;
+        }
+        if (transitions == 0) {
+            g.text(font, clip(tr("cuemymusic.mix.none"), right - left), left, y, DIM, false);
+            y += 14;
+        }
+
+        // Songs, and between two that blend a line down with the transition's chip.
+        int rowH = 30, art = 24, lineX = left + art / 2;
+        for (int i = 0; i < mixTracks.size(); i++) {
+            Track t = mixTracks.get(i);
+            boolean hover = mx >= left && mx < right && my >= y && my < y + rowH && my >= centerY0 && my < centerY1;
+            if (hover) g.fill(left - 4, y, right + 4, y + rowH, ROW_HOVER);
+            art(g, t.art(), left, y + 3, art);
+            boolean current = t.equals(player.current());
+            int textRight = right - mixRowInfo(g, t, right, y + 11);
+            g.text(font, clip(t.title(), textRight - left - art - 16), left + art + 8, y + 5, current ? GREEN : WHITE, false);
+            g.text(font, clip(t.artist(), textRight - left - art - 16), left + art + 8, y + 17, DIM, false);
+            int index = i, top = Math.max(y, centerY0), bottom = Math.min(y + rowH, centerY1);
+            if (bottom > top) nextHits.add(new Hit(left - 4, top, right + 4, bottom, () -> player.play(listKey, mixTracks, index)));
+            y += rowH;
+            if (i + 1 >= mixTracks.size()) break;
+            if (!blends(i)) {
+                y += 4;
+                continue;
+            }
+            int gap = 20;
+            g.fill(lineX, y, lineX + 1, y + gap, 0xFF5A5A5A);
+            Automix.Transition tn = cfg.transition(id(t), id(mixTracks.get(i + 1)));
+            String label = (tn.preset() == Automix.Preset.AUTO ? "✦ " : "") + presetName(tn.preset()) + "  ›";
+            chip(g, lineX + 10, y + 3, label, false, mx, my, () -> {
+                mixEdit = index;
+                scroll = 0;
+            });
+            y += gap;
+        }
+        return y + 10;
+    }
+
+    /** A song's tempo, key and length at the right of its row, ending at {@code right}. Returns their width. */
+    private int mixRowInfo(GuiGraphicsExtractor g, Track t, int right, int y) {
+        String length = Double.isNaN(t.seconds()) ? "" : time(t.seconds());
+        int x = right - font.width(length);
+        g.text(font, length, x, y, DIM, false);
+        Automix.Profile p = AutomixProfiles.applies(t) ? AutomixProfiles.get(t) : null;
+        if (p == null) return right - x + 8;
+        x -= 10;
+        if (!p.key().isEmpty()) x -= keyBadge(g, p.key(), x, y - 3, true) + 6;
+        if (p.bpm() > 0) {
+            String bpm = tr("cuemymusic.mix.bpm", Math.round(p.bpm()));
+            x -= font.width(bpm);
+            g.text(font, bpm, x, y, FAINT, false);
+        }
+        return right - x + 8;
+    }
+
+    /**
+     * A Camelot key ("5A") in a badge coloured by its place on the wheel, so
+     * keys that mix well (the same number, or one either side) look alike.
+     * With {@code alignRight} it ends at {@code x}. Returns its width.
+     */
+    private int keyBadge(GuiGraphicsExtractor g, String key, int x, int y, boolean alignRight) {
+        int w = font.width(key) + 8;
+        if (alignRight) x -= w;
+        int n;
+        try {
+            n = Integer.parseInt(key.substring(0, key.length() - 1));
+        } catch (NumberFormatException e) {
+            n = 1;
+        }
+        boolean minor = key.endsWith("A");
+        g.fill(x + 1, y, x + w - 1, y + 13, wheelColour(n, minor));
+        g.fill(x, y + 1, x + w, y + 12, wheelColour(n, minor));
+        g.text(font, key, x + 4, y + 3, BLACK, false);
+        return w;
+    }
+
+    /** The colour of Camelot number {@code n}: hues around the wheel, minor keys a little deeper. */
+    private static int wheelColour(int n, boolean minor) {
+        float h = ((n - 1) % 12) / 12f, s = minor ? 0.55f : 0.4f, v = minor ? 0.9f : 1f;
+        int i = (int) (h * 6);
+        float f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), u = v * (1 - (1 - f) * s);
+        float[] rgb = switch (i % 6) {
+            case 0 -> new float[] {v, u, p};
+            case 1 -> new float[] {q, v, p};
+            case 2 -> new float[] {p, v, u};
+            case 3 -> new float[] {p, q, v};
+            case 4 -> new float[] {u, p, v};
+            default -> new float[] {v, p, q};
+        };
+        return 0xFF000000 | Math.round(rgb[0] * 255) << 16 | Math.round(rgb[1] * 255) << 8 | Math.round(rgb[2] * 255);
+    }
+
+    private static String presetName(Automix.Preset p) {
+        return tr("cuemymusic.mix.preset." + p.name().toLowerCase(Locale.ROOT));
+    }
+
+    private static String partName(Enum<?> part) {
+        return tr("cuemymusic.mix." + part.getDeclaringClass().getSimpleName().toLowerCase(Locale.ROOT) + "."
+                + part.name().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * The editor for transition {@link #mixEdit}: both songs' waveforms around
+     * it with the volume and bass curves, a preview button, the presets, the
+     * parts as drop-downs, and the timing.
+     */
+    private int drawTransitionEditor(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my) {
+        Track a = mixTracks.get(mixEdit), b = mixTracks.get(mixEdit + 1);
+        String from = id(a), to = id(b);
+        int left = x0 + 12, right = x1 - 12;
+        y += 10;
+        chip(g, left, y, "‹  " + mixTitle, false, mx, my, () -> {
+            mixEdit = -1;
+            scroll = 0;
+        });
+        y += 22;
+        g.text(font, tr("cuemymusic.mix.transition"), left, y, WHITE, false);
+        y += 14;
+        Automix.Profile pa = AutomixProfiles.get(a), pb = AutomixProfiles.get(b);
+        if (pa == null || pb == null) {
+            g.text(font, tr("cuemymusic.mix.analysing"), left, y, DIM, false);
+            return y + 20;
+        }
+        Automix.Transition t = cfg.transition(from, to);
+        Automix.Plan plan = Automix.plan(pa, pb, t);
+        Automix.Shape shape = plan.shape();
+
+        // The two songs, one above the other, lined up on the transition; preview between them.
+        double aEnd = pa.seconds(pa.end()), start = pa.seconds(plan.fadeStart()), len = pa.seconds(plan.fadeFrames());
+        double enter = pb.seconds(plan.enterAt());
+        double span = Math.max(20, len * 2.2);
+        double t0 = start + len / 2 - span / 2;
+        int laneH = 44, gapH = 26, laneA = y + 14, laneB = laneA + laneH + gapH;
+        mixSongLabel(g, a, pa, left, y, right);
+        drawLane(g, pa, shape, true, start, len, t0, span, 0, left, laneA, right, laneH);
+        drawLane(g, pb, shape, false, start, len, t0, span, enter - start, left, laneB, right, laneH);
+        mixSongLabel(g, b, pb, left, laneB + laneH + 3, right);
+        int ox0 = timeX(start, t0, span, left, right), ox1 = timeX(start + len, t0, span, left, right);
+        g.fill(ox0, laneA, ox0 + 1, laneB + laneH, 0x66FFFFFF);
+        g.fill(ox1 - 1, laneA, ox1, laneB + laneH, 0x66FFFFFF);
+        // Where the music is now, if it's in this stretch.
+        Track now = player.current();
+        double nowTau = now == null ? Double.NaN : now.equals(a) ? player.position() : now.equals(b) ? start + player.position() - enter : Double.NaN;
+        if (nowTau >= t0 && nowTau <= t0 + span) {
+            int px = timeX(nowTau, t0, span, left, right);
+            g.fill(px, laneA - 2, px + 1, laneB + laneH + 2, WHITE);
+        }
+        // Preview: from a few seconds before the transition.
+        int pbs = 20, pbx = (left + right) / 2 - pbs / 2, pby = laneA + laneH + (gapH - pbs) / 2;
+        boolean previewing = now != null && (now.equals(a) || now.equals(b)) && player.isPlayingList(key) && player.isPlaying();
+        roundButton(g, pbx, pby, pbs, WHITE);
+        if (previewing) pauseIcon(g, pbx + 7, pby + 6, 8, BLACK);
+        else playIcon(g, pbx + 8, pby + 6, 8, BLACK);
+        String listKey = key;
+        int edit = mixEdit;
+        nextHits.add(new Hit(pbx, pby, pbx + pbs, pby + pbs, () -> {
+            if (previewing) {
+                player.togglePause();
+            } else if (cfg.automix) {
+                player.play(listKey, mixTracks, edit);
+                player.seek(Math.max(0, start - 5));
+            } else {
+                showToast(tr("cuemymusic.mix.off.hint"));
+            }
+        }));
+        // Drag along either song to move where the transition starts.
+        double ts0 = t0;
+        for (int lane : new int[] {laneA, laneB}) {
+            nextDrags.add(new Drag(left, lane, right, lane + laneH, false, f -> {
+                double at = ts0 + f * span - len / 2;
+                cfg.setTransition(from, to, cfg.transition(from, to).withStart(Math.clamp(Math.round((aEnd - at) * 10) / 10.0, 0, 60)));
+            }, cfg::save));
+        }
+        y = laneB + laneH + 18;
+
+        // Presets.
+        g.text(font, tr("cuemymusic.mix.presets"), left, y, DIM, false);
+        y += 13;
+        int cx = left;
+        for (Automix.Preset p : Automix.Preset.values()) {
+            if (p == Automix.Preset.CUSTOM && t.preset() != Automix.Preset.CUSTOM) continue;
+            String label = p == Automix.Preset.AUTO
+                    ? "✦ " + (t.preset() == Automix.Preset.AUTO ? tr("cuemymusic.mix.preset.auto_is", presetName(plan.preset())) : presetName(p))
+                    : presetName(p);
+            int w = font.width(label) + 12;
+            if (cx > left && cx + w > right) {
+                cx = left;
+                y += 17;
+            }
+            cx += chip(g, cx, y, label, t.preset() == p, mx, my, () -> {
+                if (p != Automix.Preset.CUSTOM) {
+                    cfg.setTransition(from, to, cfg.transition(from, to).withPreset(p));
+                    cfg.save();
+                }
+            }) + 5;
+        }
+        y += 18;
+        String desc = t.preset() == Automix.Preset.AUTO ? tr("cuemymusic.mix.preset.auto.desc")
+                : tr("cuemymusic.mix.preset." + plan.preset().name().toLowerCase(Locale.ROOT) + ".desc");
+        g.text(font, clip(desc, right - left), left, y, FAINT, false);
+        y += 18;
+
+        // The parts, each a drop-down; changing one makes the transition custom.
+        y = partRow(g, left, y, right, mx, my, tr("cuemymusic.mix.part.volume"), shape.volume(), Automix.Volume.values(),
+                v -> shape.withVolume((Automix.Volume) v), from, to);
+        y = partRow(g, left, y, right, mx, my, tr("cuemymusic.mix.part.eq"), shape.eq(), Automix.Eq.values(),
+                v -> shape.withEq((Automix.Eq) v), from, to);
+        y = partRow(g, left, y, right, mx, my, tr("cuemymusic.mix.part.filter"), shape.filter(), Automix.Filter.values(),
+                v -> shape.withFilter((Automix.Filter) v), from, to);
+        y = partRow(g, left, y, right, mx, my, tr("cuemymusic.mix.part.effects"), shape.effect(), Automix.Effect.values(),
+                v -> shape.withEffect((Automix.Effect) v), from, to);
+        // Songs aren't sped up or slowed down to meet, so there's no beatmatching to turn on.
+        g.text(font, tr("cuemymusic.mix.part.beatmatch"), left, y + 3, FAINT, false);
+        String none = tr("cuemymusic.mix.beatmatch.unavailable");
+        g.text(font, none, right - font.width(none), y + 3, FAINT, false);
+        y += 24;
+
+        // Timing.
+        boolean cut = shape.volume() == Automix.Volume.CUT;
+        double most = cut ? 4 : 20;
+        y = sliderRow(g, left, y, right, tr("cuemymusic.mix.length"), tr("cuemymusic.mix.seconds", String.format("%.1f", len)),
+                (len - 0.5) / (most - 0.5), f -> cfg.setTransition(from, to,
+                        cfg.transition(from, to).withSeconds(Math.round((0.5 + f * (most - 0.5)) * 10) / 10.0)),
+                ((cut ? 1 : Automix.autoSeconds(pa)) - 0.5) / (most - 0.5), -1);
+        y = sliderRow(g, left, y, right, tr("cuemymusic.mix.start"), tr("cuemymusic.mix.before_end", String.format("%.1f", aEnd - start)),
+                (aEnd - start) / 60, f -> cfg.setTransition(from, to, cfg.transition(from, to).withStart(Math.round(f * 600) / 10.0)),
+                len / 60, -1);
+        double bLen = Math.min(60, pb.seconds(pb.frames()));
+        y = sliderRow(g, left, y, right, tr("cuemymusic.mix.enter"), tr("cuemymusic.mix.seconds_in", String.format("%.1f", enter)),
+                enter / bLen, f -> cfg.setTransition(from, to, cfg.transition(from, to).withEnter(Math.round(f * bLen * 10) / 10.0)),
+                pb.seconds(pb.start()) / bLen, -1);
+
+        String info = tr("cuemymusic.mix.loudness", String.format("%+.1f", 20 * Math.log10(pa.gain())),
+                String.format("%+.1f", 20 * Math.log10(pb.gain())));
+        g.text(font, clip(info, right - left), left, y, FAINT, false);
+        y += 14;
+        Canvas c = new Canvas(g, left - 10, y, right + 10, mx, my);
+        c.button(left, tr("cuemymusic.mix.reset"), PanelCanvas.ButtonStyle.SECONDARY, !t.equals(Automix.Transition.AUTO), () -> {
+            cfg.setTransition(from, to, Automix.Transition.AUTO);
+            cfg.save();
+        });
+        return y + c.buttonHeight() + 10;
+    }
+
+    /** A song's title over its lane, with its tempo and key at the right. */
+    private void mixSongLabel(GuiGraphicsExtractor g, Track t, Automix.Profile p, int left, int y, int right) {
+        int x = right;
+        if (!p.key().isEmpty()) x -= keyBadge(g, p.key(), x, y - 2, true) + 6;
+        if (p.bpm() > 0) {
+            String bpm = tr("cuemymusic.mix.bpm", Math.round(p.bpm()));
+            x -= font.width(bpm);
+            g.text(font, bpm, x, y + 1, FAINT, false);
+        }
+        g.text(font, clip(t.title(), x - left - 8), left, y + 1, WHITE, false);
+    }
+
+    /**
+     * One song's lane: its waveform in three colours, dimmed as its volume
+     * falls, with the volume curve over it and, for a bass swap, the bass curve.
+     * {@code offset} is the song's time at the lane's time 0 less that time,
+     * so the next song lines up with the first.
+     */
+    private void drawLane(GuiGraphicsExtractor g, Automix.Profile p, Automix.Shape shape, boolean outgoing, double start, double len,
+            double t0, double span, double offset, int x0, int y, int x1, int h) {
+        g.fill(x0, y, x1, y + h, 0xFF181818);
+        int mid = y + h / 2, half = h / 2 - 1;
+        double step = span / (x1 - x0);
+        int lastVol = -1, lastEq = -1;
+        for (int x = x0; x < x1; x++) {
+            double tau = t0 + (x - x0 + 0.5) * step, songT = tau + offset;
+            double prog = (tau - start) / len;
+            double vol = outgoing ? (prog <= 0 ? 1 : Automix.volumeOut(shape, prog)) : (prog <= 0 ? 0 : Automix.volumeIn(shape, prog));
+            double bass = outgoing ? (prog <= 0 ? 1 : Automix.bassOut(shape, prog)) : (prog <= 0 ? 0 : Automix.bassIn(shape, prog));
+            if (songT < 0 || songT > p.seconds(p.frames())) continue;
+            float lo = band(p.low(), songT, step), md = band(p.mid(), songT, step), hi = band(p.high(), songT, step);
+            float shade = (float) (0.3 + 0.7 * Math.max(vol, 0));
+            // Bass widest and behind, the mids over it, the highs on top as a thin core.
+            int hl = (int) Math.min(half, lo * half * 1.3), hm = (int) Math.min(half, md * half * 1.3), hh = (int) Math.min(half, hi * half * 1.6);
+            int lowCol = shade(WAVE_LOW, shade * (float) (0.4 + 0.6 * bass));
+            if (hl > 0) g.fill(x, mid - hl, x + 1, mid + hl + 1, lowCol);
+            if (hm > 0) g.fill(x, mid - hm, x + 1, mid + hm + 1, shade(WAVE_MID, shade));
+            if (hh > 0) g.fill(x, mid - hh / 2, x + 1, mid + hh / 2 + 1, shade(WAVE_HIGH, shade));
+            if (prog >= 0 && prog <= 1) {
+                int vy = y + h - 2 - (int) Math.round(vol * (h - 4));
+                if (lastVol >= 0) g.fill(x, Math.min(vy, lastVol), x + 1, Math.max(vy, lastVol) + 2, CURVE_VOLUME);
+                lastVol = vy;
+                if (shape.eq() != Automix.Eq.NONE) {
+                    int ey = y + h - 2 - (int) Math.round(bass * (h - 4));
+                    if (lastEq >= 0) g.fill(x, Math.min(ey, lastEq), x + 1, Math.max(ey, lastEq) + 1, CURVE_EQ);
+                    lastEq = ey;
+                }
+            }
+        }
+        g.fill(x0, mid, x1, mid + 1, 0x22FFFFFF);
+    }
+
+    private static int shade(int argb, float f) {
+        int r = (int) (((argb >> 16) & 0xFF) * f), gg = (int) (((argb >> 8) & 0xFF) * f), b = (int) ((argb & 0xFF) * f);
+        return 0xFF000000 | r << 16 | gg << 8 | b;
+    }
+
+    /** The loudest point of one waveform band over {@code step} seconds from {@code seconds}. */
+    private static float band(float[] wave, double seconds, double step) {
+        int i0 = (int) Math.floor(seconds * Automix.WAVE_RATE), i1 = (int) Math.ceil((seconds + step) * Automix.WAVE_RATE);
+        float most = 0;
+        for (int i = Math.max(0, i0); i < Math.min(wave.length, Math.max(i0 + 1, i1)); i++) most = Math.max(most, wave[i]);
+        return most;
+    }
+
+    /** A row with a part's name, and its value as a drop-down of the choices. */
+    private int partRow(GuiGraphicsExtractor g, int left, int y, int right, int mx, int my, String label, Enum<?> value, Enum<?>[] choices,
+            java.util.function.Function<Enum<?>, Automix.Shape> with, String from, String to) {
+        g.text(font, label, left, y + 4, WHITE, false);
+        String shown = partName(value) + "  ▾";
+        int w = font.width(shown) + 14, bx = right - w;
+        boolean hover = mx >= bx && mx < right && my >= y && my < y + 15 && my >= centerY0 && my < centerY1;
+        g.fill(bx, y, right, y + 15, hover ? 0xFF3A3A3A : 0xFF2A2A2A);
+        g.text(font, shown, bx + 7, y + 4, WHITE, false);
+        int top = Math.max(y, centerY0), bottom = Math.min(y + 15, centerY1);
+        if (bottom > top) {
+            nextHits.add(new Hit(bx, top, right, bottom, () -> {
+                List<MenuItem> items = new ArrayList<>();
+                for (Enum<?> c : choices) {
+                    items.add(new MenuItem((c == value ? "✔ " : "    ") + partName(c), () -> {
+                        cfg.setTransition(from, to, cfg.transition(from, to).withShape(with.apply(c)));
+                        cfg.save();
+                    }));
+                }
+                menu = new Menu(bx, y + 16, items);
+            }));
+        }
+        return y + 20;
+    }
+
+    private static int timeX(double seconds, double t0, double span, int x0, int x1) {
+        return x0 + (int) Math.round((seconds - t0) / span * (x1 - x0));
+    }
+
+    /** A small rounded label button. Returns its width. */
+    private int chip(GuiGraphicsExtractor g, int x, int y, String label, boolean on, int mx, int my, Runnable click) {
+        int w = font.width(label) + 12;
+        boolean hover = mx >= x && mx < x + w && my >= y && my < y + 13 && my >= centerY0 && my < centerY1;
+        g.fill(x, y, x + w, y + 13, on ? WHITE : hover ? 0xFF3A3A3A : 0xFF2A2A2A);
+        g.text(font, label, x + 6, y + 3, on ? BLACK : WHITE, false);
+        int top = Math.max(y, centerY0), bottom = Math.min(y + 13, centerY1);
+        if (bottom > top) nextHits.add(new Hit(x, top, x + w, bottom, click));
+        return w;
     }
 
     // ----------------------------------------------------------------- search

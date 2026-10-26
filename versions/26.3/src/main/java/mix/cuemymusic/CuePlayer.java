@@ -73,6 +73,10 @@ public final class CuePlayer {
     }
 
     private volatile Handover handover;
+    /** Set when a song ends by itself, so the next start counts as a new play even for the same song. */
+    private boolean replay;
+    /** True while the music is paused because the game window lost focus, so it plays again when it's back. */
+    private boolean focusPaused;
 
     // The game's next song, planned ahead.
     private final RandomSource random = RandomSource.create();
@@ -157,6 +161,7 @@ public final class CuePlayer {
         boolean finished;
         double heardSeconds = 0;
         handOver(now);
+        followFocus();
         synchronized (this) {
             if (playing && !paused) {
                 heardSeconds = Math.min(1, (now - lastNanos) / 1e9);
@@ -171,8 +176,9 @@ public final class CuePlayer {
             ended = false;
         }
         Track heardTrack = current;
-        if (heardSeconds > 0 && heardTrack != null) {
-            Minecraft mc = Minecraft.getInstance();
+        Minecraft mc = Minecraft.getInstance();
+        // Music turned all the way down isn't heard.
+        if (heardSeconds > 0 && heardTrack != null && mc.options.getFinalSoundSourceVolume(SoundSource.MUSIC) > 0) {
             CueConfig cfg = CueConfig.INSTANCE;
             boolean effects = cfg.enabled && (cfg.pitchSemitones != 0 || cfg.speed != 1.0 || cfg.eqEnabled);
             ListeningStats.INSTANCE.listened(heardTrack.location().toString(), heardSeconds, java.time.LocalDateTime.now(),
@@ -183,8 +189,10 @@ public final class CuePlayer {
         planAutomix();
         OutsideAudio.volume(Minecraft.getInstance().options.getFinalSoundSourceVolume(SoundSource.MUSIC));
         if (finished) {
-            if (current != null) ListeningStats.INSTANCE.finished(current.location().toString());
+            if (current != null) ListeningStats.INSTANCE.finished(current.location().toString(), current.seconds());
             ours = null;
+            // What plays next is a fresh play, even if it's the same song again (repeat one).
+            replay = true;
             order.setRepeat(CueConfig.INSTANCE.repeatMode());
             Track n = order.finished(current);
             if (n != null) start(n, 0, TrackSoundInstance.GAME, true);
@@ -201,6 +209,25 @@ public final class CuePlayer {
         if (o != null && !playing && !paused && now - oursStarted > START_TIMEOUT_NANOS
                 && !Minecraft.getInstance().getSoundManager().isActive(o)) {
             ours = null;
+        }
+    }
+
+    /**
+     * Pauses the music while the game window isn't in front, and plays it again
+     * when it is. Follows the game's "pause on lost focus" option, which F3+P
+     * turns on and off: with it off, the music carries on in the background.
+     */
+    private void followFocus() {
+        Minecraft mc = Minecraft.getInstance();
+        boolean background = !mc.isWindowActive() && mc.options.pauseOnLostFocus;
+        if (background) {
+            if (!focusPaused && ours != null && isPlaying()) {
+                focusPaused = true;
+                togglePause();
+            }
+        } else if (focusPaused) {
+            focusPaused = false;
+            if (paused) togglePause();
         }
     }
 
@@ -238,7 +265,7 @@ public final class CuePlayer {
         handover = null;
         if (h.stream() != activeStream) return;
         Track ended = current;
-        if (ended != null) ListeningStats.INSTANCE.finished(ended.location().toString());
+        if (ended != null) ListeningStats.INSTANCE.finished(ended.location().toString(), ended.seconds());
         ListeningStats.INSTANCE.started(h.track().location().toString());
         order.setRepeat(CueConfig.INSTANCE.repeatMode());
         order.finished(ended);
@@ -526,8 +553,10 @@ public final class CuePlayer {
     }
 
     private SoundEngine.PlayResult start(Track track, TrackSoundInstance o, boolean picked) {
-        // For the stats: moving on from a song is a skip if it hadn't played long; carrying on with it (after travel) isn't.
-        boolean resuming = track.equals(current) && o.startSeconds() > 0;
+        // For the stats: moving on to another song may be a skip. The same song again (resume, seek, travel,
+        // or clicking it again) carries on; only playing it again after it ended is a new play.
+        boolean resuming = track.equals(current) && !replay;
+        replay = false;
         if (!resuming) {
             if (current != null) ListeningStats.INSTANCE.skipped(current.location().toString());
             ListeningStats.INSTANCE.started(track.location().toString());

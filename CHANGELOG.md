@@ -7,8 +7,18 @@ All notable changes to Cue My Music are documented here. This project follows [S
 ### Added
 
 - Search: the magnifying glass next to Library, or Cmd/Ctrl+F. Finds songs by title, artist or album, and artists by name.
-- Automix for songs on add-on pages: matched loudness, silence trimmed, and an 8-second crossfade into the next song.
+- Automix for songs on add-on pages: matched loudness, silence trimmed, and a crossfade into the next song.
+- A **Mix** page for a list's songs, opened from the Mix chip above the list: each song's tempo and key, and the transition between each pair. Open a transition to see both songs' waveforms with its volume and bass curves, preview it, pick a preset (Auto, Fade, Rise, Blend, Echo, Cut), or set its volume curve, bass swap, filter and echo one by one, plus when it starts and where the next song comes in.
 - Keep add-on songs out of recordings: they play from a separate process, so recorders of the game's own audio leave them out.
+- Music pauses while Minecraft is in the background, and resumes when you come back, if **Pause on lost focus** is on (F3+P toggles it).
+
+### Changed
+
+- Stats ignore songs heard for under 3 seconds, so clicking through songs doesn't fill them with plays and skips. A song that ends by itself is a play only if you heard at least half of it (or 30 seconds), so seeking to the end isn't one. Seeking, pausing, travelling and clicking the playing song again carry on the same play. Nothing is counted while music volume is at 0.
+
+### Fixed
+
+- Automix crossfades crackled: the two songs' decoded blocks were mixed at different lengths, with silence filling the gap.
 
 ## 1.2.0 — 2026-10-26
 

@@ -51,6 +51,7 @@ All keys are rebindable under **Options → Controls → Key Binds → Cue My Mu
 - **Dislike** (the thumbs down left of the heart on a hovered row, next to the heart under the song that's playing, or right-click) keeps the game from ever picking a song for its own music. Songs an add-on keeps on its own page never play by themselves, so they don't have it. If the game is playing it, it skips to another. You can still play it yourself, and it still plays through a page you started. Disliked songs are greyed with a red thumbs down, and listed on **Disliked Songs**. Click it again to bring one back. Liking a song takes its dislike away, and the other way round.
 - The repeat button next to play cycles through off, repeat all (the page starts over at its end), and repeat one (the song plays again). Next and previous still move on.
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
+- Music pauses while Minecraft is in the background and resumes when you return, following Minecraft's **Pause on lost focus** (F3+P turns it on and off).
 - Space plays and pauses while the player is open. Click or drag the progress bar to seek.
 - Select several songs: shift-click or shift-drag for a run of songs, Cmd-click (Ctrl-click on Windows and Linux) to add or take out one, shift+↑/↓ to grow or shrink the selection, and Cmd/Ctrl+A for the whole page. Right-click a selected song for one menu for all of them: queue, like, dislike, or add to a playlist. Delete or Backspace takes them off the page you're on: out of a playlist, off Liked Songs, or off Disliked Songs. Esc clears the selection.
 
@@ -86,7 +87,21 @@ Click **New playlist** in the library, then right-click songs anywhere and pick 
 - Where you listen, as a bar of Overworld, Nether and End blocks, and how much you picked versus the game.
 - The song you skip most, with a button to dislike it.
 
-A song counts as a play after 30 seconds, or when it ends sooner. Moving on before that is a skip. Stats are kept in `config/cuemymusic-stats.json`, only on your computer. **Reset stats** at the bottom of the page (click twice) clears them.
+A song is only counted once you've heard 3 seconds of it, so clicking through songs leaves no trace. It's a play after 30 seconds, or when it ends by itself after you heard at least half of it. Moving on before that is a skip. Seeking or pausing doesn't start a new play, and nothing is counted while music volume is at 0. Stats are kept in `config/cuemymusic-stats.json`, only on your computer. **Reset stats** at the bottom of the page (click twice) clears them.
+
+### Mixing
+
+With an add-on that adds songs, a **Mix** chip appears above lists with at least two of its songs. It opens the list as a mix: each song with its tempo, key (in Camelot notation, coloured so keys that mix well look alike) and length, and between two songs that blend, a chip with their transition.
+
+Click a transition to edit it:
+
+- Both songs' waveforms, bass in blue, mids in orange and highs in white, lined up where they overlap. The light blue line is each song's volume, and the yellow line is its bass during a bass swap. Drag along a song to move where the transition starts.
+- The button between them plays from a few seconds before the transition.
+- **Presets**: Auto (Blend when the tempos are close, otherwise Fade), Fade, Rise, Blend, Echo and Cut.
+- **Volume**, **EQ**, **Filter** and **Effects** set the parts one by one: the crossfade curve, where the bass swaps, a filter sweep in or out, and an echo out. Changing one makes the transition Custom.
+- **Length**, **Starts** (seconds before the first song's end) and **Next song comes in at**.
+
+Songs keep their own speed, so there's no beatmatching. Tempo and key are worked out from the audio in the background and can be off, such as half or double the tempo.
 
 ### The queue
 
@@ -126,7 +141,7 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 | Pause during travel | Off | On: your song pauses while a new dimension loads, then resumes from the same spot. Off: it keeps playing, with a brief gap. |
 | Use equalizer | Off | Moving a band or picking a preset turns it on. |
 | EQ bands | 0 dB | 60, 150, 400, 1k, 2.4k, and 15k Hz, ±12 dB each. |
-| Automix add-on songs | On | Shown with an add-on page. Songs on add-on pages play at the same loudness, without silence at their ends, and blend into the next song over up to 8 seconds when one follows another in a page or the queue. Songs need the same sample rate to blend; otherwise they play one after the other. |
+| Automix add-on songs | On | Shown with an add-on page. Songs on add-on pages play at the same loudness, without silence at their ends, and blend into the next song when one follows another in a page or the queue (see [Mixing](#mixing)). Songs need the same sample rate to blend; otherwise they play one after the other. |
 | Keep add-on songs out of recordings | On | Shown with an add-on page. Songs on add-on pages play from a small separate Java process, and the game plays silence in their place. Recorders that take only the game's own audio, such as rec-util or OBS's application audio capture, leave them out; recorders of all system audio still pick them up. Applies from the next song. Game music and music discs are unaffected. |
 
 Presets: Flat, Bass Booster, Bass Reducer, Treble Booster, Treble Reducer, Vocal Booster, and Small Speakers.

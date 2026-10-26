@@ -33,8 +33,40 @@ public final class ListeningStatsTest {
             ListeningStats s = new ListeningStats();
             s.started("a");
             listen(s, "a", 12);
-            s.finished("a");
+            s.finished("a", 14);
             same(s.songs().get("a").plays, 1);
+        });
+        run("clicking through songs leaves nothing: no songs, no skips, no time", () -> {
+            ListeningStats s = new ListeningStats();
+            for (String id : List.of("a", "b", "c", "d", "e", "f")) {
+                s.started(id);
+                listen(s, id, 0.5);
+                listen(s, id, 0.5);
+                s.skipped(id);
+            }
+            same(s.isEmpty(), true);
+            same(s.totalSeconds(), 0.0);
+            same(s.mostSkipped(), null);
+        });
+        run("a song is kept from 3 seconds, with the time before that", () -> {
+            ListeningStats s = new ListeningStats();
+            s.started("a");
+            listen(s, "a", 2);
+            same(s.isEmpty(), true);
+            listen(s, "a", 1.5);
+            same(s.songs().get("a").seconds, 3.5);
+            same(s.totalSeconds(), 3.5);
+        });
+        run("jumping to the end of a song isn't a play", () -> {
+            ListeningStats s = new ListeningStats();
+            s.started("a");
+            listen(s, "a", 10);
+            s.finished("a", 200);
+            same(s.songs().get("a").plays, 0);
+            s.started("b");
+            listen(s, "b", 1);
+            s.finished("b", 2);
+            same(s.songs().get("b").plays, 1);
         });
         run("moving on early is a skip, moving on late isn't", () -> {
             ListeningStats s = new ListeningStats();

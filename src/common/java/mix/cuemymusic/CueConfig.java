@@ -6,7 +6,9 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import com.google.gson.Gson;
@@ -49,6 +51,8 @@ public final class CueConfig {
     public volatile boolean automix = true;
     /** Play songs on add-on pages from a separate process, so recordings of the game's audio leave them out. */
     public volatile boolean keepOutOfRecordings = true;
+    /** Transitions set in the mix editor, by "first song>second song". Replaced whole, never mutated in place. */
+    public volatile Map<String, Automix.Transition> transitions = Map.of();
 
     private CueConfig() {
     }
@@ -158,6 +162,20 @@ public final class CueConfig {
         save();
     }
 
+    /** The transition from song {@code from} into song {@code to}: as set in the mix editor, or automatic. */
+    public Automix.Transition transition(String from, String to) {
+        Automix.Transition t = transitions.get(from + ">" + to);
+        return t != null ? t : Automix.Transition.AUTO;
+    }
+
+    /** Sets a transition. Setting it to automatic forgets it. */
+    public synchronized void setTransition(String from, String to, Automix.Transition t) {
+        Map<String, Automix.Transition> next = new HashMap<>(transitions);
+        if (t.equals(Automix.Transition.AUTO)) next.remove(from + ">" + to);
+        else next.put(from + ">" + to, t);
+        transitions = Map.copyOf(next);
+    }
+
     public boolean isCollapsed(String section) {
         return collapsed.contains(section);
     }
@@ -182,6 +200,12 @@ public final class CueConfig {
         liked = liked == null ? List.of() : liked.stream().filter(Objects::nonNull).distinct().toList();
         disliked = disliked == null ? List.of() : disliked.stream().filter(Objects::nonNull).distinct().toList();
         collapsed = collapsed == null ? List.of() : collapsed.stream().filter(Objects::nonNull).distinct().toList();
+        if (transitions == null) transitions = Map.of();
+        Map<String, Automix.Transition> kept = new HashMap<>();
+        transitions.forEach((k, v) -> {
+            if (k != null && v != null && v.preset() != null) kept.put(k, v);
+        });
+        transitions = Map.copyOf(kept);
         repeat = repeatMode().name().toLowerCase(java.util.Locale.ROOT);
         playlists = playlists == null ? List.of() : playlists.stream()
                 .filter(p -> p != null && p.id() != null)
@@ -236,5 +260,6 @@ public final class CueConfig {
         playlists = o.playlists;
         disliked = o.disliked;
         collapsed = o.collapsed;
+        transitions = o.transitions;
     }
 }
