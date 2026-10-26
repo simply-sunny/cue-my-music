@@ -9,7 +9,7 @@ This file is the source of truth for the Modrinth project settings, version meta
 | Title | **Cue My Music** |
 | Slug | `cue-my-music` |
 | Project type | Mod |
-| Project ID | `dCISwMOO` (draft, not submitted for review) |
+| Project ID | `dCISwMOO` (submitted for review 2026-10-25) |
 | Summary | A music player for Minecraft's own soundtrack, with a queue, pitch, speed, and an equalizer. Fabric and Quilt 26.3, client-side. |
 | License | MIT |
 | Environment | Client-side only (`client_only`) |
@@ -25,9 +25,9 @@ This file is the source of truth for the Modrinth project settings, version meta
 
 Upload one Modrinth version per JAR, version number `1.0.0`, channel `release`, loaders `fabric` and `quilt`, environment `client_only`. Quilt loads Fabric mods and is confirmed to work.
 
-| JAR | Draft version ID |
+| JAR | Version ID |
 | --- | --- |
-| `cue-my-music-26.3-1.0.0.jar` | `kpVlrJns` |
+| `cue-my-music-26.3-1.0.0.jar` | `bjLhbMkU` |
 
 | JAR | Modrinth `game_versions` |
 | --- | --- |
