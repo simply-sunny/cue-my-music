@@ -139,9 +139,15 @@ public final class CueScreen extends Screen {
         }
     }
 
-    private record Drag(int x0, int y0, int x1, int y1, boolean vertical, DoubleConsumer onFraction, Runnable onRelease) {
+    /** A draggable area; it only takes presses inside its clip, the part of it on screen. */
+    private record Drag(int x0, int y0, int x1, int y1, boolean vertical, DoubleConsumer onFraction, Runnable onRelease,
+            int clipX0, int clipY0, int clipX1, int clipY1) {
+        Drag(int x0, int y0, int x1, int y1, boolean vertical, DoubleConsumer onFraction, Runnable onRelease) {
+            this(x0, y0, x1, y1, vertical, onFraction, onRelease, x0, y0, x1, y1);
+        }
+
         boolean contains(double x, double y) {
-            return x >= x0 && x < x1 && y >= y0 && y < y1;
+            return x >= Math.max(x0, clipX0) && x < Math.min(x1, clipX1) && y >= Math.max(y0, clipY0) && y < Math.min(y1, clipY1);
         }
 
         double fraction(double x, double y) {
@@ -824,6 +830,7 @@ public final class CueScreen extends Screen {
     private void drawCenter(GuiGraphicsExtractor g, int mx, int my) {
         int x0 = centerX0, y0 = centerY0, x1 = centerX1, y1 = centerY1;
         shownTracks = List.of();
+        int hitsFrom = nextHits.size(), dragsFrom = nextDrags.size(), fieldsFrom = nextFieldHits.size();
         g.fill(x0, y0, x1, y1, PANEL);
         g.enableScissor(x0, y0, x1, y1);
         int contentTop = y0 - (int) scroll;
@@ -867,8 +874,35 @@ public final class CueScreen extends Screen {
             }
         };
         g.disableScissor();
+        clipToCenter(hitsFrom, dragsFrom, fieldsFrom);
         scrollMax = Math.max(0, contentBottom + (int) scroll - y1 + 8);
         scroll = Math.clamp(scroll, 0, scrollMax);
+    }
+
+    /**
+     * Cuts what the centre panel just made clickable down to the part on
+     * screen, so something scrolled under the bottom bar, say, can't be clicked
+     * through it. Takes the hits, drags and text fields from these indexes on.
+     */
+    private void clipToCenter(int hitsFrom, int dragsFrom, int fieldsFrom) {
+        int cx0 = centerX0, cy0 = centerY0, cx1 = centerX1, cy1 = centerY1;
+        for (int i = nextHits.size() - 1; i >= hitsFrom; i--) {
+            Hit h = nextHits.get(i);
+            int x0 = Math.max(h.x0(), cx0), y0 = Math.max(h.y0(), cy0), x1 = Math.min(h.x1(), cx1), y1 = Math.min(h.y1(), cy1);
+            if (x0 >= x1 || y0 >= y1) nextHits.remove(i);
+            else nextHits.set(i, new Hit(x0, y0, x1, y1, h.click()));
+        }
+        for (int i = nextDrags.size() - 1; i >= dragsFrom; i--) {
+            Drag d = nextDrags.get(i);
+            nextDrags.set(i, new Drag(d.x0(), d.y0(), d.x1(), d.y1(), d.vertical(), d.onFraction(), d.onRelease(),
+                    Math.max(d.clipX0(), cx0), Math.max(d.clipY0(), cy0), Math.min(d.clipX1(), cx1), Math.min(d.clipY1(), cy1)));
+        }
+        for (int i = nextFieldHits.size() - 1; i >= fieldsFrom; i--) {
+            FieldHit f = nextFieldHits.get(i);
+            int x0 = Math.max(f.x0(), cx0), y0 = Math.max(f.y0(), cy0), x1 = Math.min(f.x1(), cx1), y1 = Math.min(f.y1(), cy1);
+            if (x0 >= x1 || y0 >= y1) nextFieldHits.remove(i);
+            else nextFieldHits.set(i, new FieldHit(x0, y0, x1, y1, f.key()));
+        }
     }
 
     /** A list of songs. {@code listKey} names it to the player, so its big button knows when it's the one playing. */
