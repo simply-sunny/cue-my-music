@@ -25,8 +25,9 @@ One file per jar, release type `release`. The script sets the version tags and r
 | JAR | Game versions | Other tags |
 | --- | --- | --- |
 | `cue-my-music-26.3-1.0.0.jar` | `26.3` | Fabric, Quilt, Client, Java 25 |
+| `cue-my-music-26.3-1.1.0.jar` | `26.3` | Fabric, Quilt, Client, Java 25 |
 
-Uploaded 2026-10-25 as file `9328884`.
+1.0.0 uploaded 2026-10-25 as file `9328884`; 1.1.0 uploaded 2026-10-26 as file `9329902`.
 
 Relations: Fabric API and Mod Menu, both required.
 
