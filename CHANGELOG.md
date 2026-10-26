@@ -8,7 +8,7 @@ First release.
 
 ### Added
 
-- Player screen: library sidebar, track list, now playing and play controls. Opens from a music button in the pause menu, from Mod Menu, or with a key.
+- Player screen: library sidebar, track list, now playing and play controls. Opens from a music button on the title screen and in the pause menu, from Mod Menu, or with a key.
 - **Liked Songs**: a heart on every track and in now playing.
 - Pages for **All game music**, each artist and each resource pack that adds music. Packs show their name, icon and credited author; packs without an icon get their initials on a gradient.
 - Play any track, pause, seek, next and previous. Space plays and pauses in the player.

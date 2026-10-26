@@ -50,7 +50,7 @@ Pick any game track and play it, queue up what's next, or let the game keep choo
 
 ## Features
 
-- **Player:** opens from a music button in the pause menu, Mod Menu or a key. Library on the left, track list in the middle, now playing on the right, controls at the bottom.
+- **Player:** opens from a music button on the title screen or pause menu, Mod Menu or a key. Library on the left, track list in the middle, now playing on the right, controls at the bottom.
 - **Liked Songs:** heart any track to keep it on its own page.
 - **Artist pages:** C418, Lena Raine, Aaron Cherof, Kumi Tanioka, Amos Roddy and fingerspit, with only their in-game tracks.
 - **Controls:** play any track, pause, seek, next and previous. Space pauses. Media keys F7–F9 on macOS.
