@@ -4,7 +4,17 @@ All notable changes to Cue My Music are documented here. This project follows [S
 
 ## Unreleased
 
+### Added
+
+- Repeat: off, all, or one, from the button next to play or with `/cmm repeat`.
+- Playlists. **New playlist** in the library makes one; right-click any song to add it. Click a playlist's name to rename it.
+- Right-click menu on songs: add to queue, like, add to a playlist.
+- Resource packs can credit each song with `assets/<namespace>/cuemymusic.json`.
+- Pitch, speed, and EQ changes show a loading ring until they're heard.
+
 ### Fixed
+
+- Songs a resource pack adds or removes show up after a reload without reopening the player.
 
 - Queue headings and album names no longer run past their columns in a small window.
 

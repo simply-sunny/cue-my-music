@@ -10,7 +10,9 @@ import java.util.function.DoubleConsumer;
 import com.mojang.blaze3d.platform.InputConstants;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
@@ -49,6 +51,7 @@ public final class CueScreen extends Screen {
     private static final Art PLAYLIST_ART = Art.block("block/jukebox_top");
     private static final Art SETTINGS_ART = Art.block("block/crafting_table_top");
     private static final Art LIKED_ART = new Art.Sprite(Identifier.withDefaultNamespace("hud/heart/full"), 0xFF5A3BD6, 0xFF8FB6E0);
+    private static final Art NEW_PLAYLIST_ART = new Art.Initials("+", 0xFF2E2E2E, 0xFF242424);
     private static final long TOAST_MILLIS = 1500;
 
     /** EQ presets, in dB for each band of {@link Equalizer#FREQUENCIES}. */
@@ -64,7 +67,22 @@ public final class CueScreen extends Screen {
         PRESETS.put("small_speakers", new double[] {-6, -2, 1, 2, 2, -1});
     }
 
-    private enum View { PLAYLIST, LIKED, ARTIST, PACK, SETTINGS }
+    /** PLAYLIST is all game music; LIST is one of the player's own playlists. */
+    private enum View { PLAYLIST, LIKED, LIST, ARTIST, PACK, SETTINGS }
+
+    /** A track row that opens the song menu when right-clicked. */
+    private record RowHit(int x0, int y0, int x1, int y1, Track track) {
+        boolean contains(double x, double y) {
+            return x >= x0 && x < x1 && y >= y0 && y < y1;
+        }
+    }
+
+    private record MenuItem(String label, Runnable action) {
+    }
+
+    /** The right-click menu for a song, drawn over everything else. */
+    private record Menu(int x, int y, List<MenuItem> items) {
+    }
 
     /** Track list order. Clicking a column heading cycles it through ascending, descending and off. */
     private enum Sort { NONE, TITLE, ALBUM, TIME }
@@ -95,7 +113,7 @@ public final class CueScreen extends Screen {
     private List<Drag> nextDrags = new ArrayList<>();
     private Drag dragging;
     private View view = View.PLAYLIST;
-    /** The artist name or pack id of the open page. */
+    /** The artist name, pack id, or playlist id of the open page. */
     private String key;
     private Sort sort = Sort.NONE;
     private boolean ascending = true;
@@ -103,8 +121,19 @@ public final class CueScreen extends Screen {
     private int scrollMax;
     private int centerX0, centerY0, centerX1, centerY1;
     private double seekPreview = -1;
+    // A pitch, speed or EQ change on its way to the speakers.
+    private CueStream.Params applyTarget;
+    private long applyStart;
     private String toast;
     private long toastUntil;
+    private List<RowHit> rowHits = new ArrayList<>();
+    private List<RowHit> nextRowHits = new ArrayList<>();
+    private Menu menu;
+    /** The name box while a playlist is being renamed, else null. */
+    private EditBox renameBox;
+    private String renamingId;
+    /** Until when a second click on Delete removes the playlist. */
+    private long deleteArmedUntil;
 
     // Queue panel layout from the last frame, and the row being dragged.
     private int queueX0, queueX1, queueTop, queueRows;
@@ -139,6 +168,7 @@ public final class CueScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         nextHits = new ArrayList<>();
         nextDrags = new ArrayList<>();
+        nextRowHits = new ArrayList<>();
 
         int sideW = Math.clamp(width / 5, 92, 150);
         int rightW = width >= 400 ? Math.clamp(width / 5, 96, 150) : 0;
@@ -158,10 +188,13 @@ public final class CueScreen extends Screen {
             queueFit = 0;
         }
         drawBottomBar(g, 0, bottom, width, height, mouseX, mouseY);
+        if (renameBox != null) renameBox.extractRenderState(g, mouseX, mouseY, partialTick);
+        drawMenu(g, mouseX, mouseY);
         drawToast(g);
 
         hits = nextHits;
         drags = nextDrags;
+        rowHits = nextRowHits;
     }
 
     // ---------------------------------------------------------------- library
@@ -176,7 +209,8 @@ public final class CueScreen extends Screen {
         List<PackInfo> packs = MusicLibrary.packs();
 
         // Rows shrink to a single line when the window is short, so every entry still fits.
-        int rows = artists.size() + packs.size() + 3;
+        List<CueConfig.Playlist> playlists = cfg.playlists;
+        int rows = artists.size() + packs.size() + playlists.size() + 4;
         int h = Math.clamp((y1 - y0 - 24) / rows, 12, 22);
         int last = y1 - h - 2;
         int y = y0 + 20;
@@ -184,6 +218,16 @@ public final class CueScreen extends Screen {
                 tr("cuemymusic.playlist.subtitle", all.size()), view == View.PLAYLIST, mx, my, () -> open(View.PLAYLIST, null));
         y = libraryItem(g, x0, y, x1, h, LIKED_ART, tr("cuemymusic.liked.title"),
                 tr("cuemymusic.playlist.subtitle", liked().size()), view == View.LIKED, mx, my, () -> open(View.LIKED, null));
+        for (CueConfig.Playlist p : playlists) {
+            if (y + h > last) break;
+            y = libraryItem(g, x0, y, x1, h, Art.initials(p.name()), p.name(),
+                    tr("cuemymusic.playlist.subtitle", p.songs().size()), view == View.LIST && p.id().equals(key), mx, my,
+                    () -> open(View.LIST, p.id()));
+        }
+        if (y + h <= last) {
+            y = libraryItem(g, x0, y, x1, h, NEW_PLAYLIST_ART, tr("cuemymusic.playlists.new"), tr("cuemymusic.playlists.new.subtitle"),
+                    false, mx, my, this::newPlaylist);
+        }
         for (String a : artists) {
             if (y + h > last) break;
             Art art = Art.block(Catalog.ARTIST_ART.get(a).texture());
@@ -219,9 +263,109 @@ public final class CueScreen extends Screen {
     }
 
     private void open(View v, String k) {
+        finishRename(true);
         view = v;
         key = k;
         scroll = 0;
+    }
+
+    // -------------------------------------------------------------- playlists
+
+    private void newPlaylist() {
+        String id = cfg.createPlaylist(tr("cuemymusic.playlists.default_name", cfg.playlists.size() + 1));
+        open(View.LIST, id);
+        startRename(id);
+    }
+
+    private void startRename(String id) {
+        CueConfig.Playlist p = cfg.playlist(id);
+        if (p == null) return;
+        renamingId = id;
+        renameBox = new EditBox(font, 0, 0, 120, 14, Component.translatable("cuemymusic.playlists.rename"));
+        renameBox.setMaxLength(48);
+        renameBox.setValue(p.name());
+        renameBox.moveCursorToEnd(false);
+        renameBox.setHighlightPos(0);
+        renameBox.setFocused(true);
+        setFocused(renameBox);
+    }
+
+    /** Ends renaming, keeping the typed name if {@code keep} and it isn't blank. */
+    private void finishRename(boolean keep) {
+        if (renameBox == null) return;
+        String name = renameBox.getValue().strip();
+        if (keep && !name.isEmpty()) cfg.renamePlaylist(renamingId, name);
+        renameBox = null;
+        renamingId = null;
+        setFocused(null);
+    }
+
+    /** Right-click menu for a song: queue, like, and the playlists. */
+    private void openMenu(Track t, int x, int y) {
+        String song = t.location().toString();
+        List<MenuItem> items = new ArrayList<>();
+        items.add(new MenuItem(tr("cuemymusic.menu.queue"), () -> {
+            player.enqueue(t);
+            showToast(tr("cuemymusic.queue.added"));
+        }));
+        items.add(new MenuItem(tr(isLiked(t) ? "cuemymusic.menu.unlike" : "cuemymusic.menu.like"), () -> toggleLiked(t)));
+        for (CueConfig.Playlist p : cfg.playlists) {
+            if (view == View.LIST && p.id().equals(key)) continue;
+            items.add(new MenuItem(tr("cuemymusic.menu.add_to", clip(p.name(), 120)), () -> showToast(cfg.addToPlaylist(p.id(), song)
+                    ? tr("cuemymusic.playlists.added", p.name()) : tr("cuemymusic.playlists.already", p.name()))));
+        }
+        items.add(new MenuItem(tr("cuemymusic.menu.add_new"), () -> {
+            String id = cfg.createPlaylist(tr("cuemymusic.playlists.default_name", cfg.playlists.size() + 1));
+            cfg.addToPlaylist(id, song);
+            open(View.LIST, id);
+            startRename(id);
+        }));
+        if (view == View.LIST) {
+            String listId = key;
+            items.add(new MenuItem(tr("cuemymusic.menu.remove"), () -> {
+                cfg.removeFromPlaylist(listId, song);
+                showToast(tr("cuemymusic.playlists.removed"));
+            }));
+        }
+        menu = new Menu(x, y, items);
+    }
+
+    private static final int MENU_ROW = 13;
+
+    private int menuWidth() {
+        int w = 0;
+        for (MenuItem i : menu.items()) w = Math.max(w, font.width(i.label()));
+        return w + 12;
+    }
+
+    /** Where the menu sits: at the click, moved in so it stays on screen. */
+    private int[] menuOrigin() {
+        int w = menuWidth(), h = menu.items().size() * MENU_ROW + 4;
+        return new int[] {Math.min(menu.x(), width - w - 2), Math.min(menu.y(), height - h - 2), w, h};
+    }
+
+    private void drawMenu(GuiGraphicsExtractor g, int mx, int my) {
+        if (menu == null) return;
+        int[] o = menuOrigin();
+        int x = o[0], y = o[1], w = o[2], h = o[3];
+        g.fill(x - 1, y - 1, x + w + 1, y + h + 1, 0xFF3A3A3A);
+        g.fill(x, y, x + w, y + h, 0xFF282828);
+        for (int i = 0; i < menu.items().size(); i++) {
+            int ry = y + 2 + i * MENU_ROW;
+            boolean hover = mx >= x && mx < x + w && my >= ry && my < ry + MENU_ROW;
+            if (hover) g.fill(x + 2, ry, x + w - 2, ry + MENU_ROW, 0xFF3E3E3E);
+            g.text(font, menu.items().get(i).label(), x + 6, ry + 3, WHITE, false);
+        }
+    }
+
+    /** A click while the menu is open: runs the item under it, and closes the menu either way. */
+    private void menuClicked(double mx, double my) {
+        int[] o = menuOrigin();
+        Menu m = menu;
+        menu = null;
+        if (mx < o[0] || mx >= o[0] + o[2]) return;
+        int i = (int) ((my - o[1] - 2) / MENU_ROW);
+        if (my >= o[1] + 2 && i >= 0 && i < m.items().size()) m.items().get(i).action().run();
     }
 
     // ----------------------------------------------------------------- center
@@ -244,6 +388,15 @@ public final class CueScreen extends Screen {
                     tr("cuemymusic.playlist"), tr("cuemymusic.playlist.title"), null, 0xFF1E3A2A);
             case LIKED -> drawTrackPage(g, x0, contentTop, x1, mx, my, "liked", liked(), LIKED_ART,
                     tr("cuemymusic.playlist"), tr("cuemymusic.liked.title"), null, 0xFF3A2E6E);
+            case LIST -> {
+                CueConfig.Playlist p = cfg.playlist(key);
+                if (p == null) {
+                    view = View.PLAYLIST;
+                    yield contentTop;
+                }
+                yield drawTrackPage(g, x0, contentTop, x1, mx, my, "list:" + p.id(), MusicLibrary.tracks(p.songs()),
+                        Art.initials(p.name()), tr("cuemymusic.playlist"), p.name(), null, PackNames.gradient(p.name())[1]);
+            }
         };
         g.disableScissor();
         scrollMax = Math.max(0, contentBottom + (int) scroll - y1 + 8);
@@ -261,7 +414,18 @@ public final class CueScreen extends Screen {
         art(g, art, x0 + 10, y + 12, 48);
         int tx = x0 + 66;
         g.text(font, kind, tx, y + 14, WHITE, false);
-        bigText(g, clip(title, (x1 - tx - 8) / 2), tx, y + 26, 2, WHITE);
+        if (view == View.LIST && renameBox != null) {
+            // Renaming: the name box sits where the title was.
+            renameBox.setX(tx);
+            renameBox.setY(y + 27);
+            renameBox.setWidth(Math.max(60, x1 - tx - 12));
+        } else {
+            bigText(g, clip(title, (x1 - tx - 8) / 2), tx, y + 26, 2, WHITE);
+            if (view == View.LIST) {
+                String id = key;
+                nextHits.add(new Hit(tx, Math.max(y + 24, centerY0), x1 - 8, y + 44, () -> startRename(id)));
+            }
+        }
         double total = tracks.stream().mapToDouble(t -> Double.isNaN(t.seconds()) ? 0 : t.seconds()).sum();
         String summary = tr("cuemymusic.page.summary", tracks.size(), longDuration(total));
         if (byline != null) summary = tr("cuemymusic.page.byline", byline, summary);
@@ -278,6 +442,28 @@ public final class CueScreen extends Screen {
             if (thisList) player.togglePause();
             else if (!tracks.isEmpty()) player.play(listKey, tracks, 0);
         }));
+        // A playlist can be renamed or deleted; delete takes a second click.
+        if (view == View.LIST) {
+            String id = key;
+            String del = tr(System.currentTimeMillis() < deleteArmedUntil ? "cuemymusic.playlists.delete_confirm" : "cuemymusic.playlists.delete");
+            String ren = tr("cuemymusic.playlists.rename");
+            int dx = x1 - 10 - font.width(del), rx = dx - 12 - font.width(ren), ay = y + 11;
+            boolean delHover = mx >= dx - 2 && mx < x1 - 8 && my >= ay - 3 && my < ay + 11;
+            boolean renHover = mx >= rx - 2 && mx < dx - 10 && my >= ay - 3 && my < ay + 11;
+            g.text(font, ren, rx, ay, renHover ? WHITE : DIM, false);
+            g.text(font, del, dx, ay, System.currentTimeMillis() < deleteArmedUntil ? 0xFFFF6B6B : delHover ? WHITE : DIM, false);
+            nextHits.add(new Hit(rx - 2, ay - 3, dx - 10, ay + 11, () -> startRename(id)));
+            nextHits.add(new Hit(dx - 2, ay - 3, x1 - 8, ay + 11, () -> {
+                if (System.currentTimeMillis() < deleteArmedUntil) {
+                    deleteArmedUntil = 0;
+                    cfg.deletePlaylist(id);
+                    open(View.PLAYLIST, null);
+                    showToast(tr("cuemymusic.playlists.deleted"));
+                } else {
+                    deleteArmedUntil = System.currentTimeMillis() + 3000;
+                }
+            }));
+        }
         // Add the whole list to the queue, in the order shown.
         if (!tracks.isEmpty()) {
             int qx = x0 + 10 + pb + 10, qy = y + 6;
@@ -332,6 +518,7 @@ public final class CueScreen extends Screen {
                 g.text(font, len, colTime - font.width(len), y + 6, DIM, false);
                 int top = Math.max(y, centerY0), bottom = Math.min(y + ROW, centerY1);
                 nextHits.add(new Hit(x0, top, x1, bottom, () -> player.play(listKey, tracks, index)));
+                nextRowHits.add(new RowHit(x0, top, x1, bottom, t));
                 // Like: always shown once liked, otherwise on hover, left of add to queue.
                 boolean liked = isLiked(t);
                 if (hover || liked) {
@@ -354,8 +541,9 @@ public final class CueScreen extends Screen {
             }
             y += ROW;
         }
-        if (tracks.isEmpty() && view == View.LIKED) {
-            Component hint = Component.translatable("cuemymusic.liked.empty");
+        if (tracks.isEmpty() && (view == View.LIKED || view == View.LIST)) {
+            Component hint = view == View.LIKED ? Component.translatable("cuemymusic.liked.empty")
+                    : Component.translatable("cuemymusic.playlists.empty");
             g.textWithWordWrap(font, hint, x0 + 10, y + 4, x1 - x0 - 20, DIM, false);
             y += font.wordWrapHeight(hint, x1 - x0 - 20) + 4;
         }
@@ -419,17 +607,25 @@ public final class CueScreen extends Screen {
         y += 14;
         y = toggleRow(g, left, y, right, tr("cuemymusic.option.enabled"), tr("cuemymusic.option.enabled.desc"), cfg.enabled,
                 () -> cfg.enabled = !cfg.enabled);
+        double applying = applying();
+        CueStream.Params heard = CueStream.heard(), target = CueStream.Params.now();
+        boolean live = applying >= 0 && heard != null;
         y = sliderRow(g, left, y, right, tr("cuemymusic.option.pitch"),
                 tr("cuemymusic.option.pitch.value", signed(cfg.pitchSemitones)), (cfg.pitchSemitones + 12) / 24.0,
-                f -> cfg.pitchSemitones = (int) Math.round(f * 24) - 12, 0.5);
+                f -> cfg.pitchSemitones = (int) Math.round(f * 24) - 12, 0.5,
+                live && heard.pitch() != target.pitch() ? applying : -1);
         y = sliderRow(g, left, y, right, tr("cuemymusic.option.speed"),
                 tr("cuemymusic.option.speed.value", String.format("%.2f", cfg.speed)), (cfg.speed - 0.5) / 1.5,
-                f -> cfg.speed = Math.round((0.5 + f * 1.5) * 20) / 20.0, (1.0 - 0.5) / 1.5);
+                f -> cfg.speed = Math.round((0.5 + f * 1.5) * 20) / 20.0, (1.0 - 0.5) / 1.5,
+                live && heard.tempo() != target.tempo() ? applying : -1);
         y = toggleRow(g, left, y, right, tr("cuemymusic.option.travel"), tr("cuemymusic.option.travel.desc"), cfg.pauseOnTravel,
                 () -> cfg.pauseOnTravel = !cfg.pauseOnTravel);
         y += 10;
 
         g.text(font, tr("cuemymusic.settings.equalizer"), left, y, WHITE, false);
+        if (live && !java.util.Arrays.equals(heard.eq(), target.eq())) {
+            applyingIcon(g, left + font.width(tr("cuemymusic.settings.equalizer")) + 5, y, applying);
+        }
         y += 14;
         y = toggleRow(g, left, y, right, tr("cuemymusic.option.eq"), tr("cuemymusic.option.eq.desc"), cfg.eqEnabled,
                 () -> cfg.eqEnabled = !cfg.eqEnabled);
@@ -509,9 +705,11 @@ public final class CueScreen extends Screen {
     }
 
     private int sliderRow(GuiGraphicsExtractor g, int left, int y, int right, String label, String value, double fraction,
-            DoubleConsumer set, double defaultFraction) {
+            DoubleConsumer set, double defaultFraction, double applying) {
         g.text(font, label, left, y + 1, WHITE, false);
-        g.text(font, value, right - font.width(value), y + 1, GREEN, false);
+        // While the change is on its way, the value is dimmed with a ring that fills until it's heard.
+        g.text(font, value, right - font.width(value), y + 1, applying >= 0 ? DIM : GREEN, false);
+        if (applying >= 0) applyingIcon(g, right - font.width(value) - 11, y + 1, applying);
         int bx0 = left, bx1 = right, by = y + 15;
         g.fill(bx0, by, bx1, by + 3, TRACK_BG);
         int dx = bx0 + (int) Math.round(defaultFraction * (bx1 - bx0));
@@ -713,6 +911,15 @@ public final class CueScreen extends Screen {
         nextHits.add(new Hit(cx - btn / 2, cy - 1, cx + btn / 2, cy - 1 + btn, player::togglePause));
         nextHits.add(new Hit(cx + btn / 2 + 10, cy, cx + btn / 2 + 22, cy + 12, player::next));
         nextIcon(g, cx + btn / 2 + 12, cy + 2, 8, hoverColor(cx + btn / 2 + 10, cy, 12, 12, mx, my));
+        // Repeat: off, all, one.
+        PlayOrder.Repeat repeat = cfg.repeatMode();
+        int rx = cx + btn / 2 + 32;
+        repeatIcon(g, rx, cy + 2, repeat, repeat != PlayOrder.Repeat.OFF ? GREEN : hoverColor(rx - 2, cy, 13, 12, mx, my));
+        nextHits.add(new Hit(rx - 2, cy, rx + 11, cy + 12, () -> {
+            PlayOrder.Repeat next = cfg.repeatMode().cycle();
+            cfg.setRepeat(next);
+            showToast(tr("cuemymusic.repeat." + next.name().toLowerCase(java.util.Locale.ROOT)));
+        }));
 
         // Progress bar under the controls.
         int bx0 = cx - barW / 2, bx1 = cx + barW / 2, by = y0 + 27;
@@ -741,6 +948,8 @@ public final class CueScreen extends Screen {
         if (x1 - GAP - 4 - fw > bx1 + 40) {
             int fx0 = x1 - GAP - 4 - fw;
             g.text(font, fx, fx0, y0 + 17, cfg.enabled && (cfg.pitchSemitones != 0 || cfg.speed != 1) ? GREEN : DIM, false);
+            double applying = applying();
+            if (applying >= 0) applyingIcon(g, fx0 - 11, y0 + 17, applying);
             nextHits.add(new Hit(fx0, y0 + 12, x1, y0 + 30, () -> open(View.SETTINGS, null)));
         }
     }
@@ -766,6 +975,20 @@ public final class CueScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if (renameBox != null) {
+            if (event.key() == InputConstants.KEY_RETURN || event.key() == InputConstants.KEY_NUMPADENTER) {
+                finishRename(true);
+            } else if (event.key() == InputConstants.KEY_ESCAPE) {
+                finishRename(false);
+            } else {
+                renameBox.keyPressed(event);
+            }
+            return true;
+        }
+        if (menu != null && event.key() == InputConstants.KEY_ESCAPE) {
+            menu = null;
+            return true;
+        }
         if (event.key() == InputConstants.KEY_SPACE) {
             player.togglePause();
             return true;
@@ -779,7 +1002,30 @@ public final class CueScreen extends Screen {
     }
 
     @Override
+    public boolean charTyped(CharacterEvent event) {
+        if (renameBox != null) return renameBox.charTyped(event);
+        return super.charTyped(event);
+    }
+
+    @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (menu != null) {
+            if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) menuClicked(event.x(), event.y());
+            else menu = null;
+            return true;
+        }
+        if (renameBox != null) {
+            if (renameBox.isMouseOver(event.x(), event.y())) return renameBox.mouseClicked(event, doubleClick);
+            finishRename(true);
+        }
+        if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
+            for (RowHit r : rowHits) {
+                if (r.contains(event.x(), event.y())) {
+                    openMenu(r.track(), (int) event.x(), (int) event.y());
+                    return true;
+                }
+            }
+        }
         if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
             double x = event.x(), y = event.y();
             if (queueClicked(x, y, doubleClick)) return true;
@@ -976,6 +1222,49 @@ public final class CueScreen extends Screen {
             for (int c = 0; c < 7; c++) {
                 if (rows[r].charAt(c) == 'X') g.fill(x + c, y + r, x + c + 1, y + r + 1, color);
             }
+        }
+    }
+
+    /** How far a pitch, speed or EQ change has got to the speakers, 0 to 1, or -1 once it's heard. */
+    private double applying() {
+        CueStream.Params target = CueStream.Params.now();
+        long due = CueStream.audibleAt(target);
+        long now = System.nanoTime();
+        if (due == 0) {
+            applyTarget = null;
+            return -1;
+        }
+        if (!target.equals(applyTarget)) {
+            applyTarget = target;
+            applyStart = now;
+        }
+        return due <= applyStart ? 1 : Math.clamp((now - applyStart) / (double) (due - applyStart), 0, 1);
+    }
+
+    /** A ring of 8 dots that fills as a change reaches the speakers, with one dot circling so it reads as working. */
+    private static void applyingIcon(GuiGraphicsExtractor g, int x, int y, double progress) {
+        int[][] dots = {{3, 0}, {5, 1}, {6, 3}, {5, 5}, {3, 6}, {1, 5}, {0, 3}, {1, 1}};
+        int lit = (int) Math.ceil(progress * dots.length);
+        int spin = (int) (System.currentTimeMillis() / 100 % dots.length);
+        for (int i = 0; i < dots.length; i++) {
+            int color = i < lit ? GREEN : i == spin ? WHITE : FAINT;
+            g.fill(x + dots[i][0], y + dots[i][1], x + dots[i][0] + 1, y + dots[i][1] + 1, color);
+        }
+    }
+
+    /** A loop of two arrows, 9 by 8; with a 1 inside for repeat one. */
+    private static void repeatIcon(GuiGraphicsExtractor g, int x, int y, PlayOrder.Repeat mode, int color) {
+        g.fill(x + 1, y + 1, x + 8, y + 2, color);
+        g.fill(x + 8, y + 2, x + 9, y + 4, color);
+        g.fill(x + 6, y, x + 7, y + 1, color);
+        g.fill(x + 6, y + 2, x + 7, y + 3, color);
+        g.fill(x + 1, y + 6, x + 8, y + 7, color);
+        g.fill(x, y + 3, x + 1, y + 6, color);
+        g.fill(x + 2, y + 5, x + 3, y + 6, color);
+        g.fill(x + 2, y + 7, x + 3, y + 8, color);
+        if (mode == PlayOrder.Repeat.ONE) {
+            g.fill(x + 4, y + 2, x + 5, y + 6, color);
+            g.fill(x + 3, y + 3, x + 4, y + 4, color);
         }
     }
 

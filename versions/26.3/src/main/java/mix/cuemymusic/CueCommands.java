@@ -19,7 +19,7 @@ import mix.cuemymusic.library.Track;
 
 /**
  * {@code /cmm play [song]}, {@code /cmm queue <song>}, {@code /cmm next},
- * {@code /cmm prev} and {@code /cmm pause}. Client-side, so they work on any server.
+ * {@code /cmm prev}, {@code /cmm pause} and {@code /cmm repeat [off|all|one]}. Client-side, so they work on any server.
  * Songs are named by title; the chat suggests them as you type.
  */
 final class CueCommands {
@@ -54,7 +54,18 @@ final class CueCommands {
                     CuePlayer.INSTANCE.previous();
                     return nowPlaying(c.getSource());
                 }))
-                .then(ClientCommands.literal("pause").executes(CueCommands::pause)));
+                .then(ClientCommands.literal("pause").executes(CueCommands::pause))
+                .then(ClientCommands.literal("repeat")
+                        .executes(c -> repeat(c.getSource(), CueConfig.INSTANCE.repeatMode().cycle()))
+                        .then(ClientCommands.literal("off").executes(c -> repeat(c.getSource(), PlayOrder.Repeat.OFF)))
+                        .then(ClientCommands.literal("all").executes(c -> repeat(c.getSource(), PlayOrder.Repeat.ALL)))
+                        .then(ClientCommands.literal("one").executes(c -> repeat(c.getSource(), PlayOrder.Repeat.ONE)))));
+    }
+
+    private static int repeat(FabricClientCommandSource src, PlayOrder.Repeat mode) {
+        CueConfig.INSTANCE.setRepeat(mode);
+        src.sendFeedback(Component.translatable("cuemymusic.repeat." + mode.name().toLowerCase(Locale.ROOT)));
+        return 1;
     }
 
     private static int resume(CommandContext<FabricClientCommandSource> c) {

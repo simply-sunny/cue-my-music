@@ -116,9 +116,10 @@ public final class CuePlayer {
         return STREAM_IDS.incrementAndGet();
     }
 
-    void streamStarted(long id, Identifier location, double offset, SoundInstance instance) {
+    /** Returns false for a stream that's about to be stopped, which isn't shown. */
+    boolean streamStarted(long id, Identifier location, double offset, SoundInstance instance) {
         // Music from somewhere else that was already loading when the player took over: it gets stopped, don't show it.
-        if (holdsMusic() && !isOurs(instance)) return;
+        if (holdsMusic() && !isOurs(instance)) return false;
         synchronized (this) {
             activeStream = id;
             current = MusicLibrary.get(location);
@@ -128,6 +129,7 @@ public final class CuePlayer {
             ended = false;
             lastNanos = System.nanoTime();
         }
+        return true;
     }
 
     void streamClosed(long id) {
@@ -146,7 +148,9 @@ public final class CuePlayer {
         boolean finished;
         synchronized (this) {
             if (playing && !paused) {
-                position += (now - lastNanos) / 1e9 * CueConfig.INSTANCE.tempo();
+                // The speed being heard: a change takes a few seconds to reach the speakers.
+                CueStream.Params heard = CueStream.heard();
+                position += (now - lastNanos) / 1e9 * (heard != null ? heard.tempo() : CueConfig.INSTANCE.tempo());
                 Track t = current;
                 if (t != null && !Double.isNaN(t.seconds())) position = Math.min(position, t.seconds());
             }
@@ -157,7 +161,8 @@ public final class CuePlayer {
         plan();
         if (finished) {
             ours = null;
-            Track n = order.next();
+            order.setRepeat(CueConfig.INSTANCE.repeatMode());
+            Track n = order.finished(current);
             if (n != null) start(n, 0, TrackSoundInstance.GAME, true);
             return;
         }
@@ -214,6 +219,7 @@ public final class CuePlayer {
 
     /** The queue first, then the list's next song, then the game's next song, skipping the break. */
     public void next() {
+        order.setRepeat(CueConfig.INSTANCE.repeatMode());
         Track n = order.next();
         if (n != null) {
             start(n, 0, TrackSoundInstance.GAME, true);
@@ -272,8 +278,10 @@ public final class CuePlayer {
         if (t != null) start(t, 0, TrackSoundInstance.GAME, true);
     }
 
-    /** The list's next song, while a list plays through and the queue is empty. */
+    /** The list's next song, while a list plays through and the queue is empty. On repeat one, the song that's playing. */
     public Track listNext() {
+        if (CueConfig.INSTANCE.repeatMode() == PlayOrder.Repeat.ONE && current != null) return current;
+        order.setRepeat(CueConfig.INSTANCE.repeatMode());
         return order.listNext();
     }
 
