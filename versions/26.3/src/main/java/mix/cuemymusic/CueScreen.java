@@ -18,6 +18,7 @@ import java.util.function.DoubleConsumer;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
+import net.minecraft.client.OptionInstance;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -27,6 +28,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundSource;
 
 import mix.cuemymusic.api.CuePanel;
 import mix.cuemymusic.api.CuePanels;
@@ -197,8 +199,6 @@ public final class CueScreen extends Screen {
     /** Puts the cursor in the search box the next time it's drawn. */
     private boolean focusSearch;
     // The mix page: its songs, its title, and the transition being edited (the index of its first song), or -1 for the list.
-    /** Whether the page shows its mix (tempos, keys and transitions) in place of its song list. */
-    private boolean mixMode;
     private List<Track> mixTracks = List.of();
     /** The transition open in the editor, as its two songs' ids; null for the mix's songs. */
     private String mixFrom, mixTo;
@@ -208,6 +208,8 @@ public final class CueScreen extends Screen {
     private DoubleConsumer mixLaneScroll, nextMixLaneScroll, mixLaneScrollNext, nextMixLaneScrollNext;
     /** Above this y scrolling moves the first song, below it the next one. */
     private int mixLaneSplit;
+    /** The music volume before the speaker muted it. */
+    private static double unmutedVolume = 1;
     /** Sideways scrolling not yet a whole beat, as trackpads send it in small amounts. */
     private double mixScrollRest;
     /** When scrolling last moved a transition and it isn't saved yet, or 0. */
@@ -516,7 +518,6 @@ public final class CueScreen extends Screen {
             fieldSubmits.clear();
             unfocusField();
             pageFilterOpen = false;
-            mixMode = false;
             mixFrom = mixTo = null;
         }
         view = v;
@@ -1045,6 +1046,7 @@ public final class CueScreen extends Screen {
         }
         // Add the whole list to the queue, in the order shown.
         int toolLeft = x0 + 10 + pb;
+        boolean mixMode = false;
         if (!tracks.isEmpty()) {
             int qx = x0 + 10 + pb + 10, qy = y + 6;
             String label = tr("cuemymusic.queue.add_all");
@@ -1052,7 +1054,8 @@ public final class CueScreen extends Screen {
             // Mix: shows the transitions in place of the list, once two songs next to each other can blend.
             boolean canMix = false;
             for (int i = 0; i + 1 < tracks.size() && !canMix; i++) canMix = blends(tracks, i);
-            if (!canMix) mixMode = false;
+            // Shown as a mix while it can be, as last left; saved, so it stays a mix next time.
+            mixMode = canMix && cfg.isMixPage(listKey);
             String mixLabel = tr("cuemymusic.mix.open");
             int chipsRight = qx + qw + (canMix ? 14 + font.width(mixLabel) + 12 : 0);
             // Without room for an open search box, it takes these buttons' place until it closes.
@@ -1067,15 +1070,13 @@ public final class CueScreen extends Screen {
                 toolLeft = qx + qw;
                 if (canMix) {
                     toolLeft += 14 + chip(g, qx + qw + 14, qy + 3, mixLabel, mixMode, mx, my, () -> {
-                        mixMode = !mixMode;
+                        cfg.setMixPage(listKey, !cfg.isMixPage(listKey));
                         mixFrom = mixTo = null;
                         clearSelection();
                         scroll = 0;
                     });
                 }
             }
-        } else {
-            mixMode = false;
         }
         drawPageFilter(g, toolLeft + 12, toolRight, y + 6, mx, my);
         y += pb + 12;
@@ -2581,13 +2582,62 @@ public final class CueScreen extends Screen {
         String fx = cfg.enabled ? tr("cuemymusic.bar.fx", signed(cfg.pitchSemitones), String.format("%.2f", cfg.speed))
                 : tr("cuemymusic.bar.fx_off");
         int fw = font.width(fx);
-        if (x1 - GAP - 4 - fw > bx1 + 40) {
+        int roomLeft = bx1 + font.width(lenText) + 16;
+        if (x1 - GAP - 4 - fw > roomLeft) {
             int fx0 = x1 - GAP - 4 - fw;
             g.text(font, fx, fx0, y0 + 17, cfg.enabled && (cfg.pitchSemitones != 0 || cfg.speed != 1) ? GREEN : DIM, false);
             double applying = applying();
             if (applying >= 0) applyingIcon(g, fx0 - 11, y0 + 17, applying);
             nextHits.add(new Hit(fx0, y0 + 12, x1, y0 + 30, () -> open(View.SETTINGS, null)));
+            // Music volume, left of them, where there's room.
+            int vx1 = fx0 - (applying >= 0 ? 24 : 14), vx0 = vx1 - 56, ix = vx0 - 15;
+            if (ix > roomLeft) drawVolume(g, ix, vx0, vx1, y0 + 20, mx, my);
         }
+    }
+
+    /**
+     * The game's music volume, as a speaker and a slider: the same setting as
+     * Music in the game's sound options. Clicking the speaker mutes and unmutes.
+     */
+    private void drawVolume(GuiGraphicsExtractor g, int ix, int vx0, int vx1, int vy, int mx, int my) {
+        OptionInstance<Double> music = minecraft.options.getSoundSourceOptionInstance(SoundSource.MUSIC);
+        double v = music.get();
+        boolean iconHover = mx >= ix - 2 && mx < ix + 12 && my >= vy - 7 && my < vy + 7;
+        speakerIcon(g, ix, vy - 5, v, iconHover ? WHITE : DIM);
+        nextHits.add(new Hit(ix - 2, vy - 7, ix + 12, vy + 7, () -> {
+            if (music.get() > 0) {
+                unmutedVolume = music.get();
+                music.set(0.0);
+            } else {
+                music.set(unmutedVolume > 0 ? unmutedVolume : 1.0);
+            }
+            minecraft.options.save();
+        }));
+        boolean hover = mx >= vx0 - 2 && mx < vx1 + 2 && my >= vy - 6 && my < vy + 8;
+        boolean held = dragging != null && dragging.y0() == vy - 6 && dragging.x0() == vx0 - 2;
+        g.fill(vx0, vy, vx1, vy + 3, TRACK_BG);
+        int px = vx0 + (int) Math.round(Math.clamp(v, 0, 1) * (vx1 - vx0));
+        g.fill(vx0, vy, px, vy + 3, hover || held ? GREEN : WHITE);
+        if (hover || held) g.fill(px - 3, vy - 2, px + 3, vy + 5, WHITE);
+        nextDrags.add(new Drag(vx0 - 2, vy - 6, vx1 + 2, vy + 8, false, f -> music.set(Math.round(f * 100) / 100.0), minecraft.options::save));
+    }
+
+    /** A speaker with sound waves for how loud {@code v} is, or a cross when it's 0. 11 wide, 11 high. */
+    private static void speakerIcon(GuiGraphicsExtractor g, int x, int y, double v, int color) {
+        g.fill(x, y + 4, x + 3, y + 7, color);
+        g.fill(x + 3, y + 3, x + 4, y + 8, color);
+        g.fill(x + 4, y + 2, x + 5, y + 9, color);
+        g.fill(x + 5, y + 1, x + 6, y + 10, color);
+        if (v <= 0) {
+            for (int i = 0; i < 4; i++) {
+                g.fill(x + 7 + i, y + 4 + i, x + 8 + i, y + 5 + i, color);
+                g.fill(x + 10 - i, y + 4 + i, x + 11 - i, y + 5 + i, color);
+            }
+            return;
+        }
+        g.fill(x + 7, y + 4, x + 8, y + 7, color);
+        if (v > 0.33) g.fill(x + 9, y + 2, x + 10, y + 9, color);
+        if (v > 0.66) g.fill(x + 11, y, x + 12, y + 11, color);
     }
 
     private static int hoverColor(int x, int y, int w, int h, int mx, int my) {
