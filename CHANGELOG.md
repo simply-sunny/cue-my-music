@@ -14,6 +14,7 @@ First release.
 - Play any track, pause, seek, next and previous. Space plays and pauses in the player.
 - Play through a list: play a song on any page and the rest of the page follows in the order shown, then the game's music takes over.
 - Queue: add songs with **+**, or a whole page with **Add all to queue**. Drag to reorder, × to remove. Queued songs play before the list carries on, and a song queued with nothing playing starts at once.
+- Chat commands: `/cmm play [song]`, `/cmm queue <song>`, `/cmm next`, `/cmm prev` and `/cmm pause`, with song suggestions.
 - **Pause during travel** setting. Off (default), your song keeps playing through dimension changes; on, it pauses while the new dimension loads and resumes from the same spot.
 - The game's own music plays through the player, exactly as in vanilla: same pick, same break, same volume and pitch per file, same toast. The queue shows the game's next song and the break before it.
 - Sort the track list by title, album or length.

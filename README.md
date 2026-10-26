@@ -47,6 +47,21 @@ All keys are rebindable under **Options → Controls → Key Binds → Cue My Mu
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
 - Space plays and pauses while the player is open. Click or drag the progress bar to seek.
 
+### Commands
+
+Client-side, so they work on any server. Songs are named by title, and chat suggests them as you type.
+
+| Command | Does |
+| --- | --- |
+| `/cmm play <song>` | Plays the song now, then the queue, then the game's music. |
+| `/cmm play` | Resumes. |
+| `/cmm queue <song>` | Adds the song to the queue. |
+| `/cmm next` | Next song. |
+| `/cmm prev` | Previous song, or the start of this one. |
+| `/cmm pause` | Pauses. |
+
+A partial title works if only one song matches, such as `/cmm play subwoofer`.
+
 ### The queue
 
 Queued songs play one after another, as soon as the current song ends, and before the page you're playing carries on. The page then picks up after the song the queue interrupted. A song queued while nothing is playing starts at once. Drag a song to reorder it, click × to remove it, or double-click it to play it now. A long queue scrolls.
