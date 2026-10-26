@@ -18,6 +18,8 @@ All notable changes to Cue My Music are documented here. This project follows [S
 
 ### Changed
 
+- Tempo, key, loudness and waveforms of add-on songs are saved in `config/cuemymusic-analysis/` and read back next time instead of worked out again. Once the game has loaded, songs not worked out yet are done in the background, so the mix shows tempos and keys straight away.
+- The player does less work each frame: the song list, the game's songs and add-on pages are kept between frames instead of rebuilt.
 - The right-click menu looks like Spotify's: icons, dividers, and **Add to playlist** with a submenu you can search, instead of one row per playlist. It also has **Go to artist**.
 - Stats ignore songs heard for under 3 seconds, so clicking through songs doesn't fill them with plays and skips. A song that ends by itself is a play only if you heard at least half of it (or 30 seconds), so seeking to the end isn't one. Seeking, pausing, travelling and clicking the playing song again carry on the same play. Nothing is counted while music volume is at 0.
 

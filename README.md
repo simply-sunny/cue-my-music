@@ -154,6 +154,8 @@ Settings, liked and disliked songs, and playlists are saved to `config/cuemymusi
 - **macOS:** `~/Library/Application Support/minecraft/config/cuemymusic.json`
 - **Linux:** `~/.minecraft/config/cuemymusic.json`
 
+Tempo, key, loudness and waveforms of add-on songs are worked out once per song and saved in `config/cuemymusic-analysis/`, so they're ready straight away next time. A song is worked out again if its file changes. Deleting the folder is safe.
+
 Delete the file to reset to defaults. One value goes further in the JSON than in the screen. Edit it, then restart:
 
 | Key | Default | Notes |

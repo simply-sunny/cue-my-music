@@ -133,6 +133,7 @@ public final class CueMyMusicClient implements ClientModInitializer {
     private static void tick(Minecraft client) {
         CuePlayer player = CuePlayer.INSTANCE;
         if (!CueConfig.INSTANCE.vanilla) player.tick();
+        AutomixProfiles.tick(client);
         while (openPlayer.consumeClick()) {
             client.gui.setScreen(new CueScreen(client.gui.screen()));
         }

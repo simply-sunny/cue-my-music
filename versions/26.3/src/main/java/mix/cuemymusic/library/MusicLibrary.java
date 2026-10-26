@@ -49,6 +49,8 @@ public final class MusicLibrary {
     private static final Logger LOG = LoggerFactory.getLogger("cuemymusic");
     private static final String VANILLA = "vanilla";
     private static final Map<Identifier, Track> TRACKS = new LinkedHashMap<>();
+    /** {@link #TRACKS}' songs, and the game's among them, kept between refreshes since pages ask for them every frame. */
+    private static List<Track> all, gameMusic;
     private static final Map<String, PackInfo> PACKS = new LinkedHashMap<>();
     /** Pack details by id, kept across reloads so icons are only loaded once. */
     private static final Map<String, PackInfo> PACK_CACHE = new HashMap<>();
@@ -87,6 +89,8 @@ public final class MusicLibrary {
 
         TRACKS.clear();
         PACKS.clear();
+        all = null;
+        gameMusic = null;
         for (Map.Entry<String, Catalog.Entry> e : Catalog.TRACKS.entrySet()) {
             Identifier id = Identifier.withDefaultNamespace(e.getKey());
             Resource r = sources.get(id);
@@ -128,7 +132,8 @@ public final class MusicLibrary {
 
     public static synchronized List<Track> all() {
         if (TRACKS.isEmpty()) refresh();
-        return List.copyOf(TRACKS.values());
+        if (all == null) all = List.copyOf(TRACKS.values());
+        return all;
     }
 
     /** Game music credited to {@code artist}. */
@@ -137,7 +142,9 @@ public final class MusicLibrary {
      * downloads: those aren't the game's music and only play from their page.
      */
     public static synchronized List<Track> gameMusic() {
-        return all().stream().filter(MusicLibrary::isGameMusic).toList();
+        List<Track> songs = all();
+        if (gameMusic == null) gameMusic = songs.stream().filter(MusicLibrary::isGameMusic).toList();
+        return gameMusic;
     }
 
     /** False for songs in a pack an add-on page stands in for: the game never plays those, so there's nothing to dislike. */
