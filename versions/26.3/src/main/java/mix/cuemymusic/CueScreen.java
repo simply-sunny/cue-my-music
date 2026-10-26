@@ -315,6 +315,11 @@ public final class CueScreen extends Screen {
 
     /** With vanilla music on, the whole window is one card saying so, with a button to turn the mods back on. */
     private void drawVanilla(GuiGraphicsExtractor g, int mx, int my) {
+        // Buttons only take clicks inside the centre panel, so here that's the whole window.
+        centerX0 = 0;
+        centerY0 = 0;
+        centerX1 = width;
+        centerY1 = height;
         g.fill(0, 0, width, height, 0xFF000000);
         int w = Math.min(300, width - 40), x0 = (width - w) / 2;
         Component body = Component.translatable("cuemymusic.vanilla.body");
