@@ -10,6 +10,7 @@
 		"issues": "https://github.com/simply-sunny/cue-my-music/issues"
 	},
 	"license": "MIT",
+	"icon": "assets/cuemymusic/icon.png",
 	"environment": "client",
 	"entrypoints": {
 		"client": ["mix.cuemymusic.CueMyMusicClient"],

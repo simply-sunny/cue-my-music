@@ -46,6 +46,8 @@ public final class MusicLibrary {
     /** Pack details by id, kept across reloads so icons are only loaded once. */
     private static final Map<String, PackInfo> PACK_CACHE = new HashMap<>();
     private static final Map<Identifier, Double> MEASURED = new ConcurrentHashMap<>();
+    /** Each file's entry in sounds.json, with its volume and pitch, so the player plays it as the game would. */
+    private static final Map<Identifier, Sound> SOUNDS = new HashMap<>();
     private static int iconCount;
 
     private MusicLibrary() {
@@ -57,12 +59,16 @@ public final class MusicLibrary {
         SoundManager sounds = mc.getSoundManager();
         ResourceManager resources = mc.getResourceManager();
         Set<Identifier> files = new HashSet<>();
+        SOUNDS.clear();
         for (Identifier event : sounds.getAvailableSounds()) {
             if (!event.getPath().startsWith("music.")) continue;
             WeighedSoundEvents weighed = sounds.getSoundEvent(event);
             if (weighed == null) continue;
             for (Weighted<Sound> entry : ((WeighedSoundEventsAccessor) weighed).cuemymusic$list()) {
-                if (entry instanceof Sound sound && sound.getType() == Sound.Type.FILE) files.add(sound.getLocation());
+                if (entry instanceof Sound sound && sound.getType() == Sound.Type.FILE) {
+                    files.add(sound.getLocation());
+                    SOUNDS.putIfAbsent(sound.getLocation(), sound);
+                }
             }
         }
 
@@ -138,10 +144,22 @@ public final class MusicLibrary {
         return !byArtist(Catalog.UNKNOWN_ARTIST).isEmpty();
     }
 
-    /** True if {@code location} is a music file that exists. */
-    public static synchronized boolean has(Identifier location) {
+    /** The sounds.json entry for a music file, or null if no music event lists it. */
+    public static synchronized Sound sound(Identifier location) {
         if (TRACKS.isEmpty()) refresh();
-        return TRACKS.containsKey(location);
+        return SOUNDS.get(location);
+    }
+
+    /** Liked songs, most recently liked first. Songs whose files are gone are skipped. */
+    public static synchronized List<Track> liked(List<String> ids) {
+        all();
+        List<Track> out = new ArrayList<>();
+        for (int i = ids.size() - 1; i >= 0; i--) {
+            Identifier id = Identifier.tryParse(ids.get(i));
+            Track t = id == null ? null : TRACKS.get(id);
+            if (t != null) out.add(t);
+        }
+        return out;
     }
 
     /** The track for a sound file, creating an uncredited one if it isn't known. */

@@ -7,6 +7,7 @@
 		"MusicFrequencyInvoker",
 		"MusicManagerAccessor",
 		"MusicManagerMixin",
+		"PauseScreenMixin",
 		"SoundEngineMixin",
 		"WeighedSoundEventsAccessor"
 	],

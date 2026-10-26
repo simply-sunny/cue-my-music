@@ -19,7 +19,7 @@ This file is the source of truth for the Modrinth project settings, version meta
 | Wiki / docs | https://github.com/simply-sunny/cue-my-music#use |
 | Discord | *(none)* |
 | Donation links | *(none)* |
-| Icon | *(todo)* 512×512 PNG |
+| Icon | `src/main/resources/assets/cuemymusic/icon.png` (512×512, built by `scripts/MakeIcon.java`) |
 
 ## Version metadata
 
@@ -46,10 +46,12 @@ Pick any game track and play it, queue up what's next, or let the game keep choo
 
 ## Features
 
-- **Player:** opens from Mod Menu. Library on the left, track list in the middle, now playing on the right, controls at the bottom.
+- **Player:** opens from a music button in the pause menu, Mod Menu or a key. Library on the left, track list in the middle, now playing on the right, controls at the bottom.
+- **Liked Songs:** heart any track to keep it on its own page.
 - **Artist pages:** C418, Lena Raine, Aaron Cherof, Kumi Tanioka, Amos Roddy and fingerspit, with only their in-game tracks.
 - **Controls:** play any track, pause, seek, next and previous. Space pauses. Media keys F7–F9 on macOS.
 - **Queue:** add songs, drag to reorder. After your queue it shows the game's next song and how long until it plays.
+- **Vanilla timing:** the game still picks its songs and breaks exactly as usual; the player just shows them and plays them.
 - **Sorting:** by title, album or length.
 - **Pitch:** −12 to +12 semitones, same speed.
 - **Speed:** 0.5× to 2.0×, same pitch.

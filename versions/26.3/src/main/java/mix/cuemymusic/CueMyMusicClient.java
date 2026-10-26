@@ -5,8 +5,14 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.MultiLineEditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.options.controls.KeyBindsScreen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -29,20 +35,39 @@ public final class CueMyMusicClient implements ClientModInitializer {
         openPlayer = key("key.cuemymusic.open_player", InputConstants.UNKNOWN.getValue(), category);
         toggle = key("key.cuemymusic.toggle", InputConstants.UNKNOWN.getValue(), category);
 
-        // Media keys go in Miscellaneous. On a Mac keyboard F7, F8 and F9 are the previous, play/pause and next keys.
+        // On a Mac keyboard F7, F8 and F9 are the previous, play/pause and next keys.
         boolean mac = Util.getPlatform() == Util.OS.OSX;
-        previous = key("key.cuemymusic.previous", mac ? InputConstants.KEY_F7 : InputConstants.UNKNOWN.getValue(), KeyMapping.Category.MISC);
-        playPause = key("key.cuemymusic.play_pause", mac ? InputConstants.KEY_F8 : InputConstants.UNKNOWN.getValue(), KeyMapping.Category.MISC);
-        next = key("key.cuemymusic.next", mac ? InputConstants.KEY_F9 : InputConstants.UNKNOWN.getValue(), KeyMapping.Category.MISC);
+        previous = key("key.cuemymusic.previous", mac ? InputConstants.KEY_F7 : InputConstants.UNKNOWN.getValue(), category);
+        playPause = key("key.cuemymusic.play_pause", mac ? InputConstants.KEY_F8 : InputConstants.UNKNOWN.getValue(), category);
+        next = key("key.cuemymusic.next", mac ? InputConstants.KEY_F9 : InputConstants.UNKNOWN.getValue(), category);
 
         ClientTickEvents.END_CLIENT_TICK.register(CueMyMusicClient::tick);
+        // Key mappings only fire in game, so the keys are also handled on every other screen.
+        ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
+            if (screen instanceof CueScreen) return;
+            ScreenKeyboardEvents.afterKeyPress(screen).register((s, event) -> {
+                if (typing(s)) return;
+                if (openPlayer.matches(event)) client.gui.setScreen(new CueScreen(s));
+                else mediaKey(event);
+            });
+        });
+    }
+
+    /** True while a key press goes somewhere else: into a text box, or into a key being rebound. */
+    private static boolean typing(Screen screen) {
+        return screen instanceof KeyBindsScreen || screen.getFocused() instanceof EditBox || screen.getFocused() instanceof MultiLineEditBox;
+    }
+
+    /** True if {@code event} is the open player key. */
+    static boolean openKey(KeyEvent event) {
+        return openPlayer.matches(event);
     }
 
     private static KeyMapping key(String name, int key, KeyMapping.Category category) {
         return KeyMappingHelper.registerKeyMapping(new KeyMapping(name, InputConstants.Type.KEYBOARD, key, category));
     }
 
-    /** Handles the media keys while a screen has the keyboard, since key mappings only fire in game. */
+    /** Handles previous, play/pause and next while a screen has the keyboard. */
     static boolean mediaKey(KeyEvent event) {
         CuePlayer player = CuePlayer.INSTANCE;
         if (playPause.matches(event)) player.togglePause();

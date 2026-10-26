@@ -3,12 +3,14 @@ package mix.cuemymusic;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.IntSupplier;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.Sound;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.MusicManager;
 import net.minecraft.client.sounds.SoundEngine;
+import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.client.sounds.WeighedSoundEvents;
 import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.Music;
@@ -62,6 +64,9 @@ public final class CuePlayer {
     private final RandomSource random = RandomSource.create();
     private Music plannedFor;
     private MusicManager.MusicFrequency plannedFrequency;
+    /** The game's pick: one draw from the music's sounds, exactly as the game makes it. Null if there's no music. */
+    private Sound plannedSound;
+    /** The pick as a track, or null if the game picked silence (an empty entry). */
     private Track planned;
     private int plannedBreak;
 
@@ -265,20 +270,35 @@ public final class CuePlayer {
         return !paused && ((MusicManagerAccessor) Minecraft.getInstance().getMusicManager()).cuemymusic$currentMusic() == null;
     }
 
-    /** The break the game takes after a song: the one already planned, so the queue was right about it. */
-    public int takeBreak() {
+    /**
+     * The break the game takes after a song: the one already planned, so the queue was right about it.
+     * If the music changed this tick, before it was planned for, the game's own roll is used.
+     */
+    public int takeBreak(Music music, MusicManager.MusicFrequency frequency, IntSupplier roll) {
+        if (!music.equals(plannedFor) || frequency != plannedFrequency) return roll.getAsInt();
         int ticks = plannedBreak;
-        if (plannedFor != null) plannedBreak = rollBreak(plannedFor, plannedFrequency);
+        plannedBreak = rollBreak(plannedFor, plannedFrequency);
         return ticks;
     }
 
     /** Plays the game's next song for {@code music}, in place of the game. Null if there's nothing to play. */
     public SoundEngine.PlayResult playForGame(Music music) {
         plan();
-        Track t = music.equals(plannedFor) ? planned : pick(music);
-        if (t == null) return null;
+        Sound sound = music.equals(plannedFor) ? plannedSound : pick(music);
+        if (sound == null) return null;
         plannedFor = null;
-        SoundEngine.PlayResult result = start(t, 0, music.sound().value().location(), false);
+        Identifier event = music.sound().value().location();
+        Track t = track(sound);
+        SoundEngine.PlayResult result;
+        if (t != null) {
+            result = start(t, new TrackSoundInstance(sound, 0, event), false);
+        } else {
+            // The game picked silence: it "plays" it, fails to start, and waits for the next break.
+            TrackSoundInstance silence = new TrackSoundInstance(sound, 0, event);
+            Minecraft mc = Minecraft.getInstance();
+            ((MusicManagerAccessor) mc.getMusicManager()).cuemymusic$setCurrentMusic(silence);
+            result = mc.getSoundManager().play(silence);
+        }
         plan();
         return result;
     }
@@ -299,14 +319,16 @@ public final class CuePlayer {
         MusicManager.MusicFrequency frequency = mc.options.musicFrequency().get();
         if (music == null) {
             plannedFor = null;
+            plannedSound = null;
             planned = null;
             return;
         }
-        // Also picked again when there was nothing to pick (sounds still loading) or the pick went away with a pack.
-        if (music.equals(plannedFor) && frequency == plannedFrequency && planned != null && MusicLibrary.has(planned.location())) return;
+        // Also picked again while there's nothing to pick from (sounds still loading).
+        if (music.equals(plannedFor) && frequency == plannedFrequency && plannedSound != null) return;
         plannedFor = music;
         plannedFrequency = frequency;
-        planned = pick(music);
+        plannedSound = pick(music);
+        planned = track(plannedSound);
         plannedBreak = rollBreak(music, frequency);
     }
 
@@ -315,19 +337,16 @@ public final class CuePlayer {
         return Math.min(((MusicFrequencyInvoker) (Object) frequency).cuemymusic$nextSongDelay(music, random), music.maxDelay());
     }
 
-    /** A song for {@code music}, the way the game picks one, skipping missing files and the song that's on. */
-    private Track pick(Music music) {
+    /** One draw from the music's sounds, weighted as in sounds.json, the same draw the game makes when it starts a song. */
+    private Sound pick(Music music) {
         WeighedSoundEvents events = Minecraft.getInstance().getSoundManager().getSoundEvent(music.sound().value().location());
-        if (events == null) return null;
-        Track fallback = null;
-        for (int i = 0; i < 8; i++) {
-            Sound sound = events.getSound(random);
-            if (sound == null || sound.getType() != Sound.Type.FILE || !MusicLibrary.has(sound.getLocation())) continue;
-            Track t = MusicLibrary.get(sound.getLocation());
-            if (!t.equals(current)) return t;
-            fallback = t;
-        }
-        return fallback;
+        return events == null ? null : events.getSound(random);
+    }
+
+    private static Track track(Sound sound) {
+        if (sound == null || sound == SoundManager.EMPTY_SOUND || sound == SoundManager.INTENTIONALLY_EMPTY_SOUND
+                || sound.getType() != Sound.Type.FILE) return null;
+        return MusicLibrary.get(sound.getLocation());
     }
 
     private void step(int direction) {
@@ -340,13 +359,17 @@ public final class CuePlayer {
     }
 
     private SoundEngine.PlayResult start(Track track, double seconds, Identifier event, boolean picked) {
+        return start(track, TrackSoundInstance.of(track.location(), seconds, event), picked);
+    }
+
+    private SoundEngine.PlayResult start(Track track, TrackSoundInstance o, boolean picked) {
         // The new track takes the hold before anything is stopped, so no other music can slip in between.
         TrackSoundInstance old = ours;
-        TrackSoundInstance o = new TrackSoundInstance(track.location(), seconds, event);
+        Identifier event = o.getIdentifier();
         synchronized (this) {
             activeStream = -1;
             current = track;
-            position = seconds;
+            position = o.startSeconds();
             paused = false;
             playing = false;
             ended = false;
