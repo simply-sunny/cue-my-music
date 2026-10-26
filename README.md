@@ -92,7 +92,7 @@ A song is only counted once you've heard 3 seconds of it, so clicking through so
 
 ### Mixing
 
-With an add-on that adds songs, a **Mix** chip appears above a list once two of its songs next to each other can blend. Click it and the list shows as a mix, with the page's header and buttons still in place: each song with its tempo, key (in Camelot notation, coloured so keys that mix well look alike) and length, and between two songs that blend, a chip with their transition. The game's own songs are dimmed: they play as they are, without a transition. Click **Mix** again for the plain list.
+With an add-on that adds songs, a **Mix** chip appears above a list once two of its songs next to each other can blend. Click it and the list shows as a mix, with the page's header and buttons still in place: each song with its tempo, key (in Camelot notation, coloured so keys that mix well look alike) and length, and between two songs that blend, a chip with their transition. The game's own songs are dimmed: they play as they are, without a transition. Click **Mix** again for the plain list. Each page remembers whether it's shown as a mix, also after a restart.
 
 Click a transition to edit it (**All transitions** goes back):
 

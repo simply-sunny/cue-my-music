@@ -37,6 +37,8 @@ public final class CueConfig {
     public volatile String eqPreset = "flat";
     /** Liked songs as sound file ids ("minecraft:music/game/sweden"), oldest first. Replaced whole, never mutated in place. */
     public volatile List<String> liked = List.of();
+    /** Pages shown as a mix, by the player's key for them ("list:<id>", "liked"...). Replaced whole, never mutated in place. */
+    public volatile List<String> mixPages = List.of();
     /** Pause the player's song while a new dimension loads, rather than carry on. */
     public volatile boolean pauseOnTravel = false;
     /** Pause the player's song while the game window isn't in front, and play it again when it is. */
@@ -142,6 +144,19 @@ public final class CueConfig {
 
     public void setRepeat(PlayOrder.Repeat mode) {
         repeat = mode.name().toLowerCase(java.util.Locale.ROOT);
+        save();
+    }
+
+    public boolean isMixPage(String key) {
+        return mixPages.contains(key);
+    }
+
+    /** Shows the page as a mix, or as its songs, from now on, and saves. */
+    public void setMixPage(String key, boolean on) {
+        List<String> next = new ArrayList<>(mixPages);
+        next.remove(key);
+        if (on) next.add(key);
+        mixPages = List.copyOf(next);
         save();
     }
 
@@ -272,6 +287,7 @@ public final class CueConfig {
         vanilla = o.vanilla;
         keepOutOfRecordings = o.keepOutOfRecordings;
         repeat = o.repeat;
+        mixPages = o.mixPages == null ? List.of() : o.mixPages;
         playlists = o.playlists;
         disliked = o.disliked;
         collapsed = o.collapsed;
