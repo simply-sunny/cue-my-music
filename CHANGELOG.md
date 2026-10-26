@@ -2,13 +2,14 @@
 
 All notable changes to Cue My Music are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.2.0 — 2026-10-26
 
 ### Added
 
 - Select several songs with shift-click, shift-drag, Cmd/Ctrl-click, shift+↑/↓ or Cmd/Ctrl+A, then right-click to queue, like, dislike or add them all to a playlist, or press Delete to take them off a playlist, Liked Songs or Disliked Songs.
 - **Your Stats** page: time listened, plays, streaks, top songs and artists, a 24-hour listening clock, a calendar of every day you listened, time per dimension, how much you picked versus the game, and the song you skip most.
 - Add-ons can give their page a Delete action for selected songs.
+- Dragging a selection to the top or bottom of the list scrolls it.
 
 ### Changed
 

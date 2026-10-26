@@ -227,7 +227,19 @@ public final class CueScreen extends Screen {
         centerX1 = width - GAP - (rightW > 0 ? rightW + GAP : 0);
         centerY0 = top;
         centerY1 = bottom - GAP;
+        // Dragging a selection to the list's top or bottom edge, or past it, scrolls the list.
+        if (selectDragging) {
+            if (mouseY < centerY0 + 10) scroll = Math.max(0, scroll - 6);
+            else if (mouseY > centerY1 - 10) scroll = Math.min(scrollMax, scroll + 6);
+        }
         drawCenter(g, mouseX, mouseY);
+        if (selectDragging) {
+            int row = rowAt(mouseY);
+            if (row >= 0 && row != focusRow) {
+                focusRow = row;
+                selectRange(anchor, row);
+            }
+        }
         if (rightW > 0) {
             drawNowPlaying(g, width - GAP - rightW, top, width - GAP, bottom - GAP, mouseX, mouseY);
         } else {
