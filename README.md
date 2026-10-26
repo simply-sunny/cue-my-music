@@ -158,7 +158,7 @@ java scripts/MakeIcon.java <26.3 client jar> src/main/resources/assets/cuemymusi
 
 ### Add-ons
 
-An add-on can give itself a page in the player's library. Implement `mix.cuemymusic.api.CuePanel` and call `CuePanels.register(panel)` from your client initializer. The page draws through a `PanelCanvas`, which has the player's header, headings, text, text fields, buttons, progress bar, and song list, so it matches the rest of the player. A panel can also take over a resource pack's entry (`packId`; that pack's songs then stay out of **All game music** too) and add items to the right-click menu of its songs (`songActions`), and decide what Delete does to the songs selected on its page (`deleteAction`). The API is new in 1.1.0 and may still change.
+An add-on can give itself a page in the player's library. Implement `mix.cuemymusic.api.CuePanel` and call `CuePanels.register(panel)` from your client initializer. The page draws through a `PanelCanvas`, which has the player's header, headings, text, text fields, buttons, progress bar, and song list, so it matches the rest of the player. A panel can also take over a resource pack's entry (`packId`; that pack's songs then stay out of **All game music** too), add items to the right-click menu of its songs (`songActions`), and decide what Delete does to the songs selected on its page (`deleteAction`). The API is new in 1.1.0 and may still change.
 
 ## Troubleshooting
 

@@ -31,13 +31,15 @@ Upload one Modrinth version per JAR, version number as in `gradle.properties`, c
 | --- | --- |
 | `cue-my-music-26.3-1.0.0.jar` | `bjLhbMkU` |
 | `cue-my-music-26.3-1.1.0.jar` | `SOc6iB4G` |
+| `cue-my-music-26.3-1.2.0.jar` | *(set on upload)* |
 
 | JAR | Modrinth `game_versions` |
 | --- | --- |
 | `cue-my-music-26.3-1.0.0.jar` | `26.3` |
 | `cue-my-music-26.3-1.1.0.jar` | `26.3` |
+| `cue-my-music-26.3-1.2.0.jar` | `26.3` |
 
-Version name format: `Cue My Music 1.1.0 (26.3)`.
+Version name format: `Cue My Music 1.2.0 (26.3)`.
 
 ### Dependencies
 
@@ -62,7 +64,9 @@ Pitch, speed, and a 6-band equalizer apply to every song. Pitch and speed are se
 - **Play-through:** a song plays the rest of its page after it.
 - **Queue:** add a song or a whole page, drag to reorder. It shows the game's next song and the break before it.
 - **Repeat:** off, all, or one.
-- **Dislike:** the game never picks a disliked song for its own music. You can still play it.
+- **Dislike:** thumbs down a song and the game never picks it for its own music. You can still play it.
+- **Select several:** shift-click, shift-drag, or Cmd/Ctrl-click songs, then queue, like, dislike, or add them to a playlist at once.
+- **Your Stats:** top songs and artists, a 24-hour listening clock, a calendar of every day you listened, streaks, and where you listen.
 - **Vanilla timing:** the game still picks its songs and breaks exactly as usual.
 - **Pitch:** −12 to +12 semitones, same speed.
 - **Speed:** 0.5× to 2.0×, same pitch.
