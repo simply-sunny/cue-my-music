@@ -5,13 +5,14 @@
 <p align="center">A music player for Minecraft's own soundtrack.<br>Fabric &amp; Quilt &nbsp;|&nbsp; 26.3</p>
 
 <p align="center">
+<a href="https://modrinth.com/mod/cue-my-music"><img src="https://img.shields.io/modrinth/dt/cue-my-music?logo=modrinth&label=Modrinth&color=1bd96a" alt="Modrinth downloads"></a>
 <a href="https://github.com/simply-sunny/cue-my-music/releases"><img src="https://img.shields.io/github/v/release/simply-sunny/cue-my-music?label=release&color=2ea44f" alt="Latest release"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
 </p>
 
 ---
 
-Browse every song in the game by artist, album, or resource pack, play any of them, like them, and queue up what's next. When the queue runs out, the game takes over exactly as it would without the mod, and the queue shows which song it picked and how long until it plays. Pitch, speed, and a 6-band equalizer apply to every song. Pitch and speed are separate: drop the music 2 semitones without slowing it down, or play it at 1.2× without raising it.
+Browse every song in the game by artist or resource pack. Play one and the rest of its page follows, queue up what's next, or like it for later. When you're done, the game takes over exactly as it would without the mod, and the queue shows which song it picked and when it plays. Pitch, speed, and a 6-band equalizer apply to every song. Pitch and speed are separate: drop the music 2 semitones without slowing it down, or play it at 1.2× without raising it.
 
 Only background music is affected. Jukeboxes and sound effects play as normal.
 
@@ -64,11 +65,11 @@ A partial title works if only one song matches, such as `/cmm play subwoofer`.
 
 ### The queue
 
-Queued songs play one after another, as soon as the current song ends, and before the page you're playing carries on. The page then picks up after the song the queue interrupted. A song queued while nothing is playing starts at once. Drag a song to reorder it, click × to remove it, or double-click it to play it now. A long queue scrolls.
+Queued songs play next, before the rest of the page. The page then picks up after the song the queue interrupted. A song queued while nothing is playing starts at once. Drag to reorder, click × to remove, or double-click to play now. A long queue scrolls.
 
-**Next** plays the queue's next song, then the page's, then the game's. **Previous** goes back through the page only, and restarts the song after its first 3 seconds.
+**Next** plays the queue, then the page, then the game's next song. **Previous** goes back through the page, or restarts the song after its first 3 seconds.
 
-After the queue and the page comes the game's own music. The game still decides when music plays: a random break of up to 20 minutes between songs on the default **Music Frequency**, and different music on the title screen, underwater, in the Nether, and so on. The queue shows the game's next song with **In 0:42** while waiting, or **After a 12:30 break** while a song plays. Click it to play it now.
+After that, the game's own music returns. The game still decides when music plays: a random break of up to 20 minutes between songs on the default **Music Frequency**, and different music on the title screen, underwater, in the Nether, and so on. The queue shows the game's next song with **In 0:42** while waiting, or **After a 12:30 break** while a song plays. Click it to play it now.
 
 Songs the game starts play exactly as in vanilla: the same weighted pick from `sounds.json`, the same break, each file's own volume and pitch, and the same "Now playing" toast. They still stop when you change dimension or when music that replaces them starts, such as the dragon fight. Songs you pick or queue yourself aren't cut off: they carry on through dimension changes and menus, and while a song is paused the game's music stays quiet.
 
@@ -111,11 +112,7 @@ Requires JDK 25.
 ./gradlew clean buildAll
 ```
 
-This runs the headless checks (pitch and length on test tones, EQ response on sine waves, pack names, initials, and credits, and the queue and play order rules) and builds every target. Jars land in `build/libs/`. To build one target:
-
-```bash
-./gradlew :26.3:build
-```
+This runs the headless checks (pitch and length on test tones, EQ response on sine waves, pack names, initials, and credits, and the play order rules) and builds the jar into `build/libs/`.
 
 Pitch and speed use a WSOLA time-stretch followed by resampling, and the equalizer is six biquad filters, all in plain Java. The icon and the pause menu button are built from the game's textures by `scripts/MakeIcon.java`:
 
@@ -143,7 +140,6 @@ Logs are in `.minecraft/logs/latest.log`. Include the log and your Minecraft, mo
 - **Sound effects and jukeboxes:** not affected, only background music.
 - **Other music mods:** mods that replace the music stream, such as custom players or radios, may bypass it.
 - **Extreme settings:** pitch and speed sound best within about ±5 semitones and 0.75–1.5×. Beyond that you'll hear some smearing or echo.
-- **Quilt:** supported. Quilt Loader runs the Fabric jar, with Fabric API installed as on Fabric.
 
 ## License
 
