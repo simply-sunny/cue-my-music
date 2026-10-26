@@ -7,7 +7,7 @@ CurseForge projects can't be created through the API, so the project is made by 
 | Field | Value |
 | --- | --- |
 | Name | **Cue My Music** |
-| Project ID | *(not created yet)* |
+| Project ID | `1766472` (slug `cue-my-music`) |
 | Class | Mods |
 | Summary | A music player for Minecraft's soundtrack, with a queue, pitch, speed and an equalizer. |
 | Main category | Cosmetic |
@@ -25,6 +25,8 @@ One file per jar, release type `release`. The script sets the version tags and r
 | JAR | Game versions | Other tags |
 | --- | --- | --- |
 | `cue-my-music-26.3-1.0.0.jar` | `26.3` | Fabric, Quilt, Client, Java 25 |
+
+Uploaded 2026-10-25 as file `9328884`.
 
 Relations: Fabric API and Mod Menu, both required.
 

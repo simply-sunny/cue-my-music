@@ -10,6 +10,7 @@ This file is the source of truth for the Modrinth project settings, version meta
 | Slug | `cue-my-music` |
 | Project type | Mod |
 | Project ID | `dCISwMOO` (submitted for review 2026-10-25) |
+| CurseForge project ID | `1766472` (slug `cue-my-music`), uploaded with `scripts/publish-curseforge.py` |
 | Summary | A music player for Minecraft's own soundtrack, with a queue, pitch, speed, and an equalizer. Fabric and Quilt 26.3, client-side. |
 | License | MIT |
 | Environment | Client-side only (`client_only`) |
