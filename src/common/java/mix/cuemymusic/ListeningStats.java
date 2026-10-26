@@ -11,9 +11,13 @@ import java.util.TreeMap;
 
 /**
  * What's been listened to: time per song, hour of the day, calendar day,
- * dimension, and who picked it, plus plays and skips. A song counts as played
- * after {@link #PLAY_SECONDS} of it, or when it finishes sooner; it's skipped if
- * it's moved past before that.
+ * dimension, and who picked it, plus plays and skips.
+ *
+ * <p>Nothing about a song is kept until {@link #MIN_SECONDS} of it have been
+ * heard, so clicking through songs, or a song cut off as it starts, leaves no
+ * trace. After that it's a play at {@link #PLAY_SECONDS}, or when it ends by
+ * itself having been heard for half its length (so jumping to the last few
+ * seconds isn't a play); moving on before either is a skip.
  *
  * <p>Plain Java, so the counting can be checked without the game. Saved by
  * {@code StatsFile}.
@@ -21,6 +25,7 @@ import java.util.TreeMap;
 public final class ListeningStats {
     public static final ListeningStats INSTANCE = new ListeningStats();
     public static final double PLAY_SECONDS = 30;
+    public static final double MIN_SECONDS = 3;
 
     /** One song's totals. */
     public static final class Song {
@@ -49,11 +54,20 @@ public final class ListeningStats {
     private transient String nowSong;
     private transient double nowSeconds;
     private transient boolean counted;
+    /** True once {@link #MIN_SECONDS} of the song have been heard and it's being recorded. */
+    private transient boolean kept;
+    /** What was heard of the song before it was kept. */
+    private transient List<Heard> held = new ArrayList<>();
+
+    private record Heard(double seconds, LocalDateTime when, String dimension, boolean picked, boolean effects) {
+    }
 
     public synchronized void started(String song) {
         nowSong = song;
         nowSeconds = 0;
         counted = false;
+        kept = false;
+        held.clear();
     }
 
     /** Adds {@code seconds} of {@code song} heard just now. */
@@ -61,31 +75,56 @@ public final class ListeningStats {
             boolean effects) {
         if (seconds <= 0) return;
         if (!song.equals(nowSong)) started(song);
-        long millis = when.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+        nowSeconds += seconds;
+        Heard h = new Heard(seconds, when, dimension, picked, effects);
+        if (kept) {
+            add(song, h);
+        } else {
+            held.add(h);
+            if (nowSeconds >= MIN_SECONDS) keep();
+        }
+        if (kept && !counted && nowSeconds >= PLAY_SECONDS) count(songs.get(song));
+    }
+
+    /** The song is long enough heard to record: everything held for it goes in. */
+    private void keep() {
+        kept = true;
+        for (Heard h : held) add(nowSong, h);
+        held.clear();
+    }
+
+    private void add(String song, Heard h) {
+        long millis = h.when().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
         if (since == 0) since = millis;
         Song s = songs.computeIfAbsent(song, k -> new Song());
         if (s.firstPlayed == 0) s.firstPlayed = millis;
         s.lastPlayed = millis;
-        s.seconds += seconds;
-        hours[when.getHour()] += seconds;
-        days.merge(when.toLocalDate().toString(), seconds, Double::sum);
-        if (dimension != null) dimensions.merge(dimension, seconds, Double::sum);
-        if (picked) pickedSeconds += seconds;
-        else gameSeconds += seconds;
-        if (effects) effectSeconds += seconds;
-        nowSeconds += seconds;
-        if (!counted && nowSeconds >= PLAY_SECONDS) count(s);
+        s.seconds += h.seconds();
+        hours[h.when().getHour()] += h.seconds();
+        days.merge(h.when().toLocalDate().toString(), h.seconds(), Double::sum);
+        if (h.dimension() != null) dimensions.merge(h.dimension(), h.seconds(), Double::sum);
+        if (h.picked()) pickedSeconds += h.seconds();
+        else gameSeconds += h.seconds();
+        if (h.effects()) effectSeconds += h.seconds();
     }
 
-    /** The song ended by itself: a play, however short it was. */
-    public synchronized void finished(String song) {
-        if (song.equals(nowSong) && !counted && nowSeconds > 0) count(songs.computeIfAbsent(song, k -> new Song()));
+    /**
+     * The song ended by itself. A play if at least half of its {@code length}
+     * seconds were heard (any of it, for a song shorter than {@link #MIN_SECONDS}).
+     * NaN for an unknown length counts it as a play.
+     */
+    public synchronized void finished(String song, double length) {
+        if (!song.equals(nowSong) || counted || nowSeconds <= 0) return;
+        if (!Double.isNaN(length) && nowSeconds < Math.min(PLAY_SECONDS, length / 2)) return;
+        if (!kept) keep();
+        count(songs.get(song));
     }
 
-    /** Moved on from the song: a skip if it hadn't counted as played yet. */
+    /** Moved on from the song: a skip if it was heard long enough to keep, but not to count as played. */
     public synchronized void skipped(String song) {
-        if (song.equals(nowSong) && !counted && nowSeconds > 0) songs.computeIfAbsent(song, k -> new Song()).skips++;
+        if (song.equals(nowSong) && kept && !counted) songs.get(song).skips++;
         nowSong = null;
+        held.clear();
     }
 
     private void count(Song s) {
@@ -203,6 +242,8 @@ public final class ListeningStats {
     public synchronized void reset() {
         copyFrom(new ListeningStats());
         nowSong = null;
+        kept = false;
+        held.clear();
     }
 
     /** Takes over everything saved in {@code o}. For loading. */
