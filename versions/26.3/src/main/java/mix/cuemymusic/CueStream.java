@@ -17,7 +17,6 @@ import net.minecraft.client.sounds.AudioStream;
 import net.minecraft.client.sounds.FloatSampleSource;
 import net.minecraft.resources.Identifier;
 
-import mix.cuemymusic.api.VoiceOver;
 import mix.cuemymusic.dsp.Equalizer;
 import mix.cuemymusic.dsp.PitchTempoProcessor;
 import mix.cuemymusic.library.MusicLibrary;
@@ -96,8 +95,6 @@ public final class CueStream implements FloatSampleSource {
     private long nextFrame;
     private Automix.Blend blend;
     private boolean handedOver;
-    /** An add-on's voice said over the song starting or blending in, or null. */
-    private VoiceMix voice;
 
     /** Wraps a 16-bit PCM music stream; anything else is returned as is. */
     public static AudioStream wrap(AudioStream stream, Identifier sound, double startSeconds, SoundInstance instance) {
@@ -143,8 +140,6 @@ public final class CueStream implements FloatSampleSource {
         } catch (IOException e) {
             LOG.warn("Couldn't seek {} to {}s", sound, startSeconds, e);
         }
-        // A voice-over waiting for this song is said when it starts from the top, not when it resumes partway.
-        if (song != null && startSeconds < 1) voice = voiceFor(track);
         outside = song != null && CueConfig.INSTANCE.keepOutOfRecordings && !MusicLibrary.isGameMusic(song)
                 && OutsideAudio.begin(id, (int) rate, channels);
         if (CuePlayer.INSTANCE.streamStarted(id, track, startSeconds, instance)) active = this;
@@ -233,10 +228,6 @@ public final class CueStream implements FloatSampleSource {
             double s = Math.sin(Math.PI / 2 * fadedFrames / fadeInFrames);
             for (int c = 0; c < channels; c++) samples[f * channels + c] *= (float) (s * s);
         }
-        if (voice != null) {
-            voice.process(samples, frames, channels);
-            if (voice.done()) voice = null;
-        }
         if (outside) {
             OutsideAudio.play(id, samples, frames * channels);
             for (int i = 0; i < frames * channels; i++) consumer.accept(0);
@@ -317,17 +308,8 @@ public final class CueStream implements FloatSampleSource {
         }
         nextSong = n;
         nextProfile = p;
-        VoiceMix v = voiceFor(n.location());
-        if (v != null) voice = v;
         blend = new Automix.Blend(plan, channels, rate, gain, p.gain(), profile.bpm());
         handedOver = false;
-    }
-
-    /** The voice-over waiting for {@code track}, at this stream's rate, or null. */
-    private VoiceMix voiceFor(Identifier track) {
-        VoiceOver.Clip clip = VoiceOver.take(track);
-        if (clip == null || clip.samples().length == 0) return null;
-        return new VoiceMix(clip.samples(), clip.rate(), rate, clip.volume());
     }
 
     /** Tells the player the song blended in is the one playing now, as of when this audio is heard. */

@@ -13,7 +13,6 @@ All notable changes to Cue My Music are documented here. This project follows [S
 - A **Drop** transition preset: the next song drops in at full volume as the first loses its bass, which then holds for half the transition and fades out in a straight line, over 16 bars. Its parts are also in the drop-downs: **Drop in, then fade** and **Bass swap at the start**. Length goes up to 40 seconds and shows in bars when the tempo is known.
 - Search in a playlist or any other page: the magnifier in its toolbar narrows the songs shown as you type.
 - Drag songs in a playlist to change their order, one at a time or a whole selection.
-- Add-ons can say a voice-over at the start of a song (`VoiceOver`): the music dips under it and comes back up after.
 - **Vanilla music** in Settings turns Cue My Music and its add-ons off, so the game plays its own music as if they weren't there. The player screen then only offers to turn them back on.
 - Music pauses while Minecraft is in the background, and resumes when you come back. **Pause in background** in Settings turns this off.
 

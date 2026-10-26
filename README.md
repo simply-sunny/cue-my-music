@@ -183,8 +183,6 @@ java scripts/MakeIcon.java <26.3 client jar> src/main/resources/assets/cuemymusi
 
 An add-on can give itself a page in the player's library. Implement `mix.cuemymusic.api.CuePanel` and call `CuePanels.register(panel)` from your client initializer. The page draws through a `PanelCanvas`, which has the player's header, headings, text, text fields, buttons, progress bar, and song list, so it matches the rest of the player. A panel can also take over a resource pack's entry (`packId`; that pack's songs then stay out of **All game music** too), add items to the right-click menu of its songs (`songActions`), and decide what Delete does to the songs selected on its page (`deleteAction`). The API is new in 1.1.0 and may still change.
 
-An add-on can also say something over the start of a song, as a radio DJ does: `VoiceOver.before(track, clip)` hands over a mono clip for the song that plays next (`VoiceOver.following()`), and when that song starts from the top, or is blended into, the music dips under the clip and comes back up after it. The clip is mixed into the music, so it pauses with it, follows the music volume, and stays out of recordings when the music does.
-
 ## Troubleshooting
 
 | Problem | Fix |
