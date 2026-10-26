@@ -2,6 +2,12 @@
 
 All notable changes to Cue My Music are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- Queue headings and album names no longer run past their columns in a small window.
+
 ## 1.0.0 — 2026-10-25
 
 First release.
