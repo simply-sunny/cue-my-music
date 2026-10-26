@@ -39,6 +39,8 @@ public final class CueConfig {
     public volatile List<String> liked = List.of();
     /** Pause the player's song while a new dimension loads, rather than carry on. */
     public volatile boolean pauseOnTravel = false;
+    /** Pause the player's song while the game window isn't in front, and play it again when it is. */
+    public volatile boolean pauseOnLostFocus = true;
     /** Playlists made in the player, in the order they were made. Replaced whole, never mutated in place. */
     public volatile List<Playlist> playlists = List.of();
     /** "off", "all" or "one". */
@@ -265,6 +267,7 @@ public final class CueConfig {
         eqPreset = o.eqPreset;
         liked = o.liked;
         pauseOnTravel = o.pauseOnTravel;
+        pauseOnLostFocus = o.pauseOnLostFocus;
         automix = o.automix;
         vanilla = o.vanilla;
         keepOutOfRecordings = o.keepOutOfRecordings;

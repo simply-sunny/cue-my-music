@@ -227,12 +227,12 @@ public final class CuePlayer {
 
     /**
      * Pauses the music while the game window isn't in front, and plays it again
-     * when it is. Follows the game's "pause on lost focus" option, which F3+P
-     * turns on and off: with it off, the music carries on in the background.
+     * when it is, if the Pause in background setting is on. With it off, the
+     * music carries on in the background.
      */
     private void followFocus() {
         Minecraft mc = Minecraft.getInstance();
-        boolean background = !mc.isWindowActive() && mc.options.pauseOnLostFocus;
+        boolean background = !mc.isWindowActive() && CueConfig.INSTANCE.pauseOnLostFocus;
         if (background) {
             if (!focusPaused && ours != null && isPlaying()) {
                 focusPaused = true;
@@ -506,8 +506,8 @@ public final class CuePlayer {
         ClientPacketListener connection = mc.getConnection();
         return connection != null && connection.hasClientLoaded() && mc.level != null && mc.player != null
                 && !(mc.gui.screen() instanceof LevelLoadingScreen)
-                // In the background with pause on lost focus, it waits for the window instead of starting and pausing at once.
-                && (mc.isWindowActive() || !mc.options.pauseOnLostFocus);
+                // In the background with Pause in background on, it waits for the window instead of starting and pausing at once.
+                && (mc.isWindowActive() || !CueConfig.INSTANCE.pauseOnLostFocus);
     }
 
     /** Picks the next song and break again when the game's music or the time between songs changes. */
