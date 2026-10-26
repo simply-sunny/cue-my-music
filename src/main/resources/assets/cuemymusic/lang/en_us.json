@@ -29,7 +29,6 @@
 	"cuemymusic.queue": "Next in queue",
 	"cuemymusic.queue.next_up": "Next up",
 	"cuemymusic.queue.empty": "Hover a song and press + to queue it.",
-	"cuemymusic.queue.more": "+%s more",
 	"cuemymusic.queue.added": "Added to queue",
 	"cuemymusic.queue.from_game": "Then from the game",
 	"cuemymusic.queue.in": "In %s",
