@@ -124,7 +124,7 @@ Logs are in `.minecraft/logs/latest.log`. Include the log and your Minecraft, mo
 - **Sound effects and jukeboxes:** not affected, only background music.
 - **Other music mods:** mods that replace the music stream, such as custom players or radios, may bypass it.
 - **Extreme settings:** pitch and speed sound best within about ±5 semitones and 0.75–1.5×. Beyond that you'll hear some smearing or echo.
-- **Quilt:** expected to work through Fabric compatibility, but not tested in 1.0.0.
+- **Quilt:** supported. Quilt Loader runs the Fabric jar, with Fabric API installed as on Fabric.
 
 ## License
 
