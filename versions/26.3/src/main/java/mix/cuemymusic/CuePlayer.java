@@ -226,8 +226,9 @@ public final class CuePlayer {
         } else if (upcoming() != null) {
             playUpcoming();
         } else {
-            // No music from the game here: carry on through all game music.
-            List<Track> all = MusicLibrary.all();
+            // No music from the game here: carry on through all game music, still leaving out disliked songs.
+            List<Track> all = MusicLibrary.gameMusic().stream()
+                    .filter(t -> t.equals(current) || !CueConfig.INSTANCE.isDisliked(t.location().toString())).toList();
             if (!all.isEmpty()) play(ALL, all, (all.indexOf(current) + 1) % all.size());
         }
     }
