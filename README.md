@@ -51,7 +51,7 @@ All keys are rebindable under **Options → Controls → Key Binds → Cue My Mu
 - **Dislike** (the thumbs down left of the heart on a hovered row, next to the heart under the song that's playing, or right-click) keeps the game from ever picking a song for its own music. Songs an add-on keeps on its own page never play by themselves, so they don't have it. If the game is playing it, it skips to another. You can still play it yourself, and it still plays through a page you started. Disliked songs are greyed with a red thumbs down, and listed on **Disliked Songs**. Click it again to bring one back. Liking a song takes its dislike away, and the other way round.
 - The repeat button next to play cycles through off, repeat all (the page starts over at its end), and repeat one (the song plays again). Next and previous still move on.
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
-- Music pauses while Minecraft is in the background and resumes when you return, following Minecraft's **Pause on lost focus** (F3+P turns it on and off).
+- Music pauses while Minecraft is in the background and resumes when you return. Turn **Pause in background** off in Settings to keep it playing.
 - The magnifier at the right of a page's toolbar opens **Search in this list**, which narrows the songs shown as you type. Esc or clicking away with it empty closes it.
 - Space plays and pauses while the player is open. Click or drag the progress bar to seek.
 - Select several songs: shift-click or shift-drag for a run of songs, Cmd-click (Ctrl-click on Windows and Linux) to add or take out one, shift+↑/↓ to grow or shrink the selection, and Cmd/Ctrl+A for the whole page. Right-click a selected song for one menu for all of them: queue, like, dislike, or add to a playlist. Delete or Backspace takes them off the page you're on: out of a playlist, off Liked Songs, or off Disliked Songs. Esc clears the selection.
@@ -141,6 +141,7 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 | Pitch | 0 | −12 to +12 semitones. 12 is one octave. |
 | Speed | ×1.00 | 0.5 to 2.0, in steps of 0.05. |
 | Pause during travel | Off | On: your song pauses while a new dimension loads, then fades back in from the same spot once the loading screen has gone. Off: it keeps playing, with a brief gap. |
+| Pause in background | On | Your song pauses while Minecraft isn't the window in front, and carries on when you come back. Off: it keeps playing. |
 | Use equalizer | Off | Moving a band or picking a preset turns it on. |
 | EQ bands | 0 dB | 60, 150, 400, 1k, 2.4k, and 15k Hz, ±12 dB each. |
 | Automix add-on songs | On | Shown with an add-on page. Songs on add-on pages play at the same loudness, without silence at their ends, and blend into the next song when one follows another in a page or the queue (see [Mixing](#mixing)). Songs need the same sample rate to blend; otherwise they play one after the other. |

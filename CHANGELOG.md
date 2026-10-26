@@ -14,7 +14,7 @@ All notable changes to Cue My Music are documented here. This project follows [S
 - Search in a playlist or any other page: the magnifier in its toolbar narrows the songs shown as you type.
 - Drag songs in a playlist to change their order, one at a time or a whole selection.
 - **Vanilla music** in Settings turns Cue My Music and its add-ons off, so the game plays its own music as if they weren't there. The player screen then only offers to turn them back on.
-- Music pauses while Minecraft is in the background, and resumes when you come back, if **Pause on lost focus** is on (F3+P toggles it).
+- Music pauses while Minecraft is in the background, and resumes when you come back. **Pause in background** in Settings turns this off.
 
 ### Changed
 

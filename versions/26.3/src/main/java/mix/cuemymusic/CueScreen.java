@@ -2103,6 +2103,8 @@ public final class CueScreen extends Screen {
                 live && heard.tempo() != target.tempo() ? applying : -1);
         y = toggleRow(g, left, y, right, tr("cuemymusic.option.travel"), tr("cuemymusic.option.travel.desc"), cfg.pauseOnTravel,
                 () -> cfg.pauseOnTravel = !cfg.pauseOnTravel);
+        y = toggleRow(g, left, y, right, tr("cuemymusic.option.focus"), tr("cuemymusic.option.focus.desc"), cfg.pauseOnLostFocus,
+                () -> cfg.pauseOnLostFocus = !cfg.pauseOnLostFocus);
         if (!CuePanels.all().isEmpty()) {
             // Only songs on add-on pages are affected, so these only show with an add-on.
             y = toggleRow(g, left, y, right, tr("cuemymusic.option.automix"), tr("cuemymusic.option.automix.desc"), cfg.automix,

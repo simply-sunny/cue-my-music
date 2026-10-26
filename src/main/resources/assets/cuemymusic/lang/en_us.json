@@ -84,6 +84,8 @@
 	"cuemymusic.command.several": "\"%s\" matches more than one song: %s",
 	"cuemymusic.option.travel": "Pause during travel",
 	"cuemymusic.option.travel.desc": "Waits for a new dimension to load.",
+	"cuemymusic.option.focus": "Pause in background",
+	"cuemymusic.option.focus.desc": "Pauses while Minecraft isn't the window in front.",
 	"cuemymusic.option.automix": "Automix add-on songs",
 	"cuemymusic.option.automix.desc": "Blends each into the next, at the same loudness.",
 	"cuemymusic.option.outside": "Keep add-on songs out of recordings",
