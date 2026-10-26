@@ -47,10 +47,11 @@ All keys are rebindable under **Options → Controls → Key Binds → Cue My Mu
 - Click a song to play it. The rest of the page plays after it, in the order shown. The big green button plays the page from the top, or pauses it while it's playing.
 - Hover a song and click the heart to like it, or **+** to add it to the queue. **Add all to queue** adds the whole page.
 - Right-click a song to queue it, like or dislike it, or add it to a playlist.
-- **Dislike** (the ⊘ left of the heart on a hovered row, next to the heart under the song that's playing, or right-click) keeps the game from ever picking a song for its own music. Songs an add-on keeps on its own page never play by themselves, so they don't have it. If the game is playing it, it skips to another. You can still play it yourself, and it still plays through a page you started. Disliked songs are greyed with a red ⊘, and listed on **Disliked Songs**. Click the ⊘ again to bring one back. Liking a song takes its dislike away, and the other way round.
+- **Dislike** (the thumbs down left of the heart on a hovered row, next to the heart under the song that's playing, or right-click) keeps the game from ever picking a song for its own music. Songs an add-on keeps on its own page never play by themselves, so they don't have it. If the game is playing it, it skips to another. You can still play it yourself, and it still plays through a page you started. Disliked songs are greyed with a red thumbs down, and listed on **Disliked Songs**. Click it again to bring one back. Liking a song takes its dislike away, and the other way round.
 - The repeat button next to play cycles through off, repeat all (the page starts over at its end), and repeat one (the song plays again). Next and previous still move on.
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
 - Space plays and pauses while the player is open. Click or drag the progress bar to seek.
+- Select several songs: shift-click or shift-drag for a run of songs, Cmd-click (Ctrl-click on Windows and Linux) to add or take out one, shift+↑/↓ to grow or shrink the selection, and Cmd/Ctrl+A for the whole page. Right-click a selected song for one menu for all of them: queue, like, dislike, or add to a playlist. Delete or Backspace takes them off the page you're on: out of a playlist, off Liked Songs, or off Disliked Songs. Esc clears the selection.
 
 ### Commands
 
@@ -72,6 +73,19 @@ A partial title works if only one song matches, such as `/cmm play subwoofer`.
 ### Playlists
 
 Click **New playlist** in the library, then right-click songs anywhere and pick **Add to** the playlist, or **Add to new playlist** to make one with that song. On a playlist's page, click its name or **Rename** to rename it, and click **Delete** twice to delete it. Right-click a song there to remove it. Playlists are saved with your settings.
+
+### Your stats
+
+**Your Stats**, above Settings in the library, shows what you've listened to:
+
+- Time listened, plays, songs heard, and your streak of days in a row.
+- Top songs (click one to play from there) and top artists.
+- A listening clock: a petal for each hour of the day, longer the more you listen then.
+- A calendar of the last few months, greener on days you listened more. Hover a day for its time.
+- Where you listen, as a bar of Overworld, Nether and End blocks, and how much you picked versus the game.
+- The song you skip most, with a button to dislike it.
+
+A song counts as a play after 30 seconds, or when it ends sooner. Moving on before that is a skip. Stats are kept in `config/cuemymusic-stats.json`, only on your computer. **Reset stats** at the bottom of the page (click twice) clears them.
 
 ### The queue
 
@@ -144,7 +158,7 @@ java scripts/MakeIcon.java <26.3 client jar> src/main/resources/assets/cuemymusi
 
 ### Add-ons
 
-An add-on can give itself a page in the player's library. Implement `mix.cuemymusic.api.CuePanel` and call `CuePanels.register(panel)` from your client initializer. The page draws through a `PanelCanvas`, which has the player's header, headings, text, text fields, buttons, progress bar, and song list, so it matches the rest of the player. A panel can also take over a resource pack's entry (`packId`; that pack's songs then stay out of **All game music** too) and add items to the right-click menu of its songs (`songActions`). The API is new in 1.1.0 and may still change.
+An add-on can give itself a page in the player's library. Implement `mix.cuemymusic.api.CuePanel` and call `CuePanels.register(panel)` from your client initializer. The page draws through a `PanelCanvas`, which has the player's header, headings, text, text fields, buttons, progress bar, and song list, so it matches the rest of the player. A panel can also take over a resource pack's entry (`packId`; that pack's songs then stay out of **All game music** too) and add items to the right-click menu of its songs (`songActions`), and decide what Delete does to the songs selected on its page (`deleteAction`). The API is new in 1.1.0 and may still change.
 
 ## Troubleshooting
 
@@ -156,6 +170,7 @@ An add-on can give itself a page in the player's library. Implement `mix.cuemymu
 | A change doesn't apply | Wait for the ring next to it to go. Already-queued audio plays out first. |
 | Seek is slow on a long song | Seeking decodes up to that point. Far into a 6-minute song can take a moment. |
 | A pack's songs are missing | The pack points at files that don't exist in this version. Vanilla can't play them either. |
+| Music sounds hollow with AirPods or other spatial audio | Fixed: stereo songs go straight to the speakers. If music still sounds off, turn off **Directional Audio** in **Options → Music & Sounds**. |
 | Jukebox isn't affected | Expected. Only background music is. |
 | Broken config | Delete `config/cuemymusic.json` and relaunch. |
 

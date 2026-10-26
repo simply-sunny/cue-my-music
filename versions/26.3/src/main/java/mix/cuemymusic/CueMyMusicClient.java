@@ -8,6 +8,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
@@ -39,6 +40,8 @@ public final class CueMyMusicClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         CueConfig.INSTANCE.load();
+        StatsFile.load();
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> StatsFile.save());
 
         KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MODID, "keys"));
         openPlayer = key("key.cuemymusic.open_player", InputConstants.UNKNOWN.getValue(), category);

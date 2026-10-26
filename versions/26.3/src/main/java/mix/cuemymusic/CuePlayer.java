@@ -146,8 +146,10 @@ public final class CuePlayer {
     public void tick() {
         long now = System.nanoTime();
         boolean finished;
+        double heardSeconds = 0;
         synchronized (this) {
             if (playing && !paused) {
+                heardSeconds = Math.min(1, (now - lastNanos) / 1e9);
                 // The speed being heard: a change takes a few seconds to reach the speakers.
                 CueStream.Params heard = CueStream.heard();
                 position += (now - lastNanos) / 1e9 * (heard != null ? heard.tempo() : CueConfig.INSTANCE.tempo());
@@ -158,8 +160,18 @@ public final class CuePlayer {
             finished = ended;
             ended = false;
         }
+        Track heardTrack = current;
+        if (heardSeconds > 0 && heardTrack != null) {
+            Minecraft mc = Minecraft.getInstance();
+            CueConfig cfg = CueConfig.INSTANCE;
+            boolean effects = cfg.enabled && (cfg.pitchSemitones != 0 || cfg.speed != 1.0 || cfg.eqEnabled);
+            ListeningStats.INSTANCE.listened(heardTrack.location().toString(), heardSeconds, java.time.LocalDateTime.now(),
+                    mc.level != null ? mc.level.dimension().identifier().toString() : null, picked, effects);
+            StatsFile.saveNowAndThen();
+        }
         plan();
         if (finished) {
+            if (current != null) ListeningStats.INSTANCE.finished(current.location().toString());
             ours = null;
             order.setRepeat(CueConfig.INSTANCE.repeatMode());
             Track n = order.finished(current);
@@ -457,6 +469,12 @@ public final class CuePlayer {
     }
 
     private SoundEngine.PlayResult start(Track track, TrackSoundInstance o, boolean picked) {
+        // For the stats: moving on from a song is a skip if it hadn't played long; carrying on with it (after travel) isn't.
+        boolean resuming = track.equals(current) && o.startSeconds() > 0;
+        if (!resuming) {
+            if (current != null) ListeningStats.INSTANCE.skipped(current.location().toString());
+            ListeningStats.INSTANCE.started(track.location().toString());
+        }
         // The new track takes the hold before anything is stopped, so no other music can slip in between.
         TrackSoundInstance old = ours;
         Identifier event = o.getIdentifier();

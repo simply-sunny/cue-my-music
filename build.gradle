@@ -73,7 +73,7 @@ subprojects {
 // Headless checks run the real DSP code; nothing from Minecraft is needed.
 def regressionProject = subprojects.first()
 def compileRegressionTests = regressionProject.tasks.register('compileRegressionTests', JavaCompile) {
-	source rootProject.file('src/common/java/mix/cuemymusic/dsp'), rootProject.file('src/common/java/mix/cuemymusic/library/PackNames.java'), rootProject.file('src/common/java/mix/cuemymusic/PlayOrder.java'), rootProject.file('tests/java')
+	source rootProject.file('src/common/java/mix/cuemymusic/dsp'), rootProject.file('src/common/java/mix/cuemymusic/library/PackNames.java'), rootProject.file('src/common/java/mix/cuemymusic/PlayOrder.java'), rootProject.file('src/common/java/mix/cuemymusic/ListeningStats.java'), rootProject.file('tests/java')
 	classpath = files()
 	destinationDirectory = rootProject.layout.buildDirectory.dir('classes/regression')
 	options.release = minecraftTargets[regressionProject.name].java
@@ -91,16 +91,22 @@ def playOrderTest = regressionProject.tasks.register('playOrderTest', JavaExec) 
 	mainClass = 'mix.cuemymusic.PlayOrderTest'
 }
 
+def statsTest = regressionProject.tasks.register('statsTest', JavaExec) {
+	dependsOn compileRegressionTests
+	classpath = files(compileRegressionTests.flatMap { it.destinationDirectory })
+	mainClass = 'mix.cuemymusic.ListeningStatsTest'
+}
+
 tasks.register('test') {
-	dependsOn regressionTest, playOrderTest
+	dependsOn regressionTest, playOrderTest, statsTest
 }
 
 tasks.named('check') {
-	dependsOn regressionTest, playOrderTest
+	dependsOn regressionTest, playOrderTest, statsTest
 }
 
 tasks.register('buildAll', Sync) {
-	dependsOn regressionTest, playOrderTest
+	dependsOn regressionTest, playOrderTest, statsTest
 	group = 'build'
 	description = 'Builds every supported Minecraft version and collects the release JARs.'
 

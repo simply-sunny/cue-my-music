@@ -36,6 +36,14 @@ public interface CuePanel {
         return List.of();
     }
 
+    /**
+     * What Delete does to the songs selected in this page's track list, and the
+     * menu item for it, or null if nothing. One song is a list of one.
+     */
+    default Action deleteAction(List<Track> tracks) {
+        return null;
+    }
+
     record Action(String label, Runnable run) {
     }
 }
