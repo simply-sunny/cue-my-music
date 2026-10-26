@@ -110,14 +110,17 @@ def main():
     else:
         print(f"project {project['id']} exists, status {project['status']}")
 
+    # Draft versions aren't listed by the API, so the ones already uploaded are the IDs recorded in MODRINTH.md.
     existing = {v["name"] for v in request("GET", f"/project/{project['id']}/version") or []}
+    recorded = dict(re.findall(r"^\| `([^`]+\.jar)` \| `([A-Za-z0-9]{8})` \|$", (ROOT / "MODRINTH.md").read_text(), re.M))
     notes = changelog()
     for suffix, (label, game_versions) in JARS.items():
         name = f"Cue My Music {VERSION} ({label})"
-        if name in existing:
+        jar = ROOT / "build" / "libs" / f"cue-my-music-{suffix}-{VERSION}.jar"
+        draft = recorded.get(jar.name)
+        if name in existing or (draft and request("GET", f"/version/{draft}")):
             print(f"{name} already uploaded")
             continue
-        jar = ROOT / "build" / "libs" / f"cue-my-music-{suffix}-{VERSION}.jar"
         if not jar.is_file():
             sys.exit(f"missing {jar}, run ./gradlew buildAll")
         data = {
@@ -142,7 +145,7 @@ def main():
         # Client or server side is set per version, and only through v3.
         request("PATCH", f"/version/{version['id']}", json.dumps({"environment": "client_only"}).encode(),
                 "application/json", api=API.replace("/v2", "/v3"))
-        print(f"{jar.name} -> draft version {version['id']}")
+        print(f"{jar.name} -> draft version {version['id']}; add it to the version table in MODRINTH.md")
 
 
 if __name__ == "__main__":
