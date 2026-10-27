@@ -2,7 +2,7 @@
 
 All notable changes to Cue My Music are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.0] - 2026-10-27
 
 ### Added
 
