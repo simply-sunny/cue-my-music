@@ -46,3 +46,9 @@ client_*.log
 
 .claude/
 handoff-*.md
+
+# local notes
+
+plan.md
+plan-*.md
+HANDOFF.md
