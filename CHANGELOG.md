@@ -2,7 +2,7 @@
 
 All notable changes to Cue My Music are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## [Unreleased]
 
 ### Added
 
@@ -15,6 +15,7 @@ All notable changes to Cue My Music are documented here. This project follows [S
 - Search in a playlist or any other page: the magnifier in its toolbar narrows the songs shown as you type.
 - Drag songs in a playlist to change their order, one at a time or a whole selection.
 - **Vanilla music** in Settings turns Cue My Music and its add-ons off, so the game plays its own music as if they weren't there. The player screen then only offers to turn them back on.
+- A short **Crossfade** between songs played through the player, 4 seconds by default: each song fades into the next one in a page or the queue, game songs too. Songs automix blends keep their own transition. **Crossfade** in Settings sets it from 1 to 12 seconds, or Off.
 - A volume slider in the bottom bar, next to pitch and speed. It's the game's Music volume; click the speaker to mute and unmute.
 - Music pauses while Minecraft is in the background, and resumes when you come back. **Pause in background** in Settings turns this off.
 
@@ -30,7 +31,7 @@ All notable changes to Cue My Music are documented here. This project follows [S
 - With **Pause during travel** on, a song could start again for a moment while the new dimension was still loading. It now waits until the loading screen has gone, then fades in.
 - Automix crossfades crackled: the two songs' decoded blocks were mixed at different lengths, with silence filling the gap.
 
-## 1.2.0 — 2026-10-26
+## [1.2.0] - 2026-10-26
 
 ### Added
 
@@ -47,7 +48,7 @@ All notable changes to Cue My Music are documented here. This project follows [S
 
 - Music sounded hollow with spatial audio on, such as Directional Audio with AirPods. Stereo songs now go straight to the left and right speakers.
 
-## 1.1.0 — 2026-10-26
+## [1.1.0] - 2026-10-26
 
 ### Added
 
@@ -65,7 +66,7 @@ All notable changes to Cue My Music are documented here. This project follows [S
 - Songs a resource pack adds or removes show up after a reload without reopening the player.
 - Queue headings and album names no longer run past their columns in a small window.
 
-## 1.0.0 — 2026-10-25
+## [1.0.0] - 2026-10-25
 
 First release.
 

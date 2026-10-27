@@ -32,9 +32,11 @@ import mix.cuemymusic.library.Track;
  * change starts at, so the player can show when it will be heard.
  *
  * <p>Songs on an add-on's page can be automixed: brought to the same
- * loudness, and blended into the next one with a crossfade, which this
- * stream then carries on playing. They can also be played outside the game
- * ({@link OutsideAudio}), so the game itself plays silence in their place.
+ * loudness, and blended into the next one with a transition, which this
+ * stream then carries on playing. Any other song played through the player
+ * crossfades into the next the same way, over a few seconds. Songs on an
+ * add-on's page can also be played outside the game ({@link OutsideAudio}),
+ * so the game itself plays silence in their place.
  */
 public final class CueStream implements FloatSampleSource {
     private static final Logger LOG = LoggerFactory.getLogger("cuemymusic");
@@ -93,6 +95,8 @@ public final class CueStream implements FloatSampleSource {
     private Track nextSong;
     private Automix.Profile nextProfile;
     private long nextFrame;
+    /** A next song that couldn't be opened or doesn't match this stream's format, so it isn't tried again. */
+    private Track noBlend;
     private Automix.Blend blend;
     private boolean handedOver;
 
@@ -140,8 +144,7 @@ public final class CueStream implements FloatSampleSource {
         } catch (IOException e) {
             LOG.warn("Couldn't seek {} to {}s", sound, startSeconds, e);
         }
-        outside = song != null && CueConfig.INSTANCE.keepOutOfRecordings && !MusicLibrary.isGameMusic(song)
-                && OutsideAudio.begin(id, (int) rate, channels);
+        outside = playsOutside(song) && OutsideAudio.begin(id, (int) rate, channels);
         if (CuePlayer.INSTANCE.streamStarted(id, track, startSeconds, instance)) active = this;
     }
 
@@ -244,7 +247,7 @@ public final class CueStream implements FloatSampleSource {
      * transition says (see {@link Automix.Blend}).
      */
     private float[] pull() throws IOException {
-        if (next == null && profile != null) {
+        if (next == null) {
             long start = startOfFade();
             if (songFrame >= start) beginFade();
             else if (start - songFrame < CHUNK_FRAMES) {
@@ -277,13 +280,31 @@ public final class CueStream implements FloatSampleSource {
         return chunk;
     }
 
-    /** The plan for blending into the song after this one, or null if there's nothing to blend into. */
+    /** True if {@code track} plays outside the game, when a stream starts with it. */
+    private static boolean playsOutside(Track track) {
+        return track != null && CueConfig.INSTANCE.keepOutOfRecordings && !MusicLibrary.isGameMusic(track);
+    }
+
+    /**
+     * The plan for blending into the song after this one, or null if there's
+     * nothing to blend into: its transition when both songs are automixed,
+     * otherwise a plain crossfade. Songs that play in different places (in the
+     * game, or outside it) don't blend, since the next one would play where
+     * this one does.
+     */
     private Automix.Plan nextPlan() {
         Track n = CuePlayer.INSTANCE.automixNext();
-        if (n == null || n.equals(song) || !AutomixProfiles.applies(n)) return null;
-        Automix.Profile p = AutomixProfiles.get(n);
-        if (!profile.blendsWith(p)) return null;
-        return Automix.plan(profile, p, CueConfig.INSTANCE.transition(song.location().toString(), n.location().toString()));
+        if (song == null || n == null || n.equals(song) || n.equals(noBlend) || playsOutside(n) != playsOutside(song)) return null;
+        Automix.Profile p = AutomixProfiles.applies(n) ? AutomixProfiles.get(n) : null;
+        if (profile != null && profile.blendsWith(p)) {
+            return Automix.plan(profile, p, CueConfig.INSTANCE.transition(song.location().toString(), n.location().toString()));
+        }
+        int seconds = CueConfig.INSTANCE.crossfadeSeconds;
+        if (seconds <= 0) return null;
+        long start = profile != null ? profile.start() : 0;
+        long end = profile != null ? profile.end() : Double.isNaN(song.seconds()) ? -1 : Math.round(song.seconds() * rate);
+        if (end <= start) return null;
+        return Automix.crossfade(rate, start, end, p != null ? p.start() : 0, seconds);
     }
 
     /** The frame of the playing song where the transition into the next starts, or never. */
@@ -296,19 +317,27 @@ public final class CueStream implements FloatSampleSource {
         Automix.Plan plan = nextPlan();
         if (plan == null) return;
         Track n = CuePlayer.INSTANCE.automixNext();
-        Automix.Profile p = AutomixProfiles.get(n);
+        Automix.Profile p = AutomixProfiles.applies(n) ? AutomixProfiles.get(n) : null;
         try {
-            next = new Reader(AutomixProfiles.open(n.location()));
+            FloatSampleSource s = AutomixProfiles.open(n.location());
+            AudioFormat f = s.getFormat();
+            // Both songs are read frame for frame, so they must match.
+            if (f.getSampleRate() != rate || f.getChannels() != channels) {
+                s.close();
+                noBlend = n;
+                return;
+            }
+            next = new Reader(s);
             nextFrame = next.skip(plan.enterAt());
         } catch (IOException | RuntimeException e) {
-            LOG.warn("Couldn't open {} to automix", n.location(), e);
+            LOG.warn("Couldn't open {} to blend into", n.location(), e);
             next = null;
-            profile = null;
+            noBlend = n;
             return;
         }
         nextSong = n;
         nextProfile = p;
-        blend = new Automix.Blend(plan, channels, rate, gain, p.gain(), profile.bpm());
+        blend = new Automix.Blend(plan, channels, rate, gain, p != null ? p.gain() : 1, profile != null ? profile.bpm() : 0);
         handedOver = false;
     }
 
@@ -327,7 +356,7 @@ public final class CueStream implements FloatSampleSource {
         source = next;
         song = nextSong;
         profile = nextProfile;
-        gain = profile.gain();
+        gain = profile != null ? profile.gain() : 1;
         songFrame = nextFrame;
         next = null;
         nextSong = null;

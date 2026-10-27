@@ -71,6 +71,21 @@ public final class AutomixTest {
             same(Automix.plan(song(100, 100_000, 90), song(100, 100_000, 100), Automix.Transition.AUTO).fadeFrames(), 1067L);
             same(Automix.plan(none, song(100, 1_000, 0), Automix.Transition.AUTO).fadeFrames(), 250L);
         });
+        run("a crossfade is an equal-power fade over the song's last seconds, never over a quarter of it", () -> {
+            Automix.Plan p = Automix.crossfade(100, 0, 10_000, 0, 4);
+            same(p.preset(), Automix.Preset.FADE);
+            same(p.shape().volume(), Automix.Volume.SMOOTH);
+            same(p.fadeFrames(), 400L);
+            same(p.fadeStart(), 9_600L);
+            same(p.enterAt(), 0L);
+            // Past the silence at either end, and into the next song where its sound starts.
+            Automix.Plan q = Automix.crossfade(100, 500, 9_000, 120, 4);
+            same(q.fadeStart(), 8_600L);
+            same(q.enterAt(), 120L);
+            Automix.Plan shortSong = Automix.crossfade(100, 0, 1_000, 0, 4);
+            same(shortSong.fadeFrames(), 250L);
+            same(shortSong.fadeStart(), 750L);
+        });
         run("auto start lines up both songs' bars", () -> {
             Automix.Profile a = new Automix.Profile(100, 2, 100_000, 0, 100_000, .1, .5, 120, "", new float[0], new float[0], new float[0], 0.3);
             Automix.Profile b = new Automix.Profile(100, 2, 100_000, 0, 100_000, .1, .5, 120, "", new float[0], new float[0], new float[0], 0.5);

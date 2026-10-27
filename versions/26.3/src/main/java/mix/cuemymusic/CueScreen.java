@@ -2243,6 +2243,10 @@ public final class CueScreen extends Screen {
                 () -> cfg.pauseOnTravel = !cfg.pauseOnTravel);
         y = toggleRow(g, left, y, right, tr("cuemymusic.option.focus"), tr("cuemymusic.option.focus.desc"), cfg.pauseOnLostFocus,
                 () -> cfg.pauseOnLostFocus = !cfg.pauseOnLostFocus);
+        y = sliderRow(g, left, y, right, tr("cuemymusic.option.crossfade"),
+                cfg.crossfadeSeconds == 0 ? tr("cuemymusic.option.crossfade.off")
+                        : tr("cuemymusic.option.crossfade.value", cfg.crossfadeSeconds),
+                cfg.crossfadeSeconds / 12.0, f -> cfg.crossfadeSeconds = (int) Math.round(f * 12), 4 / 12.0, -1);
         if (!CuePanels.all().isEmpty()) {
             // Only songs on add-on pages are affected, so these only show with an add-on.
             y = toggleRow(g, left, y, right, tr("cuemymusic.option.automix"), tr("cuemymusic.option.automix.desc"), cfg.automix,
