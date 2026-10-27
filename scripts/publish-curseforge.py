@@ -52,7 +52,7 @@ def version_ids():
 
 def changelog():
     text = (ROOT / "CHANGELOG.md").read_text()
-    match = re.search(rf"^## {re.escape(VERSION)}\b.*?\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    match = re.search(rf"^## (?:\[{re.escape(VERSION)}\]|{re.escape(VERSION)}\b)[^\n]*\n(.*?)(?=^## |\Z)", text, re.S | re.M)
     return match.group(1).strip()
 
 
