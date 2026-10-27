@@ -343,6 +343,17 @@ public final class Automix {
         return new Plan(preset, shape, fadeStart, fadeFrames, enterAt);
     }
 
+    /**
+     * A plain crossfade, for songs that aren't automixed: an equal-power fade
+     * over the last {@code seconds} of a song whose sound runs from frame
+     * {@code start} to {@code end}, into the next song at {@code enterAt}.
+     * Never longer than a quarter of the song.
+     */
+    public static Plan crossfade(float rate, long start, long end, long enterAt, double seconds) {
+        long fadeFrames = Math.clamp(Math.round(seconds * rate), 1, Math.max(1, (end - start) / 4));
+        return new Plan(Preset.FADE, shape(Preset.FADE), Math.max(start, end - fadeFrames), fadeFrames, enterAt);
+    }
+
     // Curves, from t = 0 at the start of the transition to 1 at its end.
 
     public static double fadeOut(double t) {

@@ -256,19 +256,32 @@ public final class CuePlayer {
         handover = new Handover(stream, track, seconds, atNanos);
     }
 
-    /** What plays after the current song, worked out ahead so the stream can start blending into it. */
+    /**
+     * What plays after the current song, worked out ahead so the stream can
+     * start blending into it: automixed, or crossfaded when automix doesn't
+     * apply to both songs.
+     */
     private void planAutomix() {
         Track c = current, n = null;
-        if (c != null && ours != null && AutomixProfiles.applies(c) && CueConfig.INSTANCE.repeatMode() != PlayOrder.Repeat.ONE) {
+        if (c != null && ours != null && CueConfig.INSTANCE.repeatMode() != PlayOrder.Repeat.ONE) {
             order.setRepeat(CueConfig.INSTANCE.repeatMode());
             List<Track> queued = order.queue();
             n = queued.isEmpty() ? order.listNext() : queued.getFirst();
-            if (!AutomixProfiles.applies(n)) n = null;
+            boolean automixed = AutomixProfiles.applies(c) && AutomixProfiles.applies(n);
+            if (n != null && !automixed && CueConfig.INSTANCE.crossfadeSeconds <= 0) n = null;
+            // The stream keeps the first song's sounds.json volume, so songs at another volume don't blend into it.
+            if (n != null && fileVolume(n) != fileVolume(c)) n = null;
             // Ready before the fade is due.
-            AutomixProfiles.get(c);
-            if (n != null) AutomixProfiles.get(n);
+            if (AutomixProfiles.applies(c)) AutomixProfiles.get(c);
+            if (AutomixProfiles.applies(n)) AutomixProfiles.get(n);
         }
         automixNext = n;
+    }
+
+    /** The volume sounds.json plays {@code track} at, as a share of full volume. */
+    private float fileVolume(Track track) {
+        Sound s = MusicLibrary.sound(track.location());
+        return s == null ? 1 : s.getVolume().sample(random);
     }
 
     /** The blended-in song is heard now: it becomes the current song, as if the last one had ended. */

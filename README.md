@@ -142,6 +142,7 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 | Speed | ×1.00 | 0.5 to 2.0, in steps of 0.05. |
 | Pause during travel | Off | On: your song pauses while a new dimension loads, then fades back in from the same spot once the loading screen has gone. Off: it keeps playing, with a brief gap. |
 | Pause in background | On | Your song pauses while Minecraft isn't the window in front, and carries on when you come back. Off: it keeps playing. |
+| Crossfade | 4 s | Off, or 1 to 12 seconds. Each song fades into the next one when it follows in a page or the queue, game songs too, like the crossfade in streaming apps. Songs automix blends use their own transition instead. Songs only crossfade into songs at the same sounds.json volume and sample rate, that play in the same place (in the game, or outside it for add-on songs kept out of recordings); otherwise they play one after the other. |
 | Use equalizer | Off | Moving a band or picking a preset turns it on. |
 | EQ bands | 0 dB | 60, 150, 400, 1k, 2.4k, and 15k Hz, ±12 dB each. |
 | Automix add-on songs | On | Shown with an add-on page. Songs on add-on pages play at the same loudness, without silence at their ends, and blend into the next song when one follows another in a page or the queue (see [Mixing](#mixing)). Songs need the same sample rate to blend; otherwise they play one after the other. |

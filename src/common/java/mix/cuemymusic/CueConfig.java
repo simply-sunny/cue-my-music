@@ -59,6 +59,8 @@ public final class CueConfig {
     public volatile boolean vanilla = false;
     /** Blend songs on add-on pages into each other, at matched loudness. */
     public volatile boolean automix = true;
+    /** Seconds each song fades into the next one played through the player, where automix doesn't blend them; 0 for none. */
+    public volatile int crossfadeSeconds = 4;
     /** Play songs on add-on pages from a separate process, so recordings of the game's audio leave them out. */
     public volatile boolean keepOutOfRecordings = true;
     /** Transitions set in the mix editor, by "first song>second song". Replaced whole, never mutated in place. */
@@ -218,6 +220,7 @@ public final class CueConfig {
     public void clamp() {
         pitchSemitones = Math.clamp(pitchSemitones, -12, 12);
         speed = Math.clamp(Double.isFinite(speed) ? Math.round(speed * 100) / 100.0 : 1, 0.5, 2.0);
+        crossfadeSeconds = Math.clamp(crossfadeSeconds, 0, 12);
         double[] g = new double[Equalizer.FREQUENCIES.length];
         for (int i = 0; i < g.length; i++) {
             double v = eqGains != null && i < eqGains.length && Double.isFinite(eqGains[i]) ? eqGains[i] : 0;
@@ -284,6 +287,7 @@ public final class CueConfig {
         pauseOnTravel = o.pauseOnTravel;
         pauseOnLostFocus = o.pauseOnLostFocus;
         automix = o.automix;
+        crossfadeSeconds = o.crossfadeSeconds;
         vanilla = o.vanilla;
         keepOutOfRecordings = o.keepOutOfRecordings;
         repeat = o.repeat;
