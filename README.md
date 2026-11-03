@@ -43,16 +43,17 @@ Jars are named `cue-my-music-<jar>-<version>.jar`.
 All keys are rebindable under **Options → Controls → Key Binds → Cue My Music**. They work in game and on any screen without a text box in focus. On a Mac, F7 to F9 are media keys: hold **fn**, or turn on **System Settings → Keyboard → Keyboard Shortcuts → Function Keys → Use F1, F2, etc. keys as standard function keys**.
 
 - Open the player from the music button on the title screen or pause menu, from **Mod Menu → Cue My Music**, or with **Open player**. The same key closes it.
-- The library on the left has **All game music**, **Liked Songs**, **Disliked Songs** once you have any, and pages added by add-ons. Below them are three sections: **Artists**, **Packs** (one page per resource pack that adds music), and **Your playlists**. Click a section's heading to fold it away; it shows its count while folded. Scroll the library when it's longer than the window. **Settings** stays at the bottom.
-- **Search**: click the magnifying glass next to **Library**, or press Cmd+F (Ctrl+F on Windows and Linux) anywhere in the player. Type part of a song's title, artist or album, in any order and without accents. Matching artists show as chips that open their page; matching songs list below, titles that start with what you typed first. Enter plays the results from the top.
+- The library on the left has **All game music**, **Liked Songs** and **Disliked Songs** once you have any, **Radio**, and pages added by add-ons. Below them are three sections: **Artists**, **Packs** (one page per resource pack that adds music), and **Your playlists**. Click a section's heading to fold it away; it shows its count while folded. Right-click a list to play it, queue it, start a radio from it, or rename or delete one of your playlists. Scroll the library when it's longer than the window. **Settings** stays at the bottom. The player opens on the page you left it on.
+- **Search**: click the magnifying glass next to **Library**, or press Cmd+Shift+L (Ctrl+Shift+L on Windows and Linux) anywhere in the player. Type part of a song's title, artist or album, in any order and without accents. Matching artists show as chips that open their page; matching songs list below, titles that start with what you typed first. Enter plays the results from the top.
 - Click a song to play it. The rest of the page plays after it, in the order shown. The big green button plays the page from the top, or pauses it while it's playing.
 - Hover a song and click the heart to like it, or **+** to add it to the queue. **Add all to queue** adds the whole page.
-- Right-click a song to add it to a playlist, Liked Songs or the queue, dislike it, or go to its artist. **Add to playlist** opens a list of your playlists beside the menu. Start typing to find one, or pick **New playlist**.
+- **Radio** plays without end: songs picked from what you like and play through, leaning away from ones you skip, and never a disliked song. Pick whether it plays the game's music, add-on songs, or both. **Go to song radio** on a song's right-click menu starts one from that song.
+- Right-click a song to add it to a playlist, Liked Songs or the queue, dislike it, start its radio, or go to its artist. Songs from an add-on page keep that add-on's actions, such as delete, wherever they show, search included. **Add to playlist** opens a list of your playlists beside the menu. Start typing to find one, or pick **New playlist**.
 - **Dislike** (the thumbs down left of the heart on a hovered row, next to the heart under the song that's playing, or right-click) keeps the game from ever picking a song for its own music. Songs an add-on keeps on its own page never play by themselves, so they don't have it. If the game is playing it, it skips to another. You can still play it yourself, and it still plays through a page you started. Disliked songs are greyed with a red thumbs down, and listed on **Disliked Songs**. Click it again to bring one back. Liking a song takes its dislike away, and the other way round.
 - The repeat button next to play cycles through off, repeat all (the page starts over at its end), and repeat one (the song plays again). Next and previous still move on.
 - Click **Title**, **Album**, or the clock to sort. Each click goes up, down, then back to the original order.
 - Music pauses while Minecraft is in the background and resumes when you return. Turn **Pause in background** off in Settings to keep it playing.
-- The magnifier at the right of a page's toolbar opens **Search in this list**, which narrows the songs shown as you type. Esc or clicking away with it empty closes it.
+- The magnifier at the right of a page's toolbar, or Cmd+F (Ctrl+F), opens **Search in this list**, which narrows the songs shown as you type. Esc or clicking away with it empty closes it.
 - Space plays and pauses while the player is open. Click or drag the progress bar to seek.
 - Select several songs: shift-click or shift-drag for a run of songs, Cmd-click (Ctrl-click on Windows and Linux) to add or take out one, shift+↑/↓ to grow or shrink the selection, and Cmd/Ctrl+A for the whole page. Right-click a selected song for one menu for all of them: queue, like, dislike, or add to a playlist. Delete or Backspace takes them off the page you're on: out of a playlist, off Liked Songs, or off Disliked Songs. Esc clears the selection.
 
@@ -128,7 +129,7 @@ A pack can name its songs itself with `assets/<namespace>/cuemymusic.json`. Keys
 }
 ```
 
-The player lists every sound event whose name starts with `music.`. Put songs in one the game never plays, such as `mypack:music.extra`, and they play from the player only.
+The player lists every sound event whose name starts with `music.`. Every song a pack adds is an add-on song: **Add-ons** mode plays them in place of the game's music, and **Vanilla + FX** leaves them out, even ones a pack puts in the game's own events.
 
 ## Configure
 
@@ -140,7 +141,7 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 | Effects | On | Turns pitch, speed, and EQ off together. |
 | Pitch | 0 | −12 to +12 semitones. 12 is one octave. |
 | Speed | ×1.00 | 0.5 to 2.0, in steps of 0.05. |
-| Pause during travel | Off | On: your song pauses while a new dimension loads, then fades back in from the same spot once the loading screen has gone. Off: it keeps playing, with a brief gap. |
+| Pause during travel | Off | On: your song fades out as a portal takes you (or over half a second without one), waits while the new dimension loads, then fades back in from the same spot once the loading screen has gone. Off: it keeps playing straight through, without a break. Joining or leaving a world never stops it. |
 | Pause in background | On | Your song pauses while Minecraft isn't the window in front, and carries on when you come back. Off: it keeps playing. |
 | Crossfade | 4 s | Off, or 1 to 12 seconds. Each song fades into the next one when it follows in a page or the queue, game songs too, like the crossfade in streaming apps. Songs automix blends use their own transition instead. Songs only crossfade into songs at the same sounds.json volume and sample rate, that play in the same place (in the game, or outside it for add-on songs kept out of recordings); otherwise they play one after the other. |
 | Use equalizer | Off | Moving a band or picking a preset turns it on. |

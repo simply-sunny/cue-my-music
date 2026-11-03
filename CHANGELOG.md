@@ -2,6 +2,97 @@
 
 All notable changes to Cue My Music are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Beatmatching** in automix: the next song is sped up or slowed down by up to 8%, without changing its pitch, so its beats land on the first song's, then glides back to its own speed over 8 seconds once the transition is over. On by default; each transition has a switch for it.
+- **Radio**: endless music picked from what you like and play through, leaning away from songs you skip, from the game's music, add-on songs, or both. **Go to song radio** on a song's menu starts one from that song.
+- **Skip with transition**: Next blends into the next song from the coming bar, with the same automix transition (or crossfade) it would get at the end, beats lined up, instead of cutting. A skip still counts as a skip in your stats. Pressing Next again during it cuts straight on; it can be turned off in Settings.
+- **Shuffle**, in the bottom bar and beside each list's play button, as on Spotify: the song picked plays first, then the rest of the list in a random order. With shuffle on, the big play button starts from a random song.
+- **Autoplay**: when a list ends with nothing queued, songs like its last one carry on, picked as Radio picks them. On by default; turn it off in Settings to hand back to the game's music.
+- The queue has **Clear**, and under it **Next from** the list playing; click a song there to skip to it.
+- A heart in the bottom bar likes the song playing.
+- **Home**, as on Spotify: a greeting, tiles for the lists you played lately, then your top songs, your top artists and radios made from your top songs. The house beside search opens it, and the player starts there the first time.
+- **Modes**, at the top of Settings: **Vanilla** (Cue My Music off), **Vanilla + FX** (the game's music with your effects) and **Add-ons** (your packs and downloads on the game's schedule). The library shows each mode's own music; a sort orders it by Recents, Alphabetical or the default order.
+- A **Switch mode** key (set it in Controls): flips between Vanilla + FX and Add-ons, or with **Mode key goes round all three** on in Settings, through Vanilla too.
+- **Time between songs** (Vanilla + FX): the game's Frequency, or a set time from none to 20 minutes. At 5 seconds or less, or on the game's Constant, the game's songs mix into each other and Next skips with a transition.
+- **Track pools** in the library: each place's music (the title screen, survival, creative, underwater, the End, every biome) as a list you can change. Take songs out so the game doesn't play them there, or put any song in with **Add to track pool** on its menu; **Reset** puts a pool back as the game has it.
+- Under a playlist's songs, **Let's find something for your playlist** searches the library, with **Add** on each song found.
+- Spotify's player keys: Cmd/Ctrl with left and right for previous and next, up and down for music volume, S for shuffle and R for repeat.
+- **Looping** in transitions: **Loop out** repeats the first song's bar at the start of the transition in place of its outro.
+- **Low pass filter in** and **Low pass in, low pass out** filters.
+- Right-click a list in the library to play it, queue it, start a radio from it, or rename or delete a playlist.
+- Cmd/Ctrl+Shift+L opens search from anywhere, as in Spotify.
+- The player opens on the page it was left on.
+- **All game music** has a pool drop-down: the songs the game plays on the title screen, in survival or creative, underwater, in the End, or in each overworld and nether biome.
+- Artists from packs and add-ons, downloads included, are in the library's Artists. A song by several artists is on each one's page.
+- `/cmm audit` walks every page in both modes and writes what doesn't make sense (cut-off headings, things said twice, one picture for different things, choices a mode rules out, next up the same as now playing...) to `config/cuemymusic-audit.md`.
+- Packs can give each song its own cover: an `"art"` PNG named in `cuemymusic.json`.
+- For add-ons: `CueSounds.refresh` picks up songs a pack gained or lost without a full resource reload.
+
+### Changed
+
+- Shorter, plainer text across the player: setting descriptions, empty pages, mode descriptions, mix presets and the mod list description.
+- The Downloads pack and its add-on page are one place: opening the pack (from Home or a list) opens the Downloads page, with its icon and name.
+- **Playing from** and **Next from** name every list: an add-on's page (and "filtered by" while you filter it), and Your top songs from Home, instead of "the list" or the pack's file name.
+- Long names scroll to their end and back, pausing at each end, instead of looping round with the end run into the start.
+- Track pools are left out of Add-ons: no **Add to track pool** on songs or selections there.
+- Menus have their own icons for Play, Radio, track pools and Reset, instead of the queue's and the plus.
+- Your Stats has its own picture (a cartography table), so it no longer looks like Radio.
+- A mix's summary counts its straight cuts too ("257 songs · 254 transitions · 2 straight cuts"), so the numbers add up.
+- On a narrow bottom bar, pitch and speed show short ("-2 st · ×1.00") instead of not at all, and still open Settings.
+- Songs under **Next from** can be dragged to change the order they play in, as the queue can; a click still plays one. The list itself isn't changed.
+- Add-ons can draw tabs (`PanelCanvas.tabs`), styled as the Mode switch.
+- A hard line between the modes: Vanilla + FX plays only the game's music and Add-ons only add-on songs. Switching mode stops a song from the other one and takes its songs out of the queue and the list playing; playlists, Liked Songs, search and Home show only the mode's own songs, and nothing from the other mode can be played or queued.
+- **Time between songs** is a Vanilla + FX setting only. Add-ons has no breaks: each song mixes into the next, and Next up says "Right after this one".
+- The music volume slider always has its place in the bottom bar. On a narrow bar (a big GUI scale) the pitch and speed readout is left out first, and the slider narrows before it would go.
+- **Skip with transition** jumps to where the song's transition starts and plays it into the next song, as at the song's natural end, instead of starting it early.
+- Track pools are playlists: they're listed in Your Playlists (in Vanilla + FX), sorted with yours, and their pages read as playlists.
+- Radio is only in Add-ons. In Vanilla + FX the game's music already comes on its own, so Radio, its Home row and "Go to song radio" aren't there.
+
+- A resource pack reload no longer stops or changes the song: the sound engine keeps running through it, with every other sound stopped and reloaded as before.
+- A playlist's Rename and Delete are in a ⋯ menu beside its search, so the toolbar never runs into itself; when it's narrow, Add all to queue shrinks to its +.
+
+- Songs play through loading screens and server switches, the game's picks too: a loading screen no longer swaps the song for menu music, and a new dimension or server no longer cuts it. When it ends, the game picks the next from where you are. Only the dragon fight and the credits still take over.
+
+- Radio plays the mode's music (the game's in Vanilla + FX, add-on songs in Add-ons) instead of asking, and repeat is greyed out while it plays, since it never ends.
+- With repeat one on, the queue says **On repeat** instead of showing the song playing as Next up.
+- The top of the now-playing panel says where the song is playing from ("Playing from Radio", "Played by the game").
+- Pitch and speed in the bottom bar are labelled ("Pitch -3 · Speed ×0.80").
+- Each track pool has the block of its place as its picture, and pools only an add-on plays (such as Downloads) aren't listed.
+- Shorter library subtitles that fit; an empty Your Playlists stays open with New playlist showing.
+
+- A click on a song selects it, and a double click (or Enter) plays it, as on Spotify. Before, a single click played it.
+- The transition editor is laid out like Spotify's: close, Beta, more and **Save** along the top; both songs' waveforms with the transition and its curves over them, a preview button between them and the length under them; the presets in a row; and the parts as rows with their curve's colour. Changes play while the editor is open and are kept only on **Save**. Drag a song sideways to move it a beat at a time.
+- The preview button plays just the transition, from a few seconds before it to a few after, then pauses.
+- Smoother automatic transitions: Blend is picked only when the songs' beats stay together, near-silent intros are skipped, fades last at least 6 seconds, and two songs overlapping at full volume are turned down a little so the overlap isn't louder. Automatic lengths are whole bars.
+- Cmd/Ctrl+F searches the page you're on; search everywhere is Cmd/Ctrl+Shift+L.
+- Liked Songs shows in the library once something is liked.
+- The mix view no longer has an Automix switch (it's in Settings), and its songs can be right-clicked.
+- Artists without art of their own show their initials over a block.
+- Buttons and chips are square with snipped corners instead of round.
+- Filters are named as in Spotify: high pass filter in, low pass filter out.
+- Songs from an add-on page keep that add-on's actions, such as delete, in search and on artist pages.
+
+### Fixed
+
+- Pausing a song and then switching mode no longer leaves the music stopped until you press play.
+- One meaning of add-on song: every song a resource pack or add-on adds. Add-ons mode plays them all, and Vanilla + FX leaves them out, even ones a pack puts in the game's own music. Before, Add-ons could pick a music pack's song it wouldn't play and go quiet for up to 20 minutes.
+- With no add-on songs, Add-ons stays quiet instead of stalling, checks again every 10 seconds, and Now playing says why.
+- `/cmm play`, `/cmm queue` and `/cmm dislike` only find and suggest songs from the mode you're in, so they no longer say "Playing" for a song that won't play.
+- Dislike works in Add-ons too: a disliked add-on song isn't picked, and Disliked Songs is in the sidebar in both modes.
+- A playlist, Liked Songs or Disliked Songs whose songs are all in the other mode says so, instead of looking empty.
+- The effects key says "Effects on" or "Effects off", not "Cue My Music: off", which Vanilla means.
+- The mode key goes from Vanilla back to the mode you left, not always to Add-ons.
+- A song whose file is gone, such as a deleted download, leaves the queue instead of being tried in turn.
+- Changing the audio device no longer skips to another song: the song carries on from the same place on the new device.
+- Deep Dark and Underwater's pictures show one frame instead of every frame squashed together, and Sulfur Caves has a picture.
+- The mix view, and pages shown as a mix such as Downloads, lagged while scrolling: each transition on screen re-read both songs' whole loudness every frame. It's worked out once per song now.
+- Music no longer stops for a moment when the level changes: changing dimension, or joining or leaving a world or server. Your song keeps playing on the same sound instead of starting again.
+- A song the game picked fades out when you change dimension, join or leave a world, and the game picks the next from where you are now. Menu music no longer carries on into the world, or overworld music into the nether.
+- **Pause during travel** fades the song out as a nether portal's swirl builds, silent as it takes you (half a second without a portal), and fades it back in over 2 seconds once the new dimension is on screen. Joining or leaving a world doesn't count as travel.
+
 ## [1.3.0] - 2026-10-27
 
 ### Added
