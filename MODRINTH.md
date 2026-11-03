@@ -41,7 +41,7 @@ Upload one Modrinth version per JAR, version number as in `gradle.properties`, c
 | `cue-my-music-26.3-1.2.0.jar` | `26.3` |
 | `cue-my-music-26.3-1.3.0.jar` | `26.3` |
 
-Version name format: `Cue My Music 1.3.0 (26.3)`.
+Version name format: `Cue My Music 1.4.0 (26.3)`.
 
 ### Dependencies
 
@@ -54,28 +54,33 @@ Version name format: `Cue My Music 1.3.0 (26.3)`.
 
 A music player for Minecraft's own soundtrack.
 
-Browse every song in the game by artist or resource pack. Play one and the rest of its page follows, queue up what's next, or like it for later. When you're done, the game takes over exactly as it would without the mod, and the queue shows which song it picked and when it plays.
+Browse every song in the game by artist or resource pack. Play one and the rest of its page follows, queue up what's next, or like it for later. When a list ends, similar songs carry on, or turn Autoplay off and the game takes over, with the queue showing which song it picked and when it plays.
 
 Pitch, speed, and a 6-band equalizer apply to every song. Pitch and speed are separate: drop the music 2 semitones without slowing it down, or play it at 1.2× without raising it.
 
 ## Features
 
 - **Player:** opens from a music button on the title screen or pause menu, from Mod Menu, or with a key.
+- **Modes:** Vanilla (the mod off), Vanilla + FX (the game's music with your effects), and Add-ons (your packs and downloads), with a key to switch.
+- **Home:** lists you played lately, your top songs and artists, and radios made from your top songs.
 - **Pages:** all game music, Liked Songs, each artist, and each resource pack that adds music, in a library with folding sections.
+- **Track pools:** each place's music (the title screen, survival, underwater, every biome) as a list you can change.
 - **Playlists:** make your own; right-click any song to add it.
-- **Play-through:** a song plays the rest of its page after it.
+- **Radio:** in Add-ons, endless music from what you like and play through, leaning away from what you skip.
+- **Play-through:** a song plays the rest of its page after it, and Autoplay carries on with similar songs when the list ends.
 - **Queue:** add a song or a whole page, drag to reorder. It shows the game's next song and the break before it.
-- **Repeat:** off, all, or one.
+- **Shuffle and repeat:** shuffle a list, and repeat off, all, or one.
+- **Mixing:** add-on songs blend into each other with beatmatched transitions you can edit, and Next can skip with a transition.
 - **Dislike:** thumbs down a song and the game never picks it for its own music. You can still play it.
 - **Select several:** shift-click, shift-drag, or Cmd/Ctrl-click songs, then queue, like, dislike, or add them to a playlist at once.
 - **Your Stats:** top songs and artists, a 24-hour listening clock, a calendar of every day you listened, streaks, and where you listen.
-- **Vanilla timing:** the game still picks its songs and breaks exactly as usual.
+- **Vanilla timing:** in Vanilla + FX the game picks its songs, and you choose the game's Frequency or a set time between them.
 - **Pitch:** −12 to +12 semitones, same speed.
 - **Speed:** 0.5× to 2.0×, same pitch.
 - **Equalizer:** 6 bands with presets.
 - **Commands:** `/cmm play`, `queue`, `next`, `prev`, `pause`, `repeat`, and `dislike`.
-- **Keys:** play/pause, next, and previous, on any screen. F7–F9 by default on macOS.
-- **Travel:** your song keeps playing through dimension changes, or pauses until the new one loads.
+- **Keys:** play/pause, next, and previous, on any screen. F7–F9 by default on macOS. Spotify's player keys work inside the player.
+- **Travel:** your song keeps playing through loading screens, dimension changes, and server switches, or pauses until the new one loads.
 - **Resource packs:** each gets its own page, with its name, icon, and author. A pack can name its songs with a `cuemymusic.json`.
 
 ## Installation
