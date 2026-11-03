@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,8 +43,8 @@ import mix.cuemymusic.mixin.WeighedSoundEventsAccessor;
  * icon as the art, and the "By ..." line of its description as the artist.
  *
  * <p>A pack can name each song itself with {@code assets/<namespace>/cuemymusic.json}:
- * <pre>{"tracks": {"namespace:music/file": {"title": "...", "artist": "...", "album": "..."}}}</pre>
- * Any field it leaves out falls back to the above.
+ * <pre>{"tracks": {"namespace:music/file": {"title": "...", "artist": "...", "album": "...", "art": "namespace:covers/file.png"}}}</pre>
+ * {@code art} is a square PNG in the pack, the song's own cover. Any field it leaves out falls back to the above.
  */
 public final class MusicLibrary {
     private static final Logger LOG = LoggerFactory.getLogger("cuemymusic");
@@ -58,6 +59,8 @@ public final class MusicLibrary {
     /** Each file's entry in sounds.json, with its volume and pitch, so the player plays it as the game would. */
     private static final Map<Identifier, Sound> SOUNDS = new HashMap<>();
     private static int iconCount;
+    /** Songs' own covers by file, kept across reloads so each is only loaded once. */
+    private static final Map<Identifier, Art> COVERS = new HashMap<>();
 
     private MusicLibrary() {
     }
@@ -69,6 +72,7 @@ public final class MusicLibrary {
         ResourceManager resources = mc.getResourceManager();
         Set<Identifier> files = new HashSet<>();
         SOUNDS.clear();
+        Map<Identifier, Set<Identifier>> direct = new HashMap<>(), refs = new HashMap<>();
         for (Identifier event : sounds.getAvailableSounds()) {
             if (!event.getPath().startsWith("music.")) continue;
             WeighedSoundEvents weighed = sounds.getSoundEvent(event);
@@ -77,9 +81,18 @@ public final class MusicLibrary {
                 if (entry instanceof Sound sound && sound.getType() == Sound.Type.FILE) {
                     files.add(sound.getLocation());
                     SOUNDS.putIfAbsent(sound.getLocation(), sound);
+                    direct.computeIfAbsent(event, e -> new LinkedHashSet<>()).add(sound.getLocation());
+                } else {
+                    Identifier ref = referencedEvent(entry);
+                    if (ref != null) refs.computeIfAbsent(event, e -> new LinkedHashSet<>()).add(ref);
                 }
             }
         }
+        // A pool can take in another's songs ("music.creative" plays all of "music.game" too).
+        POOLS.clear();
+        for (Identifier event : direct.keySet()) POOLS.put(event, poolFiles(event, direct, refs, new HashSet<>()));
+        for (Identifier event : refs.keySet()) POOLS.computeIfAbsent(event, e -> poolFiles(e, direct, refs, new HashSet<>()));
+        POOLS.values().removeIf(Set::isEmpty);
 
         // Where each file actually comes from. Files that don't exist (packs written for older versions) are dropped.
         Map<Identifier, Resource> sources = new HashMap<>();
@@ -123,11 +136,52 @@ public final class MusicLibrary {
                 JsonObject c = named.has(id.toString()) && named.get(id.toString()).isJsonObject()
                         ? named.getAsJsonObject(id.toString()) : new JsonObject();
                 t = new Track(id, text(c, "title", title), text(c, "artist", artist), text(c, "album", pack.name()),
-                        pack.art(), pack.id(), seconds);
+                        cover(resources, text(c, "art", ""), pack.art()), pack.id(), seconds);
             }
             TRACKS.put(id, t);
             if (Double.isNaN(t.seconds())) measure(t);
         }
+    }
+
+    /** The game's music pools (sound events such as "music.game"), each with the files it plays from. */
+    private static final Map<Identifier, Set<Identifier>> POOLS = new HashMap<>();
+
+    private static Set<Identifier> poolFiles(Identifier event, Map<Identifier, Set<Identifier>> direct,
+            Map<Identifier, Set<Identifier>> refs, Set<Identifier> seen) {
+        Set<Identifier> out = new LinkedHashSet<>(direct.getOrDefault(event, Set.of()));
+        if (!seen.add(event)) return out;
+        for (Identifier ref : refs.getOrDefault(event, Set.of())) out.addAll(poolFiles(ref, direct, refs, seen));
+        return out;
+    }
+
+    /**
+     * The event an entry of {@code "type": "event"} plays from. The game keeps
+     * only a stand-in that looks it up when drawn, holding the entry's sound,
+     * whose location is the event.
+     */
+    private static Identifier referencedEvent(Weighted<Sound> entry) {
+        for (java.lang.reflect.Field f : entry.getClass().getDeclaredFields()) {
+            if (f.getType() != Sound.class) continue;
+            try {
+                f.setAccessible(true);
+                if (f.get(entry) instanceof Sound s && s.getType() == Sound.Type.SOUND_EVENT) return s.getLocation();
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** The music pools with songs, as sound events. */
+    public static synchronized List<Identifier> pools() {
+        all();
+        return POOLS.keySet().stream().sorted(java.util.Comparator.comparing(Identifier::toString)).toList();
+    }
+
+    /** True if the game can pick {@code t} for the music pool {@code event}. */
+    public static synchronized boolean inPool(Track t, Identifier event) {
+        Set<Identifier> files = POOLS.get(event);
+        return files != null && files.contains(t.location());
     }
 
     public static synchronized List<Track> all() {
@@ -136,33 +190,59 @@ public final class MusicLibrary {
         return all;
     }
 
-    /** Game music credited to {@code artist}. */
-    /**
-     * Every song except the ones in packs an add-on page stands in for, such as
-     * downloads: those aren't the game's music and only play from their page.
-     */
+    /** The game's own songs: everything no resource pack or add-on (such as downloads) added. Vanilla + FX plays these. */
     public static synchronized List<Track> gameMusic() {
         List<Track> songs = all();
         if (gameMusic == null) gameMusic = songs.stream().filter(MusicLibrary::isGameMusic).toList();
         return gameMusic;
     }
 
-    /** False for songs in a pack an add-on page stands in for: the game never plays those, so there's nothing to dislike. */
-    public static boolean isGameMusic(Track t) {
-        if (t.packId() == null) return true;
-        for (mix.cuemymusic.api.CuePanel p : mix.cuemymusic.api.CuePanels.all()) {
-            if (t.packId().equals(p.packId())) return false;
-        }
-        return true;
+    /** Songs from resource packs and add-ons, such as downloads: everything but the game's own music. Add-ons plays these. */
+    public static synchronized List<Track> addOnMusic() {
+        return all().stream().filter(t -> !isGameMusic(t)).toList();
     }
 
+    /** True for the game's own songs, false for songs a resource pack or add-on added. */
+    public static boolean isGameMusic(Track t) {
+        return t.packId() == null;
+    }
+
+    /** Game music credited to {@code artist}. */
     public static synchronized List<Track> byArtist(String artist) {
         return all().stream().filter(t -> t.packId() == null && t.artist().equals(artist)).toList();
     }
 
-    /** Every song credited to {@code artist}, from the game or any pack: an artist's page. */
+    /** Every song credited to {@code artist}, alone or with others, from the game or any pack: an artist's page. */
     public static synchronized List<Track> songsBy(String artist) {
-        return all().stream().filter(t -> t.artist().equals(artist)).toList();
+        return all().stream().filter(t -> t.artist().equals(artist) || artistNames(t.artist()).contains(artist)).toList();
+    }
+
+    /** The artists a credit names: "Nujabes, Cise Starr" and "Nujabes feat. Cise Starr" are both two. */
+    public static List<String> artistNames(String credit) {
+        List<String> names = new ArrayList<>();
+        for (String name : credit.split("\\s*,\\s*|\\s+(?i:feat\\.?|ft\\.|featuring)\\s+")) {
+            if (!name.isBlank()) names.add(name.strip());
+        }
+        return names;
+    }
+
+    private static List<String> packArtists;
+    private static List<Track> packArtistsFor;
+
+    /** Everyone credited on a pack's or add-on's songs (downloads too), A to Z, without the game's own artists. */
+    public static synchronized List<String> packArtists() {
+        List<Track> songs = all();
+        if (packArtistsFor != songs) {
+            java.util.TreeSet<String> names = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+            for (Track t : songs) {
+                if (t.packId() != null) names.addAll(artistNames(t.artist()));
+            }
+            names.removeAll(Catalog.ARTISTS);
+            names.remove(Catalog.UNKNOWN_ARTIST);
+            packArtists = List.copyOf(names);
+            packArtistsFor = songs;
+        }
+        return packArtists;
     }
 
     public static synchronized List<Track> byPack(String packId) {
@@ -265,6 +345,27 @@ public final class MusicLibrary {
         PackInfo info = new PackInfo(id, name, author, icon(source, name));
         PACK_CACHE.put(id, info);
         return info;
+    }
+
+    /** The song's own cover, the PNG at {@code file} in its pack, or {@code otherwise} if there isn't one (yet). */
+    private static Art cover(ResourceManager resources, String file, Art otherwise) {
+        Identifier id = file.isEmpty() ? null : Identifier.tryParse(file);
+        if (id == null) return otherwise;
+        Art cached = COVERS.get(id);
+        if (cached != null) return cached;
+        Optional<Resource> res = resources.getResource(id);
+        if (res.isEmpty()) return otherwise;
+        try (InputStream in = res.get().open()) {
+            NativeImage image = NativeImage.read(in);
+            Identifier texture = Identifier.fromNamespaceAndPath("cuemymusic", "cover/" + iconCount++);
+            Minecraft.getInstance().getTextureManager().register(texture, new DynamicTexture(() -> "cuemymusic " + file, image));
+            Art art = new Art.Texture(texture, image.getWidth(), image.getHeight());
+            COVERS.put(id, art);
+            return art;
+        } catch (Exception e) {
+            LOG.warn("Couldn't load the cover {}", file, e);
+            return otherwise;
+        }
     }
 
     /** The pack's pack.png as a texture, or initials on a gradient if it has none. */

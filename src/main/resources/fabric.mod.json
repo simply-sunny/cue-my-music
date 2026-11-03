@@ -3,7 +3,7 @@
 	"id": "cuemymusic",
 	"version": "${version}",
 	"name": "Cue My Music",
-	"description": "A music player for the game's own soundtrack, with pitch, speed and an equalizer. Jukeboxes are left alone.",
+	"description": "A music player for the game's soundtrack, with pitch, speed and EQ.",
 	"authors": ["simply-sunny"],
 	"contact": {
 		"sources": "https://github.com/simply-sunny/cue-my-music",

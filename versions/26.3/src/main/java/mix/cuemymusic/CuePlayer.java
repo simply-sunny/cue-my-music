@@ -22,6 +22,8 @@ import mix.cuemymusic.library.MusicLibrary;
 import mix.cuemymusic.library.Track;
 import mix.cuemymusic.mixin.MusicFrequencyInvoker;
 import mix.cuemymusic.mixin.MusicManagerAccessor;
+import mix.cuemymusic.mixin.SoundEngineAccessor;
+import mix.cuemymusic.mixin.SoundManagerAccessor;
 
 /**
  * What's playing and where, for the player screen, and the play controls.
@@ -45,6 +47,10 @@ public final class CuePlayer {
     public static final CuePlayer INSTANCE = new CuePlayer();
     /** The list key for all game music, which Next falls back to when the game has no music to play. */
     public static final String ALL = "all";
+    /** The list key Radio plays under. */
+    public static final String RADIO = "radio";
+    /** Radio adds this many songs at a time, whenever fewer than {@link #RADIO_AHEAD} are left. */
+    private static final int RADIO_BATCH = 20, RADIO_AHEAD = 3;
     private static final AtomicLong STREAM_IDS = new AtomicLong();
     /** How long a track may take to start before it's treated as failed. */
     private static final long START_TIMEOUT_NANOS = 3_000_000_000L;
@@ -68,7 +74,17 @@ public final class CuePlayer {
     /** When the new level was first seen ready after a dimension change, or 0. */
     private long travelReadySince;
     private static final long TRAVEL_SETTLE_NANOS = 500_000_000L;
-    private static final double TRAVEL_FADE_SECONDS = 0.75;
+    /** Seconds the song fades back in over once the new dimension is on screen. */
+    private static final double TRAVEL_FADE_SECONDS = 2;
+    /** Seconds the song fades out over when a level changes with no portal to fade through first. */
+    private static final double TRAVEL_OUT_SECONDS = 0.5;
+    /** True while a level is loaded, so a level change can tell travel from joining or leaving a world. */
+    private boolean inWorld;
+    /** When the fade out for a level change began, and the volume it began from; 0 with none under way. */
+    private long travelOutStart;
+    private float travelOutFrom;
+    /** The song's fade for travel right now, from 1 (full) to 0. */
+    private float travelGain = 1;
     private long lastNanos;
     /** The song an automixed song blends into, or null; read by the stream. */
     private volatile Track automixNext;
@@ -82,6 +98,13 @@ public final class CuePlayer {
     private boolean replay;
     /** True while the music is paused because the game window lost focus, so it plays again when it's back. */
     private boolean focusPaused;
+    // Radio: what it picks with, the song it started from (null for everything), and its songs so far.
+    private final Radio radio = new Radio(System.nanoTime());
+    private Track radioSeed;
+    private List<Track> radioTracks = List.of();
+    // A transition being previewed: its first song, and the song and point in it where the preview stops.
+    private Track previewFrom, previewTo;
+    private double previewUntil;
 
     // The game's next song, planned ahead.
     private final RandomSource random = RandomSource.create();
@@ -128,6 +151,16 @@ public final class CuePlayer {
         return isOurs(instance) && picked;
     }
 
+    /**
+     * True if the game may cut the song playing for {@code music}: only for the
+     * dragon fight and the credits. Anything else, such as the menu music a
+     * loading screen asks for, waits for the song to end.
+     */
+    public static boolean replacesSong(Music music) {
+        String path = music.sound().value().location().getPath();
+        return path.equals("music.dragon") || path.equals("music.credits");
+    }
+
     // Called from the stream-loading thread.
 
     static long nextStreamId() {
@@ -165,7 +198,9 @@ public final class CuePlayer {
         long now = System.nanoTime();
         boolean finished;
         double heardSeconds = 0;
+        applyJump(now);
         handOver(now);
+        if (CueStream.takeSkipFailed()) cutToNext();
         followFocus();
         synchronized (this) {
             if (playing && !paused) {
@@ -190,15 +225,20 @@ public final class CuePlayer {
                     mc.level != null ? mc.level.dimension().identifier().toString() : null, picked, effects);
             StatsFile.saveNowAndThen();
         }
+        followPreview();
         plan();
+        keepRadioGoing();
+        autoplay();
         planAutomix();
-        OutsideAudio.volume(Minecraft.getInstance().options.getFinalSoundSourceVolume(SoundSource.MUSIC));
+        fadeForTravel(now);
+        OutsideAudio.volume(Minecraft.getInstance().options.getFinalSoundSourceVolume(SoundSource.MUSIC) * travelGain);
         if (finished) {
             if (current != null) ListeningStats.INSTANCE.finished(current.location().toString(), current.seconds());
             ours = null;
             // What plays next is a fresh play, even if it's the same song again (repeat one).
             replay = true;
-            order.setRepeat(CueConfig.INSTANCE.repeatMode());
+            dropMissing();
+            order.setRepeat(repeat());
             Track n = order.finished(current);
             if (n != null) start(n, 0, TrackSoundInstance.GAME, true);
             return;
@@ -244,6 +284,109 @@ public final class CuePlayer {
         }
     }
 
+    // Radio.
+
+    /** The songs Radio plays from: the mode's music, the game's in Vanilla + FX and the add-ons' in Add-ons. */
+    private static List<Track> radioPool() {
+        return "addons".equals(CueConfig.INSTANCE.mode) ? MusicLibrary.addOnMusic() : MusicLibrary.gameMusic();
+    }
+
+    /** What Radio knows of {@code t}, from its likes, stats and (for add-on songs) its tempo and key. */
+    private static Radio.Song radioSong(Track t, java.util.Map<String, ListeningStats.Song> stats) {
+        String id = t.location().toString();
+        ListeningStats.Song s = stats.get(id);
+        Automix.Profile p = AutomixProfiles.applies(t) ? AutomixProfiles.get(t) : null;
+        CueConfig cfg = CueConfig.INSTANCE;
+        return new Radio.Song(id, t.artist(), t.album(), p != null ? p.bpm() : 0, p != null ? p.key() : "", cfg.isLiked(id),
+                cfg.isDisliked(id), s != null ? s.plays : 0, s != null ? s.skips : 0);
+    }
+
+    /** {@code count} more songs for Radio, after {@code played}. */
+    private List<Track> radioPicks(List<Track> played, int count) {
+        return radioPicks(played, count, radioSeed);
+    }
+
+    private List<Track> radioPicks(List<Track> played, int count, Track from) {
+        List<Track> pool = radioPool();
+        java.util.Map<String, ListeningStats.Song> stats = ListeningStats.INSTANCE.songs();
+        java.util.Map<String, Track> byId = new java.util.HashMap<>();
+        for (Track t : pool) byId.put(t.location().toString(), t);
+        List<Radio.Song> songs = pool.stream().map(t -> radioSong(t, stats)).toList();
+        Radio.Song seed = from != null ? radioSong(from, stats) : null;
+        List<String> history = played.stream().map(t -> t.location().toString()).toList();
+        return radio.next(songs, seed, history, count).stream().map(s -> byId.get(s.id())).toList();
+    }
+
+    /** Radio's songs: the ones playing through, or the ones it would play if started now. */
+    public List<Track> radioTracks() {
+        if (radioTracks.isEmpty()) {
+            List<Track> first = new java.util.ArrayList<>();
+            if (radioSeed != null) first.add(radioSeed);
+            first.addAll(radioPicks(first, RADIO_BATCH));
+            radioTracks = List.copyOf(first);
+        }
+        return radioTracks;
+    }
+
+    /** The song Radio started from, or null if it plays from everything. */
+    public Track radioSeed() {
+        return radioSeed;
+    }
+
+    /** Radio picks from everything from here on, rather than from the song it started from. */
+    public void clearRadioSeed() {
+        radioSeed = null;
+        refreshRadio();
+    }
+
+    /** Starts Radio from {@code seed}, or from everything if that's null. */
+    public void startRadio(Track seed) {
+        radioSeed = seed;
+        radioTracks = List.of();
+        List<Track> tracks = radioTracks();
+        if (!tracks.isEmpty()) play(RADIO, tracks, 0);
+    }
+
+    /** Picks Radio's songs again, as when its music changes; while it plays, from after the song that's on. */
+    public void refreshRadio() {
+        if (isPlayingList(RADIO)) {
+            List<Track> list = order.list();
+            List<Track> kept = list.subList(0, Math.min(list.size(), list.size() - order.remaining()));
+            List<Track> rest = radioPicks(kept, RADIO_BATCH);
+            order.replaceRest(rest);
+            radioTracks = order.list();
+        } else {
+            radioTracks = List.of();
+        }
+    }
+
+    /** The last song of a list that Autoplay looked for more after, so it looks once. */
+    private Track autoplayed;
+
+    /**
+     * Autoplay, as on Spotify: when a list reaches its last song with nothing
+     * queued and repeat off, Radio's picks for that song are added to the
+     * end, so music carries on instead of handing back to the game.
+     */
+    private void autoplay() {
+        Track c = current;
+        if (!CueConfig.INSTANCE.autoplay || c == null || c.equals(autoplayed) || order.listKey() == null || isPlayingList(RADIO)
+                || repeat() != PlayOrder.Repeat.OFF || order.remaining() > 0 || !order.queue().isEmpty()) return;
+        autoplayed = c;
+        List<Track> more = radioPicks(order.list(), RADIO_BATCH, c);
+        if (!more.isEmpty()) order.extendList(more);
+    }
+
+    /** While Radio plays, adds songs before it runs out, so it never ends. */
+    private void keepRadioGoing() {
+        if (!isPlayingList(RADIO)) return;
+        if (order.remaining() < RADIO_AHEAD) {
+            List<Track> more = radioPicks(order.list(), RADIO_BATCH);
+            if (!more.isEmpty()) order.extendList(more);
+        }
+        radioTracks = order.list();
+    }
+
     // Automix.
 
     /** The song the playing one blends into, if both are automixed. Read by the stream. */
@@ -251,9 +394,35 @@ public final class CuePlayer {
         return automixNext;
     }
 
+    /** The song Next blended out of, so it counts as skipped rather than heard through. */
+    private Track skippedByBlend;
+
     /** Called from the stream: it's blending into {@code track}, which is heard as the song playing from {@code atNanos}. */
     void automixed(long stream, Track track, double seconds, long atNanos) {
         handover = new Handover(stream, track, seconds, atNanos);
+    }
+
+    /** A jump in the playing song, from a skip with a transition, and when it's heard. */
+    private record Jump(long stream, double seconds, long atNanos) {
+    }
+
+    private volatile Jump jump;
+
+    /** Called from the stream: it jumped to {@code seconds} into the song, heard from {@code atNanos}. */
+    void jumped(long stream, double seconds, long atNanos) {
+        jump = new Jump(stream, seconds, atNanos);
+    }
+
+    /** The jump is heard now: the song's time moves with it. */
+    private void applyJump(long now) {
+        Jump j = jump;
+        if (j == null || now < j.atNanos()) return;
+        jump = null;
+        if (j.stream() != activeStream) return;
+        synchronized (this) {
+            position = j.seconds() + (now - j.atNanos()) / 1e9 * CueConfig.INSTANCE.tempo();
+            lastNanos = now;
+        }
     }
 
     /**
@@ -263,19 +432,31 @@ public final class CuePlayer {
      */
     private void planAutomix() {
         Track c = current, n = null;
-        if (c != null && ours != null && CueConfig.INSTANCE.repeatMode() != PlayOrder.Repeat.ONE) {
-            order.setRepeat(CueConfig.INSTANCE.repeatMode());
+        if (c != null && ours != null && repeat() != PlayOrder.Repeat.ONE) {
+            order.setRepeat(repeat());
             List<Track> queued = order.queue();
             n = queued.isEmpty() ? order.listNext() : queued.getFirst();
             boolean automixed = AutomixProfiles.applies(c) && AutomixProfiles.applies(n);
             if (n != null && !automixed && CueConfig.INSTANCE.crossfadeSeconds <= 0) n = null;
             // The stream keeps the first song's sounds.json volume, so songs at another volume don't blend into it.
+            // With little or no time between the game's songs, its song blends into the game's next.
+            if (n == null && !picked && mixesGameSongs() && planned != null && !planned.equals(c)) n = planned;
             if (n != null && fileVolume(n) != fileVolume(c)) n = null;
             // Ready before the fade is due.
             if (AutomixProfiles.applies(c)) AutomixProfiles.get(c);
             if (AutomixProfiles.applies(n)) AutomixProfiles.get(n);
         }
         automixNext = n;
+    }
+
+    /**
+     * True when the game's songs follow one another closely enough to blend:
+     * the time between songs set to 5 seconds or less, or the game's Constant.
+     */
+    private boolean mixesGameSongs() {
+        int gap = songGap();
+        if (gap >= 0) return gap <= 5;
+        return Minecraft.getInstance().options.musicFrequency().get() == MusicManager.MusicFrequency.CONSTANT;
     }
 
     /** The volume sounds.json plays {@code track} at, as a share of full volume. */
@@ -291,10 +472,14 @@ public final class CuePlayer {
         handover = null;
         if (h.stream() != activeStream) return;
         Track ended = current;
-        if (ended != null) ListeningStats.INSTANCE.finished(ended.location().toString(), ended.seconds());
+        if (ended != null && ended.equals(skippedByBlend)) ListeningStats.INSTANCE.skipped(ended.location().toString());
+        else if (ended != null) ListeningStats.INSTANCE.finished(ended.location().toString(), ended.seconds());
+        skippedByBlend = null;
         ListeningStats.INSTANCE.started(h.track().location().toString());
-        order.setRepeat(CueConfig.INSTANCE.repeatMode());
+        order.setRepeat(repeat());
         order.finished(ended);
+        // Blended into the game's next song: it's played, so the game's next one after it is picked.
+        if (!picked && h.track().equals(planned)) replan();
         synchronized (this) {
             current = h.track();
             position = h.seconds() + (now - h.atNanos()) / 1e9;
@@ -304,7 +489,65 @@ public final class CuePlayer {
 
     /** Plays {@code list} from {@code index} to the end, after anything queued. {@code key} names the list. */
     public void play(Object key, List<Track> list, int index) {
+        // Only the mode's own songs: the one clicked, and the list it plays through.
+        Track picked = list.get(index);
+        if (!Modes.allows(picked)) return;
+        list = Modes.only(list);
+        index = list.indexOf(picked);
+        previewTo = null;
+        CueConfig.INSTANCE.listPlayed(String.valueOf(key));
+        order.setShuffle(CueConfig.INSTANCE.shuffle);
         start(order.play(key, list, index), 0, TrackSoundInstance.GAME, true);
+    }
+
+    /** Plays all of {@code list}: from the top, or with shuffle on, from a song picked at random, as on Spotify. */
+    public void playAll(Object key, List<Track> list) {
+        if (list.isEmpty()) return;
+        play(key, list, CueConfig.INSTANCE.shuffle ? java.util.concurrent.ThreadLocalRandom.current().nextInt(list.size()) : 0);
+    }
+
+    public boolean shuffle() {
+        return CueConfig.INSTANCE.shuffle;
+    }
+
+    /** Turns shuffle on or off, for good: the list playing is mixed, or put back in order, at once. */
+    public void setShuffle(boolean on) {
+        CueConfig.INSTANCE.shuffle = on;
+        CueConfig.INSTANCE.save();
+        order.setShuffle(on);
+    }
+
+    /**
+     * Plays just the transition from {@code list}'s song {@code index} into the
+     * next: from {@code from} seconds into the first, pausing at {@code until}
+     * seconds into the second.
+     */
+    public void previewTransition(Object key, List<Track> list, int index, double from, double until) {
+        play(key, list, index);
+        seek(from);
+        previewFrom = list.get(index);
+        previewTo = list.get(index + 1);
+        previewUntil = until;
+    }
+
+    /** True while a transition preview is playing. */
+    public boolean isPreviewing() {
+        return previewTo != null && isPlaying();
+    }
+
+    /** Stops a transition preview, pausing where it is. */
+    public void stopPreview() {
+        if (previewTo == null) return;
+        previewTo = null;
+        if (isPlaying()) togglePause();
+    }
+
+    /** Pauses a preview once it's past its transition, and forgets it once something else plays. */
+    private void followPreview() {
+        Track to = previewTo, c = current;
+        if (to == null) return;
+        if (c == null || !(c.equals(to) || c.equals(previewFrom))) previewTo = null;
+        else if (c.equals(to) && position >= previewUntil) stopPreview();
     }
 
     /** True if the list named {@code key} is the one playing through. */
@@ -341,15 +584,31 @@ public final class CuePlayer {
 
     /** The queue first, then the list's next song, then the game's next song, skipping the break. */
     public void next() {
-        order.setRepeat(CueConfig.INSTANCE.repeatMode());
+        // With a song to blend into, the transition plays from the coming bar instead of a cut.
+        if (CueConfig.INSTANCE.skipWithTransition && !paused && ours != null && automixNext != null && previewTo == null
+                && CueStream.skipWithTransition()) {
+            skippedByBlend = current;
+            return;
+        }
+        cutToNext();
+    }
+
+    /** The next song now, without a transition. */
+    private void cutToNext() {
+        skippedByBlend = null;
+        dropMissing();
+        order.setRepeat(repeat());
         Track n = order.next();
+        // Next again while blending into a song: past it, not back to its start.
+        Track incoming = CueStream.blendingInto();
+        if (n != null && n.equals(incoming)) n = order.next();
         if (n != null) {
             start(n, 0, TrackSoundInstance.GAME, true);
         } else if (upcoming() != null) {
             playUpcoming();
         } else {
-            // No music from the game here: carry on through all game music, still leaving out disliked songs.
-            List<Track> all = MusicLibrary.gameMusic().stream()
+            // No music from the game here: carry on through all the mode's music, still leaving out disliked songs.
+            List<Track> all = radioPool().stream()
                     .filter(t -> t.equals(current) || !CueConfig.INSTANCE.isDisliked(t.location().toString())).toList();
             if (!all.isEmpty()) play(ALL, all, (all.indexOf(current) + 1) % all.size());
         }
@@ -377,18 +636,44 @@ public final class CuePlayer {
 
     /** Adds to the queue. With nothing playing or paused, it plays at once. */
     public void enqueue(Track track) {
+        if (!Modes.allows(track)) return;
         order.enqueue(track);
         startIfIdle();
     }
 
     /** Adds every song of {@code tracks} to the queue, in order. */
     public void enqueueAll(List<Track> tracks) {
-        order.enqueueAll(tracks);
+        order.enqueueAll(Modes.only(tracks));
         startIfIdle();
     }
 
     public void unqueue(int index) {
         order.unqueue(index);
+    }
+
+    public void clearQueue() {
+        order.clearQueue();
+    }
+
+    /** The key of the list playing through, or null. */
+    public Object playingList() {
+        return order.listKey();
+    }
+
+    /** Up to {@code n} songs the list plays after the queue, in order. */
+    public List<Track> upNext(int n) {
+        return order.upNext(n);
+    }
+
+    /** Plays the list's song {@code k} places on from the one playing now, skipping those before it. */
+    public void playUpNext(int k) {
+        Track t = order.jump(k);
+        if (t != null) start(t, 0, TrackSoundInstance.GAME, true);
+    }
+
+    /** Moves the list's song {@code from} places along under Next from so it ends up {@code to} places along. */
+    public void moveUpNext(int from, int to) {
+        order.moveUpNext(from, to);
     }
 
     /** Moves the queued song at {@code from} so it ends up at {@code to}. */
@@ -401,10 +686,15 @@ public final class CuePlayer {
         if (t != null) start(t, 0, TrackSoundInstance.GAME, true);
     }
 
+    /** Repeat as it applies now: off while Radio plays, since Radio never ends. */
+    public PlayOrder.Repeat repeat() {
+        return isPlayingList(RADIO) ? PlayOrder.Repeat.OFF : CueConfig.INSTANCE.repeatMode();
+    }
+
     /** The list's next song, while a list plays through and the queue is empty. On repeat one, the song that's playing. */
     public Track listNext() {
-        if (CueConfig.INSTANCE.repeatMode() == PlayOrder.Repeat.ONE && current != null) return current;
-        order.setRepeat(CueConfig.INSTANCE.repeatMode());
+        if (repeat() == PlayOrder.Repeat.ONE && current != null) return current;
+        order.setRepeat(repeat());
         return order.listNext();
     }
 
@@ -442,7 +732,9 @@ public final class CuePlayer {
      * If the music changed this tick, before it was planned for, the game's own roll is used.
      */
     public int takeBreak(Music music, MusicManager.MusicFrequency frequency, IntSupplier roll) {
-        if (!music.equals(plannedFor) || frequency != plannedFrequency) return roll.getAsInt();
+        if (!music.equals(plannedFor) || frequency != plannedFrequency) {
+            return songGap() >= 0 ? songGap() * 20 : roll.getAsInt();
+        }
         int ticks = plannedBreak;
         plannedBreak = rollBreak(plannedFor, plannedFrequency);
         return ticks;
@@ -472,6 +764,37 @@ public final class CuePlayer {
         return result;
     }
 
+    /**
+     * The time between songs changed in Settings: the break is rolled again,
+     * and a wait already longer than the new time is cut to it.
+     */
+    public void songGapChanged() {
+        replan();
+        int gap = songGap();
+        MusicManagerAccessor music = (MusicManagerAccessor) Minecraft.getInstance().getMusicManager();
+        if (gap >= 0 && waitingForGame() && music.cuemymusic$nextSongDelay() > gap * 20) music.cuemymusic$setNextSongDelay(gap * 20);
+    }
+
+    /**
+     * The time between songs in seconds, or -1 for the game's Frequency. It's a
+     * Vanilla + FX setting; Add-ons has no breaks, one song mixing into the next,
+     * and with no add-on songs yet it looks again every 10 seconds.
+     */
+    private static int songGap() {
+        return switch (Modes.current()) {
+            case "fx" -> CueConfig.INSTANCE.songGap;
+            case "addons" -> MusicLibrary.addOnMusic().isEmpty() ? 10 : 0;
+            default -> -1;
+        };
+    }
+
+    /** Picks the game's next song again, as when the mode changes where songs come from. */
+    public void replan() {
+        plannedFor = null;
+        plannedSound = null;
+        planned = null;
+    }
+
     /** The game stopped the current track: a dimension change, or music that replaces it. */
     public void stoppedByGame() {
         synchronized (this) {
@@ -482,31 +805,106 @@ public final class CuePlayer {
     }
 
     /**
-     * Runs the game's stop of every sound when the level changes: joining a world,
-     * a dimension change, or leaving. A picked track carries on from the same spot,
-     * or, with pause on travel set and a new level coming, pauses until it has loaded.
+     * In place of the game's stop of every sound when the level changes (joining
+     * a world, a dimension change, or leaving): every other sound stops, but the
+     * song plays on without a break, never restarted. Changing dimension with
+     * pause on travel set, it fades out (if a portal hasn't already faded it)
+     * and waits for the new level, then fades back in.
      */
-    public void levelChanged(boolean travel, Runnable stopAll) {
-        Track t = current;
-        double at = position;
-        boolean keep = ours != null && picked && t != null;
-        // The stream's close isn't the song ending.
-        if (keep) {
-            synchronized (this) {
-                activeStream = -1;
+    public void levelChanged(boolean entering, Runnable stopAll) {
+        boolean travel = entering && inWorld;
+        inWorld = entering;
+        TrackSoundInstance o = ours;
+        if (o == null || current == null) {
+            stopAll.run();
+            return;
+        }
+        stopAllBut(o);
+        // Every song plays through loading screens, the game's picks too: servers send you through
+        // them all the time. Once it ends, the game picks the next from where you are now.
+        if (travel && CueConfig.INSTANCE.pauseOnTravel && !paused) {
+            travelOutStart = System.nanoTime();
+            travelOutFrom = travelGain;
+        }
+    }
+
+    /**
+     * A resource pack reload is about to restart the sound engine. With a song
+     * playing, it's done without the restart instead: every
+     * other sound stops and the loaded sounds are dropped, as the restart
+     * would, but the song plays on. Returns false, changing nothing, with no song playing.
+     */
+    public boolean playThroughReload(SoundEngine engine) {
+        TrackSoundInstance o = ours;
+        if (o == null || current == null) return false;
+        stopAllBut(o);
+        ((SoundEngineAccessor) engine).cuemymusic$soundBuffers().clear();
+        // The game's next song was drawn from the old sound list.
+        replan();
+        return true;
+    }
+
+    /** The song to pick up again once the sound engine has restarted. */
+    private boolean resumeAfterRestart;
+
+    /**
+     * The sound engine is about to restart, as when the audio device changes. That closes the song's
+     * stream, which isn't the song ending: it carries on from the same place on the new device.
+     */
+    public void engineRestarting() {
+        resumeAfterRestart = ours != null && current != null && !paused;
+        synchronized (this) {
+            activeStream = -1;
+        }
+    }
+
+    /** The sound engine has restarted. */
+    public void engineRestarted() {
+        if (!resumeAfterRestart) return;
+        resumeAfterRestart = false;
+        start(current, position, event, picked);
+    }
+
+    /** Stops every sound but {@code keep}, and drops sounds waiting to start, as the game's stop of everything would. */
+    private static void stopAllBut(SoundInstance keep) {
+        SoundEngine engine = ((SoundManagerAccessor) Minecraft.getInstance().getSoundManager()).cuemymusic$soundEngine();
+        SoundEngineAccessor sounds = (SoundEngineAccessor) engine;
+        for (SoundInstance s : new java.util.ArrayList<>(sounds.cuemymusic$playing().keySet())) {
+            if (s != keep) engine.stop(s);
+        }
+        sounds.cuemymusic$delayed().clear();
+        sounds.cuemymusic$queuedTicking().removeIf(s -> s != keep);
+    }
+
+    /**
+     * The song's volume through travel, with pause on travel set: it fades
+     * out as a nether portal's swirl builds (silent as it takes you), and
+     * back up if you step out. Once the level changes it finishes fading,
+     * then pauses until the new level is on screen.
+     */
+    private void fadeForTravel(long now) {
+        float gain = 1;
+        Minecraft mc = Minecraft.getInstance();
+        if (CueConfig.INSTANCE.pauseOnTravel && mc.player != null && travelOutStart == 0) {
+            gain = 1 - Math.clamp(mc.player.portalEffectIntensity, 0, 1);
+        }
+        if (travelOutStart != 0) {
+            double done = (now - travelOutStart) / 1e9 / TRAVEL_OUT_SECONDS;
+            gain = (float) (travelOutFrom * Math.max(0, 1 - done));
+            if (done >= 1 || travelOutFrom <= 0.01f) {
+                travelOutStart = 0;
+                gain = 1;
+                if (ours != null && current != null && !paused) {
+                    paused = true;
+                    playing = false;
+                    stopAll();
+                    travelHold = true;
+                }
             }
         }
-        stopAll.run();
-        if (!keep) return;
-        if (travel && CueConfig.INSTANCE.pauseOnTravel) {
-            paused = true;
-            playing = false;
-            position = at;
-            stopAll();
-            travelHold = true;
-        } else {
-            start(t, at, event, true);
-        }
+        travelGain = gain;
+        TrackSoundInstance o = ours;
+        if (o != null) o.setFade(gain);
     }
 
     /**
@@ -543,8 +941,13 @@ public final class CuePlayer {
         plannedBreak = rollBreak(music, frequency);
     }
 
-    /** The game's own roll: up to 20 minutes on the default setting, 10 on frequent, 5 seconds on constant. */
+    /**
+     * The game's own roll: up to 20 minutes on the default setting, 10 on frequent, 5 seconds on constant.
+     * With a time between songs set in Settings, that instead, the same every time.
+     */
     private int rollBreak(Music music, MusicManager.MusicFrequency frequency) {
+        int gap = songGap();
+        if (gap >= 0) return gap * 20;
         return Math.min(((MusicFrequencyInvoker) (Object) frequency).cuemymusic$nextSongDelay(music, random), music.maxDelay());
     }
 
@@ -554,12 +957,44 @@ public final class CuePlayer {
      * it's silence, so the game waits for the next break instead.
      */
     private Sound pick(Music music) {
-        WeighedSoundEvents events = Minecraft.getInstance().getSoundManager().getSoundEvent(music.sound().value().location());
+        CueConfig cfg = CueConfig.INSTANCE;
+        // Add-ons mode: the game still says when music plays; the song is one of the add-ons'.
+        if ("addons".equals(CueConfig.INSTANCE.mode)) {
+            List<Track> songs = MusicLibrary.addOnMusic().stream()
+                    .filter(t -> !CueConfig.INSTANCE.isDisliked(t.location().toString())).toList();
+            for (int i = 0; i < 8 && !songs.isEmpty(); i++) {
+                Sound s = MusicLibrary.sound(songs.get(random.nextInt(songs.size())).location());
+                if (s != null) return s;
+            }
+            // Nothing of the add-ons' to play: silence, never one of the game's songs, which Add-ons won't start.
+            return SoundManager.EMPTY_SOUND;
+        }
+        Identifier pool = music.sound().value().location();
+        WeighedSoundEvents events = Minecraft.getInstance().getSoundManager().getSoundEvent(pool);
         if (events == null) return null;
+        // Your changes to the pool: songs taken out are drawn again, and songs put in come up as often as the game's own.
+        TrackPools.Edit edit = cfg.poolEdit(pool.toString());
+        if (!edit.isEmpty()) {
+            int left = (int) MusicLibrary.gameMusic().stream()
+                    .filter(t -> MusicLibrary.inPool(t, pool) && Modes.allows(t) && !edit.removed().contains(t.location().toString())
+                            && !cfg.isDisliked(t.location().toString()))
+                    .count();
+            List<Track> added = edit.added().stream().map(Identifier::tryParse).filter(java.util.Objects::nonNull).map(MusicLibrary::get)
+                    .filter(t -> t != null && Modes.allows(t) && !cfg.isDisliked(t.location().toString())).toList();
+            int i = TrackPools.choose(left, added.size(), random.nextDouble());
+            if (i >= 0) {
+                Sound s = MusicLibrary.sound(added.get(i).location());
+                if (s != null) return s;
+            }
+            if (left == 0) return SoundManager.EMPTY_SOUND;
+        }
         for (int i = 0; i < 64; i++) {
             Sound s = events.getSound(random);
             Track t = track(s);
-            if (t == null || !CueConfig.INSTANCE.isDisliked(t.location().toString())) return s;
+            if (t == null) return s;
+            String id = t.location().toString();
+            // A pack's song in the game's pool is an add-on song, which Vanilla + FX doesn't play: drawn again.
+            if (Modes.allows(t) && !cfg.isDisliked(id) && !edit.removed().contains(id)) return s;
         }
         return SoundManager.EMPTY_SOUND;
     }
@@ -593,6 +1028,8 @@ public final class CuePlayer {
     }
 
     private SoundEngine.PlayResult start(Track track, TrackSoundInstance o, boolean picked) {
+        // The hard line between the modes: nothing from the other mode's music starts, however it was asked for.
+        if (!Modes.allows(track)) return SoundEngine.PlayResult.NOT_STARTED;
         // For the stats: moving on to another song may be a skip. The same song again (resume, seek, travel,
         // or clicking it again) carries on; only playing it again after it ended is a new play.
         boolean resuming = track.equals(current) && !replay;
@@ -646,6 +1083,30 @@ public final class CuePlayer {
         focusPaused = false;
         automixNext = null;
         ((MusicManagerAccessor) Minecraft.getInstance().getMusicManager()).cuemymusic$setNextSongDelay(100);
+    }
+
+    /**
+     * The mode changed: songs from the other mode's music leave the queue
+     * and the list playing, and one playing now stops, so the game plays
+     * the new mode's music from here.
+     */
+    void modeChanged() {
+        order.retain(Modes::allows);
+        Track t = current;
+        if (t == null || Modes.allows(t)) return;
+        // Paused too: a paused song from the other mode would hold the game's music back for good.
+        stopForVanilla();
+        synchronized (this) {
+            current = null;
+            position = 0;
+        }
+    }
+
+    /** Songs whose files are gone (a download deleted) leave the queue and the list, so they aren't tried in turn. */
+    private void dropMissing() {
+        java.util.Set<Identifier> there = new java.util.HashSet<>();
+        for (Track t : MusicLibrary.all()) there.add(t.location());
+        order.retain(t -> there.contains(t.location()));
     }
 
     /** Stops whatever music is playing. The stream's close isn't taken as the song ending. */

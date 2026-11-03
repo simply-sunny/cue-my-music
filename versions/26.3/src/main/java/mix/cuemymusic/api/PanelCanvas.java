@@ -57,6 +57,12 @@ public interface PanelCanvas {
     /** Replaces a text field's text, such as to clear it after a submit. */
     void setText(String key, String text);
 
+    /**
+     * Tabs across the page, as the player's Mode switch: the one {@code picked}
+     * in white. Clicking one calls {@code pick} with its place. Moves the line down.
+     */
+    void tabs(List<String> labels, int picked, java.util.function.IntConsumer pick);
+
     enum ButtonStyle { PRIMARY, SECONDARY, DANGER }
 
     /** A button at {@code x} on the current line. Returns its width. Doesn't move the line. */

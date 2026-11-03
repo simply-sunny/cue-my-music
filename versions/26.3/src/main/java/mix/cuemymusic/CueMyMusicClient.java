@@ -36,6 +36,7 @@ public final class CueMyMusicClient implements ClientModInitializer {
     private static KeyMapping playPause;
     private static KeyMapping previous;
     private static KeyMapping next;
+    private static KeyMapping switchMode;
 
     @Override
     public void onInitializeClient() {
@@ -49,6 +50,7 @@ public final class CueMyMusicClient implements ClientModInitializer {
         KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MODID, "keys"));
         openPlayer = key("key.cuemymusic.open_player", InputConstants.UNKNOWN.getValue(), category);
         toggle = key("key.cuemymusic.toggle", InputConstants.UNKNOWN.getValue(), category);
+        switchMode = key("key.cuemymusic.mode", InputConstants.UNKNOWN.getValue(), category);
 
         // On a Mac keyboard F7, F8 and F9 are the previous, play/pause and next keys.
         boolean mac = Util.getPlatform() == Util.OS.OSX;
@@ -119,9 +121,33 @@ public final class CueMyMusicClient implements ClientModInitializer {
         return KeyMappingHelper.registerKeyMapping(new KeyMapping(name, InputConstants.Type.KEYBOARD, key, category));
     }
 
+    private static volatile boolean openSoon;
+
+    /** Opens the player once no other screen is open, as after a chat command. */
+    static void openPlayerSoon() {
+        openSoon = true;
+    }
+
+    /** The mode key: on to the next mode, said over the hotbar. */
+    private static void switchMode(Minecraft client) {
+        String m = Modes.afterCurrent();
+        if (Modes.set(m) && client.player != null) {
+            client.player.sendOverlayMessage(Component.translatable("cuemymusic.mode." + m + ".toast"));
+        }
+    }
+
+    /** The mode key's mapping, for Settings to say which key it is. */
+    static KeyMapping modeKey() {
+        return switchMode;
+    }
+
     /** Handles previous, play/pause and next while a screen has the keyboard. */
     static boolean mediaKey(KeyEvent event) {
         CuePlayer player = CuePlayer.INSTANCE;
+        if (switchMode.matches(event)) {
+            switchMode(Minecraft.getInstance());
+            return true;
+        }
         if (CueConfig.INSTANCE.vanilla) return false;
         if (playPause.matches(event)) player.togglePause();
         else if (next.matches(event)) player.next();
@@ -137,6 +163,12 @@ public final class CueMyMusicClient implements ClientModInitializer {
         while (openPlayer.consumeClick()) {
             client.gui.setScreen(new CueScreen(client.gui.screen()));
         }
+        if (openSoon && client.gui.screen() == null) {
+            openSoon = false;
+            client.gui.setScreen(new CueScreen(null));
+        }
+        // Works in every mode, so it can turn vanilla back off too.
+        while (switchMode.consumeClick()) switchMode(client);
         if (CueConfig.INSTANCE.vanilla) {
             // Off: the keys do nothing, but presses mustn't pile up for when it's back on.
             while (playPause.consumeClick() | next.consumeClick() | previous.consumeClick() | toggle.consumeClick()) {

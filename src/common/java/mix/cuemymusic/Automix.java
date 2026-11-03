@@ -29,6 +29,16 @@ public final class Automix {
     public static final int WAVE_RATE = 25;
     /** Loudness points per second for finding the tempo. */
     static final int BEAT_RATE = 100;
+    /**
+     * Beatmatching speeds the next song up or slows it down by at most this
+     * much (8%), so its beats land on the first song's. Past that, stretching
+     * is heard, so the songs keep their own speed.
+     */
+    public static final double MAX_STRETCH = 0.08;
+    /** Seconds a beatmatched song takes to glide back to its own speed once the transition is over. */
+    public static final double GLIDE_SECONDS = 8;
+    /** Two beat grids out by less than this many beats over a transition still sound together. */
+    static final double DRIFT_BEATS = 0.25;
 
     private Automix() {
     }
@@ -53,27 +63,66 @@ public final class Automix {
     /** Where the bass moves from one song to the other, if it does. */
     public enum Eq { NONE, START_BASS_SWAP, EARLY_BASS_SWAP, CENTER_BASS_SWAP, LATE_BASS_SWAP }
 
-    /** Filter sweeps: the next song rising in from its highs, this one's highs closing down, or both. */
-    public enum Filter { NONE, RISE, FALL, SWEEP }
+    /**
+     * Filter sweeps. RISE is a high-pass filter in: the next song rising in
+     * from its highs. FALL is a low-pass filter out: this one's highs closing
+     * down. SWEEP is both. LOW_PASS_IN brings the next song in muffled and
+     * opens it up, and LOW_PASS_IN_OUT does that while this one closes down.
+     * The first names are kept as they are, since saved transitions use them.
+     */
+    public enum Filter {
+        NONE, RISE, FALL, SWEEP, LOW_PASS_IN, LOW_PASS_IN_OUT;
+
+        boolean highPassIn() {
+            return this == RISE || this == SWEEP;
+        }
+
+        boolean lowPassIn() {
+            return this == LOW_PASS_IN || this == LOW_PASS_IN_OUT;
+        }
+
+        boolean lowPassOut() {
+            return this == FALL || this == SWEEP || this == LOW_PASS_IN_OUT;
+        }
+    }
 
     public enum Effect { NONE, ECHO_OUT }
 
-    /** The parts of a transition. */
-    public record Shape(Volume volume, Eq eq, Filter filter, Effect effect) {
+    /** LOOP_OUT repeats the first song's bar at the start of the transition until it's gone, in place of its outro. */
+    public enum Loop { NONE, LOOP_OUT }
+
+    /** The parts of a transition. A part left out (as in a transition saved before it existed) is none. */
+    public record Shape(Volume volume, Eq eq, Filter filter, Effect effect, Loop loop) {
+        public Shape {
+            if (volume == null) volume = Volume.SMOOTH;
+            if (eq == null) eq = Eq.NONE;
+            if (filter == null) filter = Filter.NONE;
+            if (effect == null) effect = Effect.NONE;
+            if (loop == null) loop = Loop.NONE;
+        }
+
+        public Shape(Volume volume, Eq eq, Filter filter, Effect effect) {
+            this(volume, eq, filter, effect, Loop.NONE);
+        }
+
         public Shape withVolume(Volume v) {
-            return new Shape(v, eq, filter, effect);
+            return new Shape(v, eq, filter, effect, loop);
         }
 
         public Shape withEq(Eq v) {
-            return new Shape(volume, v, filter, effect);
+            return new Shape(volume, v, filter, effect, loop);
         }
 
         public Shape withFilter(Filter v) {
-            return new Shape(volume, eq, v, effect);
+            return new Shape(volume, eq, v, effect, loop);
         }
 
         public Shape withEffect(Effect v) {
-            return new Shape(volume, eq, filter, v);
+            return new Shape(volume, eq, filter, v, loop);
+        }
+
+        public Shape withLoop(Loop v) {
+            return new Shape(volume, eq, filter, effect, v);
         }
     }
 
@@ -94,29 +143,43 @@ public final class Automix {
      * {@code shape}. A negative number means automatic: {@code seconds} long,
      * starting {@code startBeforeEnd} seconds before the end of the first
      * song's sound, into the second song {@code enterAt} seconds from its start.
+     * Beatmatching is on unless {@code beatmatchOff}, so a transition saved
+     * before it existed has it on.
      */
-    public record Transition(Preset preset, Shape shape, double seconds, double startBeforeEnd, double enterAt) {
+    public record Transition(Preset preset, Shape shape, double seconds, double startBeforeEnd, double enterAt, boolean beatmatchOff) {
         public static final Transition AUTO = new Transition(Preset.AUTO, null, -1, -1, -1);
 
+        public Transition(Preset preset, Shape shape, double seconds, double startBeforeEnd, double enterAt) {
+            this(preset, shape, seconds, startBeforeEnd, enterAt, false);
+        }
+
         public Transition withPreset(Preset p) {
-            return new Transition(p, null, seconds, startBeforeEnd, enterAt);
+            return new Transition(p, null, seconds, startBeforeEnd, enterAt, beatmatchOff);
         }
 
         /** Sets the parts by hand, which makes it a custom transition. */
         public Transition withShape(Shape s) {
-            return new Transition(Preset.CUSTOM, s, seconds, startBeforeEnd, enterAt);
+            return new Transition(Preset.CUSTOM, s, seconds, startBeforeEnd, enterAt, beatmatchOff);
         }
 
         public Transition withSeconds(double v) {
-            return new Transition(preset, shape, v, startBeforeEnd, enterAt);
+            return new Transition(preset, shape, v, startBeforeEnd, enterAt, beatmatchOff);
         }
 
         public Transition withStart(double v) {
-            return new Transition(preset, shape, seconds, v, enterAt);
+            return new Transition(preset, shape, seconds, v, enterAt, beatmatchOff);
         }
 
         public Transition withEnter(double v) {
-            return new Transition(preset, shape, seconds, startBeforeEnd, v);
+            return new Transition(preset, shape, seconds, startBeforeEnd, v, beatmatchOff);
+        }
+
+        public Transition withBeatmatch(boolean on) {
+            return new Transition(preset, shape, seconds, startBeforeEnd, enterAt, !on);
+        }
+
+        public boolean beatmatch() {
+            return !beatmatchOff;
         }
     }
 
@@ -225,22 +288,54 @@ public final class Automix {
         }
     }
 
-    /** A transition worked out for two songs: the preset it is, its parts, and in frames where it starts in each and its length. */
-    public record Plan(Preset preset, Shape shape, long fadeStart, long fadeFrames, long enterAt) {
+    /**
+     * A transition worked out for two songs: the preset it is, its parts, in
+     * frames where it starts in each and its length, and the speed the next
+     * song plays at through it so its beats meet the first song's (1 for its own).
+     */
+    public record Plan(Preset preset, Shape shape, long fadeStart, long fadeFrames, long enterAt, double stretch) {
+        public Plan(Preset preset, Shape shape, long fadeStart, long fadeFrames, long enterAt) {
+            this(preset, shape, fadeStart, fadeFrames, enterAt, 1);
+        }
     }
 
     /**
-     * The automatic preset for two songs, as a DJ would pick: Blend when the
-     * tempos are within 6% (or double/half) and the keys go together, Rise
-     * when the tempos match but the keys clash (the filter hides the clash),
-     * Fade for a small tempo gap, and Echo for a big one, so the first song
-     * trails off before the new tempo comes in. Fade when a tempo isn't known.
+     * The automatic preset for two songs, as a DJ would pick: Blend when their
+     * beats stay together through a long overlap (beatmatched, or close enough
+     * as they are) and the keys go together, Rise when the beats meet but the
+     * keys clash (the filter hides the clash), Fade for a small tempo gap, and
+     * Echo for a big one, so the first song trails off before the new tempo
+     * comes in. Fade when a tempo isn't known, as in ambient music.
      */
     public static Preset autoPreset(Profile a, Profile b) {
+        return autoPreset(a, b, true);
+    }
+
+    public static Preset autoPreset(Profile a, Profile b, boolean beatmatch) {
         if (a.bpm() <= 0 || b.bpm() <= 0) return Preset.FADE;
         double gap = tempoGap(a.bpm(), b.bpm());
-        if (gap <= 0.06) return keysMix(a.key(), b.key()) ? Preset.BLEND : Preset.RISE;
+        double left = beatmatch && stretch(a, b) != 1 ? 0 : gap;
+        // Over a blend's 32 beats, beats this far apart drift by this many beats.
+        if (left * 32 <= DRIFT_BEATS) return keysMix(a.key(), b.key()) ? Preset.BLEND : Preset.RISE;
         return gap <= 0.15 ? Preset.FADE : Preset.ECHO;
+    }
+
+    /**
+     * The speed song {@code b} plays at so its beats meet {@code a}'s, counting
+     * double and half time as the same: 1 if a tempo isn't known, they already
+     * match, or it would take more than {@link #MAX_STRETCH}.
+     */
+    public static double stretch(Profile a, Profile b) {
+        if (a.bpm() <= 0 || b.bpm() <= 0) return 1;
+        double best = 1, bestGap = Double.MAX_VALUE;
+        for (double m : new double[] {0.5, 1, 2}) {
+            double r = a.bpm() / (b.bpm() * m);
+            if (Math.abs(r - 1) < bestGap) {
+                bestGap = Math.abs(r - 1);
+                best = r;
+            }
+        }
+        return bestGap < 0.002 || bestGap > MAX_STRETCH ? 1 : best;
     }
 
     /** How far apart two tempos are, as a fraction, counting double and half time as the same. */
@@ -277,14 +372,21 @@ public final class Automix {
         if (shape.volume() == Volume.CUT) return CUT_SECONDS;
         if (shape.volume() == Volume.DROP) return dropSeconds(a);
         double beat = a.beat();
-        if (preset == Preset.BLEND) return beat > 0 ? Math.clamp(32 * beat, 8, 24) : 12;
-        if (preset == Preset.ECHO) return beat > 0 ? Math.clamp(8 * beat, 3, 8) : 5;
-        return beat > 0 ? Math.clamp(AUTO_BEATS * beat, 4, 12) : AUTO_SECONDS;
+        if (preset == Preset.BLEND) return beat > 0 ? wholeBars(a, Math.clamp(32 * beat, 8, 24)) : 12;
+        if (preset == Preset.ECHO) return beat > 0 ? wholeBars(a, Math.clamp(8 * beat, 3, 8)) : 5;
+        // At least 6 seconds: shorter, a fade between two songs that don't share a beat sounds rushed.
+        return beat > 0 ? wholeBars(a, Math.clamp(AUTO_BEATS * beat, 6, 12)) : AUTO_SECONDS;
+    }
+
+    /** {@code seconds} as the nearest whole number of bars, at least one, so lengths read and sound as bars. */
+    static double wholeBars(Profile a, double seconds) {
+        double bar = 4 * a.beat();
+        return Math.max(1, Math.round(seconds / bar)) * bar;
     }
 
     /** A drop's automatic length: 16 bars (64 beats) of the first song, 15 to 40 seconds, or 30 with no tempo. */
     public static double dropSeconds(Profile a) {
-        return a.bpm() > 0 ? Math.clamp(DROP_BEATS * 60 / a.bpm(), 15, 40) : 30;
+        return a.bpm() > 0 ? wholeBars(a, Math.clamp(DROP_BEATS * 60 / a.bpm(), 15, 40)) : 30;
     }
 
     /**
@@ -294,6 +396,18 @@ public final class Automix {
      * its sound if there's no waveform.
      */
     static long musicalEnd(Profile p) {
+        return MUSICAL_ENDS.computeIfAbsent(p, Automix::findMusicalEnd);
+    }
+
+    /**
+     * {@link #musicalEnd} and {@link #musicalStart} of each profile, worked out
+     * once: each sorts the whole song's loudness, and the mix view plans every
+     * transition it shows on every frame.
+     */
+    private static final java.util.Map<Profile, Long> MUSICAL_ENDS = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>()),
+            MUSICAL_STARTS = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    private static long findMusicalEnd(Profile p) {
         int n = Math.min(p.low().length, Math.min(p.mid().length, p.high().length));
         int s = (int) Math.floor(p.seconds(p.start()) * WAVE_RATE), t = Math.min(n, (int) Math.ceil(p.seconds(p.end()) * WAVE_RATE));
         if (t - s < WAVE_RATE * 20) return p.end();
@@ -315,32 +429,78 @@ public final class Automix {
     }
 
     /**
+     * Where a song's music really starts, past a near-silent intro: the start
+     * of the first second at least a fifth as loud as the song usually is, on
+     * a bar if they're known. Only past an intro of 3 to 20 seconds; otherwise,
+     * or with no waveform, the start of its sound. A quiet intro under the
+     * first song's fade sounds like a gap.
+     */
+    static long musicalStart(Profile p) {
+        return MUSICAL_STARTS.computeIfAbsent(p, Automix::findMusicalStart);
+    }
+
+    private static long findMusicalStart(Profile p) {
+        int n = Math.min(p.low().length, Math.min(p.mid().length, p.high().length));
+        int s = (int) Math.floor(p.seconds(p.start()) * WAVE_RATE), t = Math.min(n, (int) Math.ceil(p.seconds(p.end()) * WAVE_RATE));
+        if (t - s < WAVE_RATE * 40) return p.start();
+        float[] e = new float[t - s];
+        for (int i = s; i < t; i++) e[i - s] = p.low()[i] + p.mid()[i] + p.high()[i];
+        float[] sorted = e.clone();
+        Arrays.sort(sorted);
+        double usual = sorted[(int) (sorted.length * 0.7)];
+        if (usual <= 0) return p.start();
+        double run = 0;
+        for (int i = 0; i < Math.min(e.length, WAVE_RATE * 21); i++) {
+            run += e[i] - (i >= WAVE_RATE ? e[i - WAVE_RATE] : 0);
+            if (i >= WAVE_RATE - 1 && run / WAVE_RATE >= 0.2 * usual) {
+                int first = i - WAVE_RATE + 1;
+                if (first < WAVE_RATE * 3 || first > WAVE_RATE * 20) return p.start();
+                long at = p.frame((s + first) / (double) WAVE_RATE);
+                // Onto the bar it's in, so it comes in on the beat.
+                long bar = p.barNearest(at);
+                return Math.clamp(bar > at ? bar - p.frame(4 * p.beat()) : bar, p.start(), p.end());
+            }
+        }
+        return p.start();
+    }
+
+    /**
      * Works out {@code t} for songs {@code a} into {@code b}. Never longer
      * than a quarter of the shorter song's sound. Left automatic, the
      * transition ends where the first song's music ends (see
-     * {@link #musicalEnd}), the second song comes in from the start of its
-     * sound, and the start moves by under a bar so both songs' bars line up.
+     * {@link #musicalEnd}), the second song comes in where its music starts
+     * (see {@link #musicalStart}), and the start moves by under a bar so both
+     * songs' bars line up. With beatmatching on, the second song plays at the
+     * first one's tempo through the transition.
      */
     public static Plan plan(Profile a, Profile b, Transition t) {
-        Preset preset = t.preset() == Preset.AUTO ? autoPreset(a, b) : t.preset();
+        Preset preset = t.preset() == Preset.AUTO ? autoPreset(a, b, t.beatmatch()) : t.preset();
         Shape shape = preset == Preset.CUSTOM && t.shape() != null ? t.shape() : shape(preset);
+        double stretch = t.beatmatch() && shape.volume() != Volume.CUT ? stretch(a, b) : 1;
         double seconds = t.seconds() >= 0 ? t.seconds() : autoSeconds(a, shape, preset);
         long most = Math.min(a.end() - a.start(), b.end() - b.start()) / 4;
         long fadeFrames = Math.clamp(a.frame(seconds), 1, Math.max(1, most));
-        long enterAt = t.enterAt() >= 0 ? Math.clamp(b.frame(t.enterAt()), 0, Math.max(0, b.frames() - 1)) : b.start();
+        long enterAt = t.enterAt() >= 0 ? Math.clamp(b.frame(t.enterAt()), 0, Math.max(0, b.frames() - 1)) : musicalStart(b);
         long fadeStart;
         if (t.startBeforeEnd() >= 0) {
             fadeStart = a.end() - a.frame(t.startBeforeEnd());
         } else {
             fadeStart = musicalEnd(a) - fadeFrames;
             if (a.hasBars() && shape.volume() != Volume.CUT) {
-                // The second song's first bar starts this long after it comes in; a bar of the first song should start there too.
-                long lead = b.hasBars() ? a.frame(b.seconds(b.barAtOrAfter(enterAt) - enterAt)) : 0;
+                // The second song's first bar starts this long after it comes in (sooner if it's sped up);
+                // a bar of the first song should start there too.
+                long lead = b.hasBars() ? a.frame(b.seconds(b.barAtOrAfter(enterAt) - enterAt) / stretch) : 0;
                 fadeStart = a.barNearest(fadeStart + lead) - lead;
             }
         }
         fadeStart = Math.clamp(fadeStart, a.start(), Math.max(a.start(), a.frames() - 1));
-        return new Plan(preset, shape, fadeStart, fadeFrames, enterAt);
+        return new Plan(preset, shape, fadeStart, fadeFrames, enterAt, stretch);
+    }
+
+    /** Frames of song {@code a} a loop out repeats: a bar, or 2 seconds with no tempo; never over half the transition. */
+    public static long loopFrames(Profile a, long fadeFrames) {
+        double bar = a.bpm() > 0 ? 4 * a.beat() : 2;
+        return Math.max(1, Math.min(a.frame(bar), fadeFrames / 2));
     }
 
     /**
@@ -415,6 +575,26 @@ public final class Automix {
         if (s.eq() == Eq.NONE || s.eq() == Eq.START_BASS_SWAP) return 1;
         double p = swapPoint(s.eq());
         return span(t, p - 0.025, p + 0.025);
+    }
+
+    /** How open the outgoing song's low-pass filter is, from 1 (not filtered) to 0 (closed down to 400 Hz). */
+    public static double filterOut(Shape s, double t) {
+        return s.filter().lowPassOut() ? 1 - span(t, 0.3, 1) : 1;
+    }
+
+    /** How open the incoming song's filter is, from 0 (only its highs, or only its lows) to 1 (not filtered). */
+    public static double filterIn(Shape s, double t) {
+        return s.filter().highPassIn() || s.filter().lowPassIn() ? span(t, 0, 0.8) : 1;
+    }
+
+    /**
+     * How much both songs are turned down while they overlap at full volume,
+     * so an overlap or drop doesn't come out louder than either song: half way
+     * to equal power, about 1.5 dB at two songs at full volume.
+     */
+    static double overlapTrim(double va, double vb) {
+        double sum = va * va + vb * vb;
+        return sum <= 1 ? 1 : Math.pow(sum, -0.25);
     }
 
     // Analysis.
@@ -797,8 +977,17 @@ public final class Automix {
         private final Svf[] bassA, bassB, sweepA, sweepB;
         private final float[][] delay;
         private int delayPos;
+        // A loop out: the bar it repeats, and a little past it to cross back into its start from.
+        private final float[] loop;
+        private final int loopFrames;
+        private final int seam;
 
         public Blend(Plan plan, int channels, float rate, double gainA, double gainB, double bpmA) {
+            this(plan, channels, rate, gainA, gainB, bpmA, 0);
+        }
+
+        /** {@code loopFrames} is how much of {@code a} a loop out repeats (see {@link #loopFrames}); 0 picks 2 seconds. */
+        public Blend(Plan plan, int channels, float rate, double gainA, double gainB, double bpmA, long loopFrames) {
             this.plan = plan;
             this.shape = plan.shape();
             this.channels = channels;
@@ -808,10 +997,20 @@ public final class Automix {
             bassA = filters(channels, 200, rate);
             bassB = filters(channels, 200, rate);
             sweepA = filters(channels, 20000, rate);
-            sweepB = filters(channels, 1500, rate);
+            sweepB = filters(channels, shape.filter().lowPassIn() ? 300 : 1500, rate);
             // One beat of echo, or 3/8 of a second with no tempo.
             double echo = bpmA > 0 ? 60 / bpmA : 0.375;
             delay = shape.effect() == Effect.ECHO_OUT ? new float[channels][(int) Math.max(rate / 10, echo * rate)] : null;
+            if (shape.loop() == Loop.LOOP_OUT) {
+                long n = loopFrames > 0 ? loopFrames : Math.round(2 * rate);
+                this.loopFrames = (int) Math.max(2, Math.min(n, Math.max(2, plan.fadeFrames() / 2)));
+                seam = Math.max(1, Math.min(this.loopFrames / 4, Math.round(rate * 0.02f)));
+                loop = new float[(this.loopFrames + seam) * channels];
+            } else {
+                this.loopFrames = 0;
+                seam = 0;
+                loop = null;
+            }
         }
 
         private static Svf[] filters(int channels, double cutoff, float rate) {
@@ -838,21 +1037,25 @@ public final class Automix {
          */
         public void process(float[] a, float[] b, float[] out, int frames) {
             boolean split = shape.eq() != Eq.NONE;
-            boolean fall = shape.filter() == Filter.FALL || shape.filter() == Filter.SWEEP;
-            boolean rise = shape.filter() == Filter.RISE || shape.filter() == Filter.SWEEP;
+            boolean fall = shape.filter().lowPassOut();
+            boolean rise = shape.filter().highPassIn(), open = shape.filter().lowPassIn();
             for (int f = 0; f < frames; f++) {
-                double t = (frame + f) / (double) plan.fadeFrames();
+                long at = frame + f;
+                double t = at / (double) plan.fadeFrames();
                 if (f % 32 == 0) {
                     for (int c = 0; c < channels; c++) {
                         if (fall) sweepA[c].set(20000 * Math.pow(400 / 20000.0, span(t, 0.3, 1)), rate);
                         if (rise) sweepB[c].set(1500 * Math.pow(20 / 1500.0, span(t, 0, 0.8)), rate);
+                        if (open) sweepB[c].set(300 * Math.pow(20000 / 300.0, span(t, 0, 0.8)), rate);
                     }
                 }
-                double va = volumeOut(shape, t) * gainA, vb = volumeIn(shape, t) * gainB;
+                double outV = volumeOut(shape, t), inV = volumeIn(shape, t), trim = overlapTrim(outV, inV);
+                double va = outV * gainA * trim, vb = inV * gainB * trim;
                 double la = bassOut(shape, t), lb = bassIn(shape, t);
                 for (int c = 0; c < channels; c++) {
                     int i = f * channels + c;
                     float xa = a != null && i < a.length ? a[i] : 0, xb = b != null && i < b.length ? b[i] : 0;
+                    if (loop != null) xa = looped(at, c, xa);
                     float ya = xa, yb = xb;
                     if (split) {
                         float lowA = bassA[c].low(xa), lowB = bassB[c].low(xb);
@@ -861,6 +1064,7 @@ public final class Automix {
                     }
                     if (fall) ya = sweepA[c].low(ya);
                     if (rise) yb = sweepB[c].high(yb);
+                    if (open) yb = sweepB[c].low(yb);
                     double mixed = ya * va + yb * vb;
                     if (delay != null) {
                         float[] line = delay[c];
@@ -874,6 +1078,21 @@ public final class Automix {
                 if (delay != null) delayPos = (delayPos + 1) % delay[0].length;
             }
             frame += frames;
+        }
+
+        /**
+         * The first song's sample in a loop out: as it plays through the bar
+         * (kept as it goes, and a little past it), then that bar over and over.
+         * Each time round, the start fades in over what followed the bar's end,
+         * so the seam doesn't click.
+         */
+        private float looped(long at, int c, float live) {
+            if (at < loopFrames + seam) loop[(int) at * channels + c] = live;
+            if (at < loopFrames) return live;
+            int q = (int) ((at - loopFrames) % loopFrames);
+            if (q >= seam) return loop[q * channels + c];
+            double w = (q + 0.5) / seam;
+            return (float) (loop[q * channels + c] * Math.sin(w * Math.PI / 2) + loop[(loopFrames + q) * channels + c] * Math.cos(w * Math.PI / 2));
         }
     }
 

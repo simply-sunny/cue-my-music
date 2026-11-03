@@ -43,6 +43,12 @@ public final class CueConfig {
     public volatile boolean pauseOnTravel = false;
     /** Pause the player's song while the game window isn't in front, and play it again when it is. */
     public volatile boolean pauseOnLostFocus = true;
+    /** Next plays the transition into the next song, from the coming bar, rather than cutting to it. */
+    public volatile boolean skipWithTransition = true;
+    /** Lists play the song picked, then the rest in a random order. */
+    public volatile boolean shuffle;
+    /** When a list ends, songs like it carry on, as Spotify's Autoplay; off hands back to the game's music. */
+    public volatile boolean autoplay = true;
     /** Playlists made in the player, in the order they were made. Replaced whole, never mutated in place. */
     public volatile List<Playlist> playlists = List.of();
     /** "off", "all" or "one". */
@@ -65,6 +71,29 @@ public final class CueConfig {
     public volatile boolean keepOutOfRecordings = true;
     /** Transitions set in the mix editor, by "first song>second song". Replaced whole, never mutated in place. */
     public volatile Map<String, Automix.Transition> transitions = Map.of();
+    /** The player's page last open, as "VIEW" or "VIEW:key", so it opens there again. */
+    public volatile String lastPage = "";
+    /** When each list was last played, in epoch milliseconds, by the player's list key; for the library's Recents and Home. */
+    public volatile Map<String, Long> listsPlayed = Map.of();
+    /**
+     * With vanilla music off, where songs come from: "fx", the game's music
+     * with Cue My Music's effects, or "addons", songs from packs and add-ons
+     * on the game's schedule. Vanilla music on is the third mode, pure vanilla.
+     */
+    public volatile String mode = "fx";
+    /** The library's order: "default", "recents" or "alphabetical". */
+    public volatile String librarySort = "default";
+    /** What Radio plays: "all" (the game's music and add-on songs), "game" or "addons". */
+    public volatile String radioSource = "all";
+    /** The mode key goes round all three modes; otherwise it flips between Vanilla + FX and Add-ons. */
+    public volatile boolean modeKeyCyclesAll = false;
+    /** Seconds between the game's songs, in place of its own Frequency roll; -1 keeps the game's. */
+    public volatile int songGap = -1;
+    /** Your changes to the game's track pools, by pool (a sound event such as "minecraft:music.game"). */
+    public volatile Map<String, TrackPools.Edit> poolEdits = Map.of();
+    /** A transition being edited and not saved yet, which plays in its place so it can be heard; not saved. */
+    private transient volatile String previewKey;
+    private transient volatile Automix.Transition preview;
 
     private CueConfig() {
     }
@@ -194,6 +223,13 @@ public final class CueConfig {
 
     /** The transition from song {@code from} into song {@code to}: as set in the mix editor, or automatic. */
     public Automix.Transition transition(String from, String to) {
+        Automix.Transition p = preview;
+        if (p != null && (from + ">" + to).equals(previewKey)) return p;
+        return savedTransition(from, to);
+    }
+
+    /** The transition as saved, leaving out one being edited. */
+    public Automix.Transition savedTransition(String from, String to) {
         Automix.Transition t = transitions.get(from + ">" + to);
         return t != null ? t : Automix.Transition.AUTO;
     }
@@ -204,6 +240,38 @@ public final class CueConfig {
         if (t.equals(Automix.Transition.AUTO)) next.remove(from + ">" + to);
         else next.put(from + ">" + to, t);
         transitions = Map.copyOf(next);
+    }
+
+    /** The steps the time between songs moves in, in seconds; -1 is the game's own. */
+    public static final List<Integer> SONG_GAPS = List.of(-1, 0, 5, 15, 30, 60, 120, 300, 600, 1200);
+
+    public TrackPools.Edit poolEdit(String pool) {
+        return poolEdits.getOrDefault(pool, TrackPools.Edit.NONE);
+    }
+
+    public void setPoolEdit(String pool, TrackPools.Edit edit) {
+        Map<String, TrackPools.Edit> next = new HashMap<>(poolEdits);
+        if (edit == null || edit.isEmpty()) next.remove(pool);
+        else next.put(pool, edit);
+        poolEdits = Map.copyOf(next);
+        save();
+    }
+
+    /** Plays {@code t} from {@code from} into {@code to} while it's edited, without saving it; null stops. */
+    public void previewTransition(String from, String to, Automix.Transition t) {
+        preview = null;
+        previewKey = t == null ? null : from + ">" + to;
+        preview = t;
+    }
+
+    /** Notes that the list named {@code key} started playing now. */
+    public void listPlayed(String key) {
+        Map<String, Long> next = new HashMap<>(listsPlayed);
+        next.put(key, System.currentTimeMillis());
+        // The 50 most recent are plenty for Recents and Home.
+        while (next.size() > 50) next.remove(java.util.Collections.min(next.entrySet(), Map.Entry.comparingByValue()).getKey());
+        listsPlayed = Map.copyOf(next);
+        save();
     }
 
     public boolean isCollapsed(String section) {
@@ -232,6 +300,21 @@ public final class CueConfig {
         disliked = disliked == null ? List.of() : disliked.stream().filter(Objects::nonNull).distinct().toList();
         collapsed = collapsed == null ? List.of() : collapsed.stream().filter(Objects::nonNull).distinct().toList();
         if (transitions == null) transitions = Map.of();
+        if (!List.of("all", "game", "addons").contains(radioSource)) radioSource = "all";
+        if (lastPage == null) lastPage = "";
+        Map<String, Long> played = new HashMap<>();
+        if (listsPlayed != null) listsPlayed.forEach((k, v) -> {
+            if (k != null && v != null) played.put(k, v);
+        });
+        listsPlayed = Map.copyOf(played);
+        if (!List.of("fx", "addons").contains(mode)) mode = "fx";
+        if (!SONG_GAPS.contains(songGap)) songGap = -1;
+        Map<String, TrackPools.Edit> edits = new HashMap<>();
+        if (poolEdits != null) poolEdits.forEach((k, v) -> {
+            if (k != null && v != null && !v.isEmpty()) edits.put(k, new TrackPools.Edit(v.removed(), v.added()));
+        });
+        poolEdits = Map.copyOf(edits);
+        if (!List.of("default", "recents", "alphabetical").contains(librarySort)) librarySort = "default";
         Map<String, Automix.Transition> kept = new HashMap<>();
         transitions.forEach((k, v) -> {
             if (k != null && v != null && v.preset() != null) kept.put(k, v);
@@ -286,6 +369,9 @@ public final class CueConfig {
         liked = o.liked;
         pauseOnTravel = o.pauseOnTravel;
         pauseOnLostFocus = o.pauseOnLostFocus;
+        skipWithTransition = o.skipWithTransition;
+        shuffle = o.shuffle;
+        autoplay = o.autoplay;
         automix = o.automix;
         crossfadeSeconds = o.crossfadeSeconds;
         vanilla = o.vanilla;
@@ -296,5 +382,13 @@ public final class CueConfig {
         disliked = o.disliked;
         collapsed = o.collapsed;
         transitions = o.transitions;
+        radioSource = o.radioSource;
+        lastPage = o.lastPage;
+        listsPlayed = o.listsPlayed;
+        mode = o.mode;
+        librarySort = o.librarySort;
+        modeKeyCyclesAll = o.modeKeyCyclesAll;
+        songGap = o.songGap;
+        poolEdits = o.poolEdits;
     }
 }

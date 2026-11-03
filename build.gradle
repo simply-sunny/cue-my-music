@@ -73,7 +73,7 @@ subprojects {
 // Headless checks run the real DSP code; nothing from Minecraft is needed.
 def regressionProject = subprojects.first()
 def compileRegressionTests = regressionProject.tasks.register('compileRegressionTests', JavaCompile) {
-	source rootProject.file('src/common/java/mix/cuemymusic/dsp'), rootProject.file('src/common/java/mix/cuemymusic/library/PackNames.java'), rootProject.file('src/common/java/mix/cuemymusic/PlayOrder.java'), rootProject.file('src/common/java/mix/cuemymusic/ListeningStats.java'), rootProject.file('src/common/java/mix/cuemymusic/Automix.java'), rootProject.file('tests/java')
+	source rootProject.file('src/common/java/mix/cuemymusic/dsp'), rootProject.file('src/common/java/mix/cuemymusic/library/PackNames.java'), rootProject.file('src/common/java/mix/cuemymusic/PlayOrder.java'), rootProject.file('src/common/java/mix/cuemymusic/ListeningStats.java'), rootProject.file('src/common/java/mix/cuemymusic/Automix.java'), rootProject.file('src/common/java/mix/cuemymusic/Radio.java'), rootProject.file('src/common/java/mix/cuemymusic/TrackPools.java'), rootProject.file('src/common/java/mix/cuemymusic/UiAudit.java'), rootProject.file('tests/java')
 	classpath = files()
 	destinationDirectory = rootProject.layout.buildDirectory.dir('classes/regression')
 	options.release = minecraftTargets[regressionProject.name].java
@@ -103,16 +103,34 @@ def automixTest = regressionProject.tasks.register('automixTest', JavaExec) {
 	mainClass = 'mix.cuemymusic.AutomixTest'
 }
 
+def radioTest = regressionProject.tasks.register('radioTest', JavaExec) {
+	dependsOn compileRegressionTests
+	classpath = files(compileRegressionTests.flatMap { it.destinationDirectory })
+	mainClass = 'mix.cuemymusic.RadioTest'
+}
+
+def trackPoolsTest = regressionProject.tasks.register('trackPoolsTest', JavaExec) {
+	dependsOn compileRegressionTests
+	classpath = files(compileRegressionTests.flatMap { it.destinationDirectory })
+	mainClass = 'mix.cuemymusic.TrackPoolsTest'
+}
+
+def uiAuditTest = regressionProject.tasks.register('uiAuditTest', JavaExec) {
+	dependsOn compileRegressionTests
+	classpath = files(compileRegressionTests.flatMap { it.destinationDirectory })
+	mainClass = 'mix.cuemymusic.UiAuditTest'
+}
+
 tasks.register('test') {
-	dependsOn regressionTest, playOrderTest, statsTest, automixTest
+	dependsOn regressionTest, playOrderTest, statsTest, automixTest, radioTest, trackPoolsTest, uiAuditTest
 }
 
 tasks.named('check') {
-	dependsOn regressionTest, playOrderTest, statsTest, automixTest
+	dependsOn regressionTest, playOrderTest, statsTest, automixTest, radioTest, trackPoolsTest, uiAuditTest
 }
 
 tasks.register('buildAll', Sync) {
-	dependsOn regressionTest, playOrderTest, statsTest, automixTest
+	dependsOn regressionTest, playOrderTest, statsTest, automixTest, radioTest, trackPoolsTest, uiAuditTest
 	group = 'build'
 	description = 'Builds every supported Minecraft version and collects the release JARs.'
 

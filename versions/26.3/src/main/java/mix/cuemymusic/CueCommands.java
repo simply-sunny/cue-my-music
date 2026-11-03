@@ -57,6 +57,13 @@ final class CueCommands {
                     return nowPlaying(c.getSource());
                 }))
                 .then(ClientCommands.literal("pause").executes(CueCommands::pause))
+                .then(ClientCommands.literal("audit").executes(c -> {
+                    // The chat closes after the command, so the player opens on the next tick.
+                    CueScreen.auditRequested = true;
+                    CueMyMusicClient.openPlayerSoon();
+                    c.getSource().sendFeedback(Component.translatable("cuemymusic.audit.started"));
+                    return 1;
+                }))
                 .then(ClientCommands.literal("dislike")
                         .executes(c -> {
                             Track t = CuePlayer.INSTANCE.current();
@@ -78,7 +85,7 @@ final class CueCommands {
 
     /** Dislikes the song, or takes the dislike away if it already has one. */
     private static int dislike(FabricClientCommandSource src, Track t) {
-        if (!MusicLibrary.isGameMusic(t)) {
+        if (!Modes.allows(t)) {
             src.sendError(Component.translatable("cuemymusic.command.not_game_music", t.title()));
             return 0;
         }
@@ -137,10 +144,10 @@ final class CueCommands {
         return 1;
     }
 
-    /** The first song with this title, ignoring case; else every song whose title contains it. */
+    /** The mode's first song with this title, ignoring case; else every one of its songs whose title contains it. */
     static List<Track> find(String name) {
         String q = name.trim().toLowerCase(Locale.ROOT);
-        List<Track> all = MusicLibrary.all();
+        List<Track> all = Modes.only(MusicLibrary.all());
         for (Track t : all) {
             if (t.title().toLowerCase(Locale.ROOT).equals(q)) return List.of(t);
         }
@@ -149,7 +156,8 @@ final class CueCommands {
 
     private static CompletableFuture<Suggestions> suggestSongs(CommandContext<FabricClientCommandSource> c, SuggestionsBuilder b) {
         String typed = b.getRemaining().toLowerCase(Locale.ROOT);
-        MusicLibrary.all().stream()
+        // Only the mode's songs: the others wouldn't play.
+        Modes.only(MusicLibrary.all()).stream()
                 .map(Track::title)
                 .distinct()
                 .filter(title -> title.toLowerCase(Locale.ROOT).contains(typed))

@@ -99,6 +99,10 @@ public final class CueStream implements FloatSampleSource {
     private Track noBlend;
     private Automix.Blend blend;
     private boolean handedOver;
+    /** Set from the client thread: jump to where the transition into the next song starts. */
+    private volatile boolean skipAsked;
+    /** A skip asked for here that couldn't blend: the player cuts to the next song instead. */
+    private static volatile boolean skipFailed;
 
     /** Wraps a 16-bit PCM music stream; anything else is returned as is. */
     public static AudioStream wrap(AudioStream stream, Identifier sound, double startSeconds, SoundInstance instance) {
@@ -114,6 +118,32 @@ public final class CueStream implements FloatSampleSource {
     private static volatile double pendingFadeIn;
     private long fadeInFrames;
     private long fadedFrames;
+
+    /**
+     * Skips with a transition: the playing song jumps to where its transition
+     * into the next starts, and blends into it just as it would have at its end.
+     * False if there's nothing to blend into or a transition is already under
+     * way; then skip as usual.
+     */
+    static boolean skipWithTransition() {
+        CueStream s = active;
+        if (s == null || s.next != null || s.skipAsked || s.nextPlan() == null) return false;
+        s.skipAsked = true;
+        return true;
+    }
+
+    /** The song a transition is blending into before it takes over as the one playing, or null. */
+    static Track blendingInto() {
+        CueStream s = active;
+        return s != null && s.next != null && !s.handedOver ? s.nextSong : null;
+    }
+
+    /** True once, after a skip with a transition turned out not to be able to blend. */
+    static boolean takeSkipFailed() {
+        boolean failed = skipFailed;
+        skipFailed = false;
+        return failed;
+    }
 
     /** Makes the next stream to start fade in over {@code seconds}, as after a dimension change. */
     static void fadeInNext(double seconds) {
@@ -139,8 +169,9 @@ public final class CueStream implements FloatSampleSource {
         // Decode and drop everything before the start offset. Runs on the stream-loading thread.
         long skip = (long) (startSeconds * format.getSampleRate());
         try {
-            songFrame = this.source.skip(skip);
-            if (songFrame < skip) sourceDone = true;
+            long skipped = this.source.skip(skip);
+            songFrame = skipped;
+            if (skipped < skip) sourceDone = true;
         } catch (IOException e) {
             LOG.warn("Couldn't seek {} to {}s", sound, startSeconds, e);
         }
@@ -248,8 +279,26 @@ public final class CueStream implements FloatSampleSource {
      */
     private float[] pull() throws IOException {
         if (next == null) {
+            boolean skipping = skipAsked;
+            if (skipping) {
+                skipAsked = false;
+                Automix.Plan plan = nextPlan();
+                if (plan == null) {
+                    skipFailed = true;
+                    skipping = false;
+                } else if (plan.fadeStart() > songFrame) {
+                    // Straight to where the transition starts, as if the song had played to there.
+                    source.skip(plan.fadeStart() - songFrame);
+                    songFrame = source.position();
+                    long heardAt = startNanos == 0 ? System.nanoTime() : startNanos + (long) (emittedFrames / (double) rate * 1e9);
+                    CuePlayer.INSTANCE.jumped(id, songFrame / (double) rate, heardAt);
+                }
+            }
             long start = startOfFade();
-            if (songFrame >= start) beginFade();
+            if (songFrame >= start) {
+                beginFade(nextPlan());
+                if (skipping && next == null) skipFailed = true;
+            }
             else if (start - songFrame < CHUNK_FRAMES) {
                 // Stops exactly where the transition starts.
                 return plain((int) (start - songFrame));
@@ -261,8 +310,8 @@ public final class CueStream implements FloatSampleSource {
         float[] b = next.read(CHUNK_FRAMES);
         float[] mixed = new float[CHUNK_FRAMES * channels];
         blend.process(a, b, mixed, CHUNK_FRAMES);
-        songFrame += a == null ? 0 : a.length / channels;
-        nextFrame += b == null ? 0 : b.length / channels;
+        songFrame = source.position();
+        nextFrame = next.position();
         // The next song takes over as the one playing at the middle of the transition.
         if (blend.progress() >= 0.5) handOver();
         if (blend.done() || (a == null && b == null)) endFade();
@@ -273,7 +322,7 @@ public final class CueStream implements FloatSampleSource {
     private float[] plain(int frames) throws IOException {
         float[] chunk = source.read(frames);
         if (chunk == null) return null;
-        songFrame += chunk.length / channels;
+        songFrame = source.position();
         if (gain != 1) {
             for (int i = 0; i < chunk.length; i++) chunk[i] *= (float) gain;
         }
@@ -313,8 +362,7 @@ public final class CueStream implements FloatSampleSource {
         return plan == null ? Long.MAX_VALUE : plan.fadeStart();
     }
 
-    private void beginFade() {
-        Automix.Plan plan = nextPlan();
+    private void beginFade(Automix.Plan plan) {
         if (plan == null) return;
         Track n = CuePlayer.INSTANCE.automixNext();
         Automix.Profile p = AutomixProfiles.applies(n) ? AutomixProfiles.get(n) : null;
@@ -329,6 +377,8 @@ public final class CueStream implements FloatSampleSource {
             }
             next = new Reader(s);
             nextFrame = next.skip(plan.enterAt());
+            // Beatmatched: it plays at the first song's tempo until the transition is over.
+            if (plan.stretch() != 1) next.stretch(plan.stretch(), rate);
         } catch (IOException | RuntimeException e) {
             LOG.warn("Couldn't open {} to blend into", n.location(), e);
             next = null;
@@ -337,7 +387,8 @@ public final class CueStream implements FloatSampleSource {
         }
         nextSong = n;
         nextProfile = p;
-        blend = new Automix.Blend(plan, channels, rate, gain, p != null ? p.gain() : 1, profile != null ? profile.bpm() : 0);
+        long loop = profile != null ? Automix.loopFrames(profile, plan.fadeFrames()) : 0;
+        blend = new Automix.Blend(plan, channels, rate, gain, p != null ? p.gain() : 1, profile != null ? profile.bpm() : 0, loop);
         handedOver = false;
     }
 
@@ -354,6 +405,8 @@ public final class CueStream implements FloatSampleSource {
         handOver();
         source.close();
         source = next;
+        // Back to its own speed, gently, now the first song is gone.
+        source.glideHome((long) (Automix.GLIDE_SECONDS * rate));
         song = nextSong;
         profile = nextProfile;
         gain = profile != null ? profile.gain() : 1;
@@ -376,11 +429,26 @@ public final class CueStream implements FloatSampleSource {
         if (next != null) next.close();
     }
 
-    /** A decoder that hands out exactly the number of frames asked for. */
+    /**
+     * A decoder that hands out exactly the number of frames asked for, at the
+     * song's own speed, or sped up or slowed down without changing its pitch
+     * while it's beatmatched.
+     */
     private static final class Reader {
         private final AudioStream source;
         private final int channels;
         private final Automix.FrameReader frames;
+        /** Set while the song is beatmatched, and dropped once it's back at its own speed and drained. */
+        private PitchTempoProcessor stretcher;
+        /** Back at speed 1: what's left in the stretcher plays out, then the song is read straight again. */
+        private boolean draining;
+        private double speed = 1;
+        // Gliding back to speed 1: from what speed, over how many frames, and how many have gone.
+        private double glideFrom = 1;
+        private long glideFrames, glided;
+        /** How far into the song, in its own frames. */
+        private double position;
+        private boolean finished;
 
         Reader(AudioStream source) {
             this.source = source;
@@ -388,14 +456,87 @@ public final class CueStream implements FloatSampleSource {
             this.frames = new Automix.FrameReader(this::decode, channels);
         }
 
+        /** Plays from here at {@code speed} (1.04 is 4% faster), until {@link #glideHome}. */
+        void stretch(double speed, float rate) {
+            if (stretcher == null) stretcher = new PitchTempoProcessor(channels, rate);
+            this.speed = speed;
+            glideFrames = 0;
+            stretcher.setParams(1, speed);
+        }
+
+        /** Eases back to the song's own speed over {@code over} frames. */
+        void glideHome(long over) {
+            if (speed == 1) return;
+            glideFrom = speed;
+            glideFrames = Math.max(1, over);
+            glided = 0;
+        }
+
+        long position() {
+            return Math.round(position);
+        }
+
         /** {@code count} frames, fewer only at the end, or null at the end. */
         float[] read(int count) throws IOException {
-            return frames.read(count);
+            if (stretcher == null) return direct(count);
+            if (glideFrames > 0) {
+                glided = Math.min(glideFrames, glided + count);
+                double f = glided / (double) glideFrames;
+                speed = glided >= glideFrames ? 1 : glideFrom + (1 - glideFrom) * (0.5 - 0.5 * Math.cos(Math.PI * f));
+                stretcher.setParams(1, speed);
+                if (speed == 1) {
+                    glideFrames = 0;
+                    // Nothing more goes in: what's buffered comes out, and the song carries on from the decoder.
+                    if (!finished) {
+                        stretcher.finish();
+                        draining = true;
+                    }
+                }
+            }
+            if (draining) {
+                int k = Math.min(count, stretcher.available());
+                float[] head = new float[k * channels];
+                stretcher.take(head, 0, k);
+                position += k;
+                if (stretcher.available() == 0) {
+                    stretcher = null;
+                    draining = false;
+                }
+                if (k == count) return head;
+                float[] rest = direct(count - k);
+                if (rest == null) return k == 0 ? null : head;
+                float[] out = Arrays.copyOf(head, head.length + rest.length);
+                System.arraycopy(rest, 0, out, head.length, rest.length);
+                return out;
+            }
+            while (stretcher.available() < count && !finished) {
+                float[] in = frames.read(CHUNK_FRAMES);
+                if (in == null) {
+                    stretcher.finish();
+                    finished = true;
+                } else {
+                    stretcher.put(in, 0, in.length / channels);
+                }
+            }
+            int n = Math.min(count, stretcher.available());
+            if (n == 0) return null;
+            float[] out = new float[n * channels];
+            stretcher.take(out, 0, n);
+            position += n * speed;
+            return out;
+        }
+
+        private float[] direct(int count) throws IOException {
+            float[] out = frames.read(count);
+            if (out != null) position += out.length / channels;
+            return out;
         }
 
         /** Drops {@code count} frames. Returns how many there were. */
         long skip(long count) throws IOException {
-            return frames.skip(count);
+            long n = frames.skip(count);
+            position += n;
+            return n;
         }
 
         private float[] decode() throws IOException {

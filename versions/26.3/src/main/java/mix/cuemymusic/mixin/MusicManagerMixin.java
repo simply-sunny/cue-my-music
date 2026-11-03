@@ -60,10 +60,14 @@ abstract class MusicManagerMixin {
         if (!CueConfig.INSTANCE.vanilla && CuePlayer.INSTANCE.isOurs(currentMusic)) CuePlayer.INSTANCE.stoppedByGame();
     }
 
-    /** Songs picked in the player aren't replaced. */
+    /**
+     * Songs aren't cut for other music: not by a loading screen's menu music, and not for a new place.
+     * The game's own picks give way only to the dragon fight and the credits.
+     */
     @Inject(method = "canReplace", at = @At("HEAD"), cancellable = true)
-    private static void cuemymusic$keepPicked(Music music, SoundInstance current, CallbackInfoReturnable<Boolean> cir) {
-        if (!CueConfig.INSTANCE.vanilla && CuePlayer.INSTANCE.isPicked(current)) cir.setReturnValue(false);
+    private static void cuemymusic$keepPlaying(Music music, SoundInstance current, CallbackInfoReturnable<Boolean> cir) {
+        if (CueConfig.INSTANCE.vanilla || !CuePlayer.INSTANCE.isOurs(current)) return;
+        if (CuePlayer.INSTANCE.isPicked(current) || !CuePlayer.replacesSong(music)) cir.setReturnValue(false);
     }
 
     /** The game's next song is played by the player: the one it planned. */
@@ -85,16 +89,10 @@ abstract class MusicManagerMixin {
         ci.cancel();
     }
 
-    /** Changing dimension stops the game's songs, but not ones picked in the player. */
+    /** Changing dimension or server would stop the song; it plays on instead. */
     @Inject(method = "stopPlaying()V", at = @At("HEAD"), cancellable = true)
     private void cuemymusic$stopPlaying(CallbackInfo ci) {
-        if (CueConfig.INSTANCE.vanilla) return;
-        CuePlayer player = CuePlayer.INSTANCE;
-        if (player.isPicked(currentMusic)) {
-            ci.cancel();
-        } else if (player.isOurs(currentMusic)) {
-            player.stoppedByGame();
-        }
+        if (!CueConfig.INSTANCE.vanilla && CuePlayer.INSTANCE.isOurs(currentMusic)) ci.cancel();
     }
 
     /** The "Now playing" toast: the song's name in the game's language if it has one, otherwise the player's credits. */

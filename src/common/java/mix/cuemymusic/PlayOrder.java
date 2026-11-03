@@ -16,6 +16,10 @@ import java.util.Objects;
  * <p>Repeat all starts the list over at its end, and repeat one plays the
  * song that just ended again. Next and previous still move on either way.
  *
+ * <p>Shuffle, as on Spotify, plays the song picked first and every other
+ * song of the list in a random order, each once; turning it off goes back to
+ * the list's own order after the song playing.
+ *
  * <p>Plain Java, so the rules can be checked without the game.
  */
 public final class PlayOrder<T> {
@@ -36,6 +40,44 @@ public final class PlayOrder<T> {
     /** True if the song that's playing came from the queue. */
     private boolean fromQueue;
     private Repeat repeat = Repeat.OFF;
+    private boolean shuffle;
+    /** While shuffled, the list in its own order, so turning shuffle off can go back to it. */
+    private List<T> unshuffled = List.of();
+    private final java.util.Random random;
+
+    public PlayOrder() {
+        this(new java.util.Random());
+    }
+
+    /** With {@code random} picking the shuffled order, so tests can fix it. */
+    public PlayOrder(java.util.Random random) {
+        this.random = random;
+    }
+
+    public boolean shuffle() {
+        return shuffle;
+    }
+
+    /** Mixes the list's other songs to come after the one playing, or puts the list back in its own order around it. */
+    public void setShuffle(boolean on) {
+        if (on == shuffle) return;
+        shuffle = on;
+        if (on) {
+            // The whole list but the song playing, mixed, as on Spotify: songs already heard come round again.
+            unshuffled = list;
+            List<T> rest = new ArrayList<>(list);
+            T playing = cursor >= 0 && cursor < list.size() ? rest.remove(cursor) : null;
+            java.util.Collections.shuffle(rest, random);
+            if (playing != null) rest.addFirst(playing);
+            list = List.copyOf(rest);
+            cursor = playing == null ? -1 : 0;
+        } else {
+            T playing = cursor >= 0 && cursor < list.size() ? list.get(cursor) : null;
+            list = unshuffled;
+            unshuffled = List.of();
+            cursor = playing == null ? -1 : list.indexOf(playing);
+        }
+    }
 
     public Repeat repeat() {
         return repeat;
@@ -57,7 +99,18 @@ public final class PlayOrder<T> {
         this.listKey = key;
         cursor = index;
         fromQueue = false;
-        return this.list.get(index);
+        if (shuffle) {
+            // The song picked, then the rest of the list mixed.
+            T picked = this.list.get(index);
+            List<T> rest = new ArrayList<>(this.list);
+            rest.remove(index);
+            java.util.Collections.shuffle(rest, random);
+            rest.addFirst(picked);
+            unshuffled = this.list;
+            this.list = List.copyOf(rest);
+            cursor = 0;
+        }
+        return this.list.get(cursor);
     }
 
     /** The song after the current one: the queue's head, else the list's next. Null hands back to the game. */
@@ -97,6 +150,91 @@ public final class PlayOrder<T> {
         return repeat != Repeat.OFF ? list.getFirst() : null;
     }
 
+    /** Songs left in the list after the one playing (or the one the queue interrupted). */
+    public int remaining() {
+        return Math.max(0, list.size() - 1 - cursor);
+    }
+
+    /** Adds songs to the end of the list that's playing through, as Radio does to keep going. */
+    public void extendList(List<T> more) {
+        List<T> next = new ArrayList<>(list);
+        next.addAll(more);
+        list = List.copyOf(next);
+        if (shuffle) {
+            List<T> own = new ArrayList<>(unshuffled);
+            own.addAll(more);
+            unshuffled = List.copyOf(own);
+        }
+    }
+
+    /**
+     * Replaces the songs after the one playing, keeping that one and the songs
+     * before it, as when Radio's choice of music changes.
+     */
+    public void replaceRest(List<T> rest) {
+        List<T> next = new ArrayList<>(list.subList(0, Math.min(list.size(), cursor + 1)));
+        next.addAll(rest);
+        list = List.copyOf(next);
+        if (shuffle) unshuffled = list;
+    }
+
+    /**
+     * Takes out every song, queued or in the list, that {@code keep} turns
+     * down, as when the mode changes. Songs still to come play in the same
+     * order; if the one playing is taken out, the list carries on after it.
+     */
+    public void retain(java.util.function.Predicate<T> keep) {
+        queue.removeIf(keep.negate());
+        if (list.isEmpty()) return;
+        List<T> kept = new ArrayList<>();
+        int at = -1;
+        for (int i = 0; i < list.size(); i++) {
+            if (keep.test(list.get(i))) kept.add(list.get(i));
+            if (i == cursor) at = kept.size() - 1;
+        }
+        if (kept.isEmpty()) {
+            endList();
+            return;
+        }
+        list = List.copyOf(kept);
+        cursor = at;
+        if (shuffle) unshuffled = unshuffled.stream().filter(keep).toList();
+    }
+
+    /** Skips the list ahead to its song {@code k} places after the one playing, as clicking it under Next from does. */
+    public T jump(int k) {
+        int to = cursor + 1 + k;
+        if (k < 0 || to >= list.size()) return null;
+        cursor = to;
+        fromQueue = false;
+        return list.get(cursor);
+    }
+
+    /**
+     * Moves the list's song {@code from} places after the one playing so it
+     * ends up {@code to} places after it, as dragging under Next from does.
+     * Only the order it plays in changes, not the list it came from.
+     */
+    public void moveUpNext(int from, int to) {
+        int base = Math.max(0, cursor + 1);
+        if (from < 0 || base + from >= list.size()) return;
+        List<T> next = new ArrayList<>(list);
+        T song = next.remove(base + from);
+        next.add(Math.clamp(base + (long) to, base, next.size()), song);
+        list = List.copyOf(next);
+    }
+
+    /** Up to {@code n} of the list's songs still to come after the one playing, in the order they'll play. */
+    public List<T> upNext(int n) {
+        int from = Math.min(list.size(), Math.max(0, cursor + 1));
+        return list.subList(from, Math.min(list.size(), from + n));
+    }
+
+    /** The list playing through, in order. */
+    public List<T> list() {
+        return list;
+    }
+
     /** The key of the list that's playing through, or null. */
     public Object listKey() {
         return listKey;
@@ -105,6 +243,7 @@ public final class PlayOrder<T> {
     /** Stops playing through the list, such as when the game starts its own song. */
     public void endList() {
         list = List.of();
+        unshuffled = List.of();
         listKey = null;
         cursor = -1;
         fromQueue = false;
@@ -123,6 +262,10 @@ public final class PlayOrder<T> {
     /** Appends every song of {@code songs}, in order. */
     public void enqueueAll(List<T> songs) {
         queue.addAll(songs);
+    }
+
+    public void clearQueue() {
+        queue.clear();
     }
 
     public void unqueue(int index) {

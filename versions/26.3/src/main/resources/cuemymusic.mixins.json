@@ -10,7 +10,10 @@
 		"MusicManagerAccessor",
 		"MusicManagerMixin",
 		"PauseScreenMixin",
+		"SoundEngineAccessor",
 		"SoundEngineMixin",
+		"SoundManagerAccessor",
+		"SoundManagerMixin",
 		"WeighedSoundEventsAccessor"
 	],
 	"injectors": {

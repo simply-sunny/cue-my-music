@@ -31,6 +31,41 @@ public final class PlayOrderTest {
             o.enqueue("x");
             plays(o, "x", "c");
         });
+        run("retaining drops songs from the queue and the list, and the list carries on", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.play("mix", List.of("a", "X", "b", "Y", "c"), 0);
+            o.enqueue("Z");
+            o.enqueue("d");
+            o.retain(s -> s.equals(s.toLowerCase()));
+            same(o.queue(), List.of("d"));
+            plays(o, "d", "b", "c", null);
+        });
+        run("retaining out the song playing goes on from where it was", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.play("mix", List.of("a", "X", "b"), 1);
+            o.retain(s -> s.equals(s.toLowerCase()));
+            plays(o, "b", null);
+        });
+        run("moving a song under Next from changes what plays next", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.play("album", ALBUM, 0);
+            o.moveUpNext(2, 0);
+            same(o.upNext(3), List.of("d", "b", "c"));
+            plays(o, "d", "b", "c", null);
+        });
+        run("moving past the end puts the song last", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.play("album", ALBUM, 0);
+            o.moveUpNext(0, 99);
+            plays(o, "c", "d", "b", null);
+        });
+        run("retaining out every song ends the list", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.play("mix", List.of("X", "Y"), 0);
+            o.retain(s -> s.equals(s.toLowerCase()));
+            same(o.listKey(), null);
+            plays(o, (String) null);
+        });
         run("starting a list keeps the queue, and it plays first", () -> {
             PlayOrder<String> o = new PlayOrder<>();
             o.enqueue("x");
@@ -159,6 +194,79 @@ public final class PlayOrderTest {
             same(PlayOrder.moved(l, Set.of("b", "c"), "c"), l);
         });
 
+        run("shuffle plays the song picked first, then every other song once", () -> {
+            PlayOrder<String> o = new PlayOrder<>(new java.util.Random(1));
+            o.setShuffle(true);
+            same(o.play("album", ALBUM, 2), "c");
+            List<String> rest = new java.util.ArrayList<>();
+            for (int i = 0; i < 3; i++) rest.add(o.next());
+            same(new java.util.TreeSet<>(rest), new java.util.TreeSet<>(List.of("a", "b", "d")));
+            same(o.next(), null);
+        });
+        run("shuffling mid-list keeps the song playing and mixes only the rest", () -> {
+            PlayOrder<String> o = new PlayOrder<>(new java.util.Random(2));
+            o.play("album", ALBUM, 0);
+            plays(o, "b");
+            o.setShuffle(true);
+            same(o.list().get(o.list().indexOf("b")), "b");
+            same(o.remaining(), 3);
+            List<String> rest = new java.util.ArrayList<>();
+            for (int i = 0; i < 3; i++) rest.add(o.next());
+            same(new java.util.TreeSet<>(rest), new java.util.TreeSet<>(List.of("a", "c", "d")));
+        });
+        run("turning shuffle off goes back to the list's order after the song playing", () -> {
+            PlayOrder<String> o = new PlayOrder<>(new java.util.Random(3));
+            o.setShuffle(true);
+            o.play("album", ALBUM, 1);
+            o.setShuffle(false);
+            same(o.list(), ALBUM);
+            plays(o, "c", "d", null);
+        });
+        run("shuffle with repeat all goes round every song before any comes again", () -> {
+            PlayOrder<String> o = new PlayOrder<>(new java.util.Random(4));
+            o.setShuffle(true);
+            o.setRepeat(PlayOrder.Repeat.ALL);
+            List<String> heard = new java.util.ArrayList<>(List.of(o.play("album", ALBUM, 0)));
+            for (int i = 0; i < 3; i++) heard.add(o.next());
+            same(new java.util.TreeSet<>(heard), new java.util.TreeSet<>(ALBUM));
+            String again = o.next();
+            same(ALBUM.contains(again), true);
+        });
+        run("songs Radio adds while shuffled are kept when shuffle goes off", () -> {
+            PlayOrder<String> o = new PlayOrder<>(new java.util.Random(5));
+            o.setShuffle(true);
+            o.play("radio", ALBUM, 0);
+            o.extendList(List.of("e"));
+            o.setShuffle(false);
+            same(o.list(), List.of("a", "b", "c", "d", "e"));
+        });
+        run("the list as it was picked, for Next from", () -> {
+            PlayOrder<String> o = new PlayOrder<>(new java.util.Random(6));
+            o.setShuffle(true);
+            o.play("album", ALBUM, 3);
+            same(o.list().getFirst(), "d");
+            same(o.upNext(2).size(), 2);
+            same(o.upNext(10).size(), 3);
+            o.enqueue("x");
+            same(o.upNext(10).size(), 3);
+        });
+        run("clearing the queue leaves the list", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.play("album", ALBUM, 0);
+            o.enqueue("x");
+            o.enqueue("y");
+            o.clearQueue();
+            same(o.queue(), List.of());
+            plays(o, "b");
+        });
+        run("clicking a song under Next from skips the list to it and keeps the queue", () -> {
+            PlayOrder<String> o = new PlayOrder<>();
+            o.play("album", ALBUM, 0);
+            o.enqueue("x");
+            same(o.jump(1), "c");
+            plays(o, "x", "d", null);
+            same(o.jump(5), null);
+        });
         System.out.println(checks - failures + "/" + checks + " checks passed");
         if (failures > 0) System.exit(1);
     }

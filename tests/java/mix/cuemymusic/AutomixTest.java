@@ -63,7 +63,7 @@ public final class AutomixTest {
         run("a raised song never clips", () -> {
             close(profile(0.1, 0.8).gain(), 0.98 / 0.8);
         });
-        run("auto length: a blend 32 beats (8 to 24 s), a fade 16 (4 to 12 s), 8 s with no tempo; never over a quarter of a song", () -> {
+        run("auto length: a blend 32 beats (8 to 24 s), a fade 16 (6 to 12 s), 8 s with no tempo, in whole bars; never over a quarter of a song", () -> {
             Automix.Profile slow = song(100, 100_000, 60), fast = song(100, 100_000, 240), none = song(100, 100_000, 0);
             same(Automix.plan(none, none, Automix.Transition.AUTO).fadeFrames(), 800L);
             same(Automix.plan(slow, slow, Automix.Transition.AUTO).fadeFrames(), 2400L);
@@ -161,6 +161,45 @@ public final class AutomixTest {
             same(Automix.autoPreset(song(1, 1, 100), song(1, 1, 110)), Automix.Preset.FADE);
             same(Automix.autoPreset(song(1, 1, 90), song(1, 1, 120)), Automix.Preset.ECHO);
             same(Automix.autoPreset(song(1, 1, 0), song(1, 1, 120)), Automix.Preset.FADE);
+        });
+        run("beatmatching: the next song meets the first's tempo within 8%, counting double time; otherwise its own speed", () -> {
+            close(Automix.stretch(song(1, 1, 120), song(1, 1, 125)), 0.96);
+            close(Automix.stretch(song(1, 1, 120), song(1, 1, 62)), 120 / 124.0);
+            close(Automix.stretch(song(1, 1, 100), song(1, 1, 120)), 1);
+            close(Automix.stretch(song(1, 1, 0), song(1, 1, 120)), 1);
+            Automix.Profile a = song(48000, 10_000_000, 120), b = song(48000, 10_000_000, 125);
+            close(Automix.plan(a, b, Automix.Transition.AUTO).stretch(), 0.96);
+            close(Automix.plan(a, b, Automix.Transition.AUTO.withBeatmatch(false)).stretch(), 1);
+        });
+        run("without beatmatching, auto only blends beats that stay together; with it, close tempos blend", () -> {
+            same(Automix.autoPreset(song(1, 1, 120), song(1, 1, 124), false), Automix.Preset.FADE);
+            same(Automix.autoPreset(song(1, 1, 120), song(1, 1, 120.5), false), Automix.Preset.BLEND);
+            same(Automix.autoPreset(song(1, 1, 120), song(1, 1, 124), true), Automix.Preset.BLEND);
+        });
+        run("automatic lengths are whole bars", () -> {
+            Automix.Profile a = song(48000, 10_000_000, 71);
+            for (Automix.Preset p : new Automix.Preset[] {Automix.Preset.FADE, Automix.Preset.RISE, Automix.Preset.BLEND, Automix.Preset.ECHO, Automix.Preset.DROP}) {
+                double bars = Automix.autoSeconds(a, Automix.shape(p), p) / (240 / 71.0);
+                close(bars, Math.rint(bars));
+            }
+        });
+        run("a saved transition with parts missing reads them as none", () -> {
+            Automix.Shape s = new Automix.Shape(null, null, null, null, null);
+            same(s.loop(), Automix.Loop.NONE);
+            same(s.filter(), Automix.Filter.NONE);
+        });
+        run("a loop out repeats the bar it starts on", () -> {
+            Automix.Shape s = new Automix.Shape(Automix.Volume.OVERLAP, Automix.Eq.NONE, Automix.Filter.NONE, Automix.Effect.NONE, Automix.Loop.LOOP_OUT);
+            Automix.Plan plan = new Automix.Plan(Automix.Preset.CUSTOM, s, 0, 4000, 0);
+            Automix.Blend blend = new Automix.Blend(plan, 1, 1000, 1, 1, 0, 1000);
+            float[] a = new float[4000], out = new float[4000];
+            for (int i = 0; i < a.length; i++) a[i] = (i % 1000) < 500 ? 0.1f * (i / 1000 + 1) : 0;
+            blend.process(a, new float[4000], out, 4000);
+            // Past the bar, the first song still plays its first bar's level (0.1), not the 0.2 or 0.3 that follow it.
+            for (int at : new int[] {1200, 2300}) {
+                double t = at / 4000.0, out1 = Automix.volumeOut(s, t);
+                close(out[at], 0.1 * out1 * Automix.overlapTrim(out1, Automix.volumeIn(s, t)));
+            }
         });
         run("parts set by hand make a custom transition and are used as set", () -> {
             Automix.Profile a = song(100, 100_000, 0);
@@ -267,9 +306,11 @@ public final class AutomixTest {
                 for (Automix.Eq e : Automix.Eq.values()) {
                     for (Automix.Filter f : Automix.Filter.values()) {
                         for (Automix.Effect x : Automix.Effect.values()) {
-                            Automix.Shape s = new Automix.Shape(v, e, f, x);
-                            double jump = mixJump(s);
-                            if (jump > 0.12) throw new AssertionError(s + ": a jump of " + jump);
+                            for (Automix.Loop l : Automix.Loop.values()) {
+                                Automix.Shape s = new Automix.Shape(v, e, f, x, l);
+                                double jump = mixJump(s);
+                                if (jump > 0.12) throw new AssertionError(s + ": a jump of " + jump);
+                            }
                         }
                     }
                 }
