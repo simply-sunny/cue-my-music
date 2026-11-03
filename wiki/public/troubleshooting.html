@@ -1,0 +1,52 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><meta name="description" content="A music player for Minecraft’s own soundtrack, with a queue, pitch, speed, and an equalizer."><title>Troubleshooting · Cue My Music</title><link rel="stylesheet" href="./assets/base.css"><link rel="stylesheet" href="./assets/style.css"><script src="./assets/site.js" defer></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header shell"><a class="brand" href="./index.html">Cue My Music</a><nav aria-label="Project"><a href="https://github.com/simply-sunny/cue-my-music">Source ↗</a><a href="https://github.com/simply-sunny/cue-my-music/releases">Releases ↗</a></nav></header><div class="wiki shell"><aside class="sidebar"><label for="search">Find a page</label><input id="search" type="search" placeholder="Search documentation"><nav aria-label="Documentation"><a href="./index.html">Overview</a><a href="./install.html">Install</a><a href="./use.html">Use</a><a href="./configure.html">Configure</a><a href="./troubleshooting.html" aria-current="page">Troubleshooting</a><a href="./limits.html">Limits</a><a href="./changelog.html">Changelog</a><a href="./develop.html">Develop</a><a href="./license.html">License</a></nav><span class="meta" id="search-status" role="status"></span></aside><main class="wiki-main" id="main" tabindex="-1"><p class="breadcrumb meta">Documentation / Troubleshooting</p><article class="prose"><h1>Troubleshooting</h1>
+<div class="prose" id="troubleshooting"><div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>requires modmenu</code></td>
+<td>Install Mod Menu for your Minecraft version.</td>
+</tr>
+<tr>
+<td>Open player key does nothing</td>
+<td>Bind <strong>Open player</strong> under Controls.</td>
+</tr>
+<tr>
+<td>F7–F9 change brightness or volume</td>
+<td>Hold <strong>fn</strong>, or turn on standard function keys in macOS settings.</td>
+</tr>
+<tr>
+<td>A change doesn't apply</td>
+<td>Wait for the ring next to it to go. Already-queued audio plays out first.</td>
+</tr>
+<tr>
+<td>Seek is slow on a long song</td>
+<td>Seeking decodes up to that point. Far into a 6-minute song can take a moment.</td>
+</tr>
+<tr>
+<td>A pack's songs are missing</td>
+<td>The pack points at files that don't exist in this version. Vanilla can't play them either.</td>
+</tr>
+<tr>
+<td>Music sounds hollow with AirPods or other spatial audio</td>
+<td>Fixed: stereo songs go straight to the speakers. If music still sounds off, turn off <strong>Directional Audio</strong> in <strong>Options → Music &amp; Sounds</strong>.</td>
+</tr>
+<tr>
+<td>Add-on songs are silent, or come out of a different device</td>
+<td>With <strong>Keep add-on songs out of recordings</strong> on they play through the system's default output, not the game's. See <code>logs/cuemymusic-outside.log</code>, or turn the setting off.</td>
+</tr>
+<tr>
+<td>Jukebox isn't affected</td>
+<td>Expected. Only background music is.</td>
+</tr>
+<tr>
+<td>Broken config</td>
+<td>Delete <code>config/cuemymusic.json</code> and relaunch.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Logs are in <code>.minecraft/logs/latest.log</code>. Include the log and your Minecraft, mod, and loader versions when you report an issue.</p></div></article><footer class="site-footer"><span>Cue My Music</span><a href="https://github.com/simply-sunny/cue-my-music/blob/main/README.md">Project documentation ↗</a></footer></main></div></body></html>

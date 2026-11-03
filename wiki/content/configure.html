@@ -1,0 +1,54 @@
+<h1>Configure</h1>
+<div class="prose" id="configure"><p>Open the player and click <strong>Settings</strong>. Drag the sliders and EQ bands, flip the switches and pick a preset below; with a song playing, a ring by the value shows the change on its way to the speakers. In the game that takes a few seconds, the audio already queued. Game songs play 30-second previews; pitch and EQ aren't heard here.</p>
+<div class="cmm-player" data-page="SETTINGS" data-parts="center" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
+<p>What the screen leaves out:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pause during travel</td>
+<td>Your song fades out as a portal takes you, waits while the new dimension loads, then fades back in from the same spot. Joining or leaving a world never stops it.</td>
+</tr>
+<tr>
+<td>Crossfade</td>
+<td>Game songs crossfade too. Songs only crossfade at the same <code>sounds.json</code> volume and sample rate, playing in the same place; otherwise they play one after the other. Songs automix blends use their own transition.</td>
+</tr>
+<tr>
+<td>Automix add-on songs</td>
+<td>On. Shown with an add-on page. Add-on songs play at the same loudness, without silence at their ends, and blend into the next (see <a href="./use.html#mixing">Mixing</a>). They need the same sample rate to blend.</td>
+</tr>
+<tr>
+<td>Keep add-on songs out of recordings</td>
+<td>On. Shown with an add-on page. Add-on songs play from a small separate Java process while the game plays silence, so recorders of the game's own audio (rec-util, OBS application capture) leave them out. Recorders of all system audio still pick them up. Applies from the next song.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Settings, liked and disliked songs, and playlists are saved to <code>config/cuemymusic.json</code> in your Minecraft folder:</p>
+<ul>
+<li><strong>Windows:</strong> <code>%appdata%\.minecraft\config\cuemymusic.json</code></li>
+<li><strong>macOS:</strong> <code>~/Library/Application Support/minecraft/config/cuemymusic.json</code></li>
+<li><strong>Linux:</strong> <code>~/.minecraft/config/cuemymusic.json</code></li>
+</ul>
+<p>Tempo, key, loudness and waveforms of add-on songs are worked out once per song and saved in <code>config/cuemymusic-analysis/</code>, so they're ready straight away next time. A song is worked out again if its file changes. Deleting the folder is safe.</p>
+<p>Delete the file to reset to defaults. One value goes further in the JSON than in the screen. Edit it, then restart:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>speed</code></td>
+<td><code>1.0</code></td>
+<td>Any value from 0.5 to 2.0, to two decimals, such as <code>1.08</code>.</td>
+</tr>
+</tbody>
+</table></div></div>
