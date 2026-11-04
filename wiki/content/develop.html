@@ -8,3 +8,6 @@
 </code></pre>
 <h3 id="add-ons">Add-ons</h3>
 <p>An add-on can give itself a page in the player's library. Implement <code>mix.cuemymusic.api.CuePanel</code> and call <code>CuePanels.register(panel)</code> from your client initializer. The page draws through a <code>PanelCanvas</code>, which has the player's header, headings, text, text fields, buttons, progress bar, and song list, so it matches the rest of the player. A panel can also take over a resource pack's entry (<code>packId</code>; that pack's songs then stay out of <strong>All game music</strong> too), add items to the right-click menu of its songs (<code>songActions</code>), and decide what Delete does to the songs selected on its page (<code>deleteAction</code>). The API is new in 1.1.0 and may still change.</p></div>
+<h2 id="license">License</h2>
+<p>MIT, see <a href="https://github.com/simply-sunny/cue-my-music/blob/main/LICENSE">LICENSE</a>. Copyright © 2026 Saunak Karnati (simply-sunny).</p>
+<p>The icon and the pause menu button are made from Minecraft's note block, note particle, and "Now playing" textures. Minecraft is a trademark of Mojang Studios.</p>

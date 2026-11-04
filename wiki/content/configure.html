@@ -28,14 +28,9 @@
 </tr>
 </tbody>
 </table></div>
-<p>Settings, liked and disliked songs, and playlists are saved to <code>config/cuemymusic.json</code> in your Minecraft folder:</p>
-<ul>
-<li><strong>Windows:</strong> <code>%appdata%\.minecraft\config\cuemymusic.json</code></li>
-<li><strong>macOS:</strong> <code>~/Library/Application Support/minecraft/config/cuemymusic.json</code></li>
-<li><strong>Linux:</strong> <code>~/.minecraft/config/cuemymusic.json</code></li>
-</ul>
-<p>Tempo, key, loudness and waveforms of add-on songs are worked out once per song and saved in <code>config/cuemymusic-analysis/</code>, so they're ready straight away next time. A song is worked out again if its file changes. Deleting the folder is safe.</p>
-<p>Delete the file to reset to defaults. One value goes further in the JSON than in the screen. Edit it, then restart:</p>
+<p>Settings, likes, dislikes and playlists live in <code>.minecraft/config/cuemymusic.json</code>; delete it to reset.</p>
+<p>Add-on songs' tempo, key, loudness and waveforms are cached in <code>config/cuemymusic-analysis/</code>, redone when a file changes. Safe to delete.</p>
+<p>One value goes further in the JSON than on screen (restart after editing):</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>

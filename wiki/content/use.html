@@ -1,7 +1,7 @@
 <h1>Use</h1>
-<div class="prose" id="use"><p>Open the player from the music button on the title screen or pause menu, from <strong>Mod Menu → Cue My Music</strong>, or with <strong>Open player</strong>. This is that screen, drawn by a port of the mod's own code with the game's textures. Click, right-click, drag, scroll and type in it. Game songs play 30-second previews from Mojang's servers.</p>
+<div class="prose" id="use"><p>Open the player from the music button on the title screen or pause menu, or from Mod Menu. Below is that screen, ported from the mod with the game's textures; game songs play 30-second previews.</p>
 <div class="cmm-player" data-page="HOME" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<h3 id="keys">Keys</h3>
+<h2 id="keys">Keys</h2>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -32,7 +32,7 @@
 </tr>
 </tbody>
 </table></div>
-<p>Rebind them under <strong>Options → Controls → Key Binds → Cue My Music</strong>. They work in game and on any screen without a text box in focus. On a Mac, F7 to F9 are media keys: hold <strong>fn</strong>, or turn on <strong>Use F1, F2, etc. keys as standard function keys</strong> in System Settings → Keyboard.</p>
+<p>Rebind under <strong>Controls → Key Binds → Cue My Music</strong>. They work in game and on any screen without a focused text box. On a Mac, hold <strong>fn</strong> for F7–F9 or turn on standard function keys.</p>
 <p>In the player (Cmd on a Mac, Ctrl elsewhere):</p>
 <div class="table-wrap"><table>
 <thead>
@@ -51,12 +51,12 @@
 <tr><td><code>Enter</code> <code>Delete</code> <code>Esc</code></td><td>Play, remove from this page, or clear the selection.</td></tr>
 </tbody>
 </table></div>
-<p>Click the bar below, then try the first four.</p>
+<p>Click the bar below and try the first four:</p>
 <div class="cmm-player" data-page="PLAYLIST" data-parts="bar" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
 <div class="cmm-player" data-demo="select" data-page="PLAYLIST" data-parts="center" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
 <p>Music pauses while Minecraft is in the background. <strong>Pause in background</strong> in Settings turns that off.</p>
-<h3 id="commands">Commands</h3>
-<p>Client-side, so they work on any server. Songs are named by title, and chat suggests them as you type.</p>
+<h2 id="commands">Commands</h2>
+<p>Client-side, so they work on any server. Chat suggests song titles; a partial title works if only one song matches.</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -99,23 +99,22 @@
 </tr>
 </tbody>
 </table></div>
-<p>A partial title works if only one song matches, such as <code>/cmm play subwoofer</code>.</p>
-<h3 id="playlists">Playlists</h3>
+<h2 id="playlists">Playlists</h2>
 <p>The ⋯ menu by a playlist's name deletes it.</p>
 <div class="cmm-player" data-demo="playlist" data-page="LIST:evening" data-parts="center" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<h3 id="your-stats">Your stats</h3>
-<p>The listening below is made up. A song counts once you've heard 3 seconds of it. It's a play after 30 seconds, or when it ends by itself after you heard half of it; moving on before that is a skip. Nothing counts while music volume is 0. Stats stay on your computer, in <code>config/cuemymusic-stats.json</code>.</p>
+<h2 id="your-stats">Your stats</h2>
+<p>A song counts after 3 seconds; it's a play after 30 seconds, or if it ends on its own after you heard half, otherwise a skip. Nothing counts at music volume 0. Kept locally in <code>config/cuemymusic-stats.json</code>. The listening below is made up.</p>
 <div class="cmm-player" data-page="STATS" data-parts="center" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<h3 id="mixing">Mixing</h3>
+<h2 id="mixing">Mixing</h2>
 <p>With an add-on that adds songs, a <strong>Mix</strong> chip shows a list as a mix. Click a transition to edit it: scroll sideways over a song, or drag it, to move it a beat at a time. The pack below is made up, with made-up tempos, keys and waveforms, so it's silent.</p>
 <div class="cmm-player" data-demo="mix" data-page="PACK:file/example-pack" data-parts="center" data-mode="addons"><p>The interactive player needs JavaScript.</p></div>
 <p><strong>Auto</strong> picks as a DJ would: an 8-bar <strong>Blend</strong> when the tempos are within 6% (or double or half) and the keys go together, a <strong>Rise</strong> when the tempos match but the keys clash, a <strong>Fade</strong> for a small tempo gap, and a short <strong>Echo</strong> for a big one. It ends where the first song's music fades, not in its quiet tail, and starts on a bar so both songs' bars line up. Beatmatching speeds the next song up or down by up to 8%, without changing its pitch, then glides back over 8 seconds. Tempo and key are worked out from the audio and can be off, such as half or double the tempo.</p>
-<h3 id="the-queue">The queue</h3>
+<h2 id="the-queue">The queue</h2>
 <div class="cmm-player" data-demo="queue" data-page="PLAYLIST" data-parts="center,now" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
 <p>Previous restarts the song after its first 3 seconds.</p>
 <p>After that, the game's own music returns, and the game still decides when: a random break of up to 20 minutes on the default Music Frequency, and different music on the title screen, underwater, in the Nether, and so on. The queue shows the game's next song and its break; click it to play it now.</p>
 <p>Songs the game starts play exactly as in vanilla, apart from disliked songs: the same weighted pick from <code>sounds.json</code> (a disliked song is drawn again, so the rest keep their odds; if every song for the situation is disliked, the game stays quiet until its next break), the same break, each file's own volume and pitch, and the same "Now playing" toast. They still stop when you change dimension or when music that replaces them starts, such as the dragon fight. Songs you pick or queue yourself carry on through dimension changes and menus, and while a song is paused the game's music stays quiet.</p>
-<h3 id="resource-packs">Resource packs</h3>
+<h2 id="resource-packs">Resource packs</h2>
 <p>A pack that adds or replaces music gets its own page. The album is the pack's name, the art is its icon (or its initials on a gradient if it has none), and the artist is the "By ..." line of its description, or <strong>Unknown artist</strong>.</p>
 <p>A pack can name its songs itself with <code>assets/&lt;namespace&gt;/cuemymusic.json</code>. Keys are sound files as in <code>sounds.json</code>, and any field left out falls back to the above:</p>
 <pre><code class="language-json">{

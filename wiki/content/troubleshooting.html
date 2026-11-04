@@ -40,13 +40,15 @@
 <td>With <strong>Keep add-on songs out of recordings</strong> on they play through the system's default output, not the game's. See <code>logs/cuemymusic-outside.log</code>, or turn the setting off.</td>
 </tr>
 <tr>
-<td>Jukebox isn't affected</td>
-<td>Expected. Only background music is.</td>
-</tr>
-<tr>
 <td>Broken config</td>
 <td>Delete <code>config/cuemymusic.json</code> and relaunch.</td>
 </tr>
 </tbody>
 </table></div>
-<p>Logs are in <code>.minecraft/logs/latest.log</code>. Include the log and your Minecraft, mod, and loader versions when you report an issue.</p></div>
+<p>Report issues with <code>logs/latest.log</code> and your Minecraft, mod and loader versions.</p></div>
+<h2 id="limits">Limits</h2>
+<ul>
+<li>Only background music: sound effects and jukeboxes play as normal.</li>
+<li>Mods that replace the music stream, such as radios or other players, may bypass it.</li>
+<li>Pitch and speed sound best within about ±5 semitones and 0.75–1.5×; beyond that, some smearing or echo.</li>
+</ul>
