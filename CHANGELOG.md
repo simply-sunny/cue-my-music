@@ -7,14 +7,14 @@ All notable changes to Cue My Music are documented here. This project follows [S
 ### Added
 
 - **Beatmatching** in automix: the next song is sped up or slowed down by up to 8%, without changing its pitch, so its beats land on the first song's, then glides back to its own speed over 8 seconds once the transition is over. On by default; each transition has a switch for it.
-- **Radio**: endless music picked from what you like and play through, leaning away from songs you skip, from the game's music, add-on songs, or both. **Go to song radio** on a song's menu starts one from that song.
-- **Skip with transition**: Next blends into the next song from the coming bar, with the same automix transition (or crossfade) it would get at the end, beats lined up, instead of cutting. A skip still counts as a skip in your stats. Pressing Next again during it cuts straight on; it can be turned off in Settings.
+- **Radio**: endless music picked from what you like and play through, leaning away from songs you skip. **Go to song radio** on a song's menu starts one from that song.
+- **Skip with transition**: Next jumps to where the song's transition starts and blends into the next song, with the same automix transition (or crossfade) it would get at the end, beats lined up, instead of cutting. A skip still counts as a skip in your stats. Pressing Next again during it cuts straight on; it can be turned off in Settings.
 - **Shuffle**, in the bottom bar and beside each list's play button, as on Spotify: the song picked plays first, then the rest of the list in a random order. With shuffle on, the big play button starts from a random song.
 - **Autoplay**: when a list ends with nothing queued, songs like its last one carry on, picked as Radio picks them. On by default; turn it off in Settings to hand back to the game's music.
 - The queue has **Clear**, and under it **Next from** the list playing; click a song there to skip to it.
 - A heart in the bottom bar likes the song playing.
 - **Home**, as on Spotify: a greeting, tiles for the lists you played lately, then your top songs, your top artists and radios made from your top songs. The house beside search opens it, and the player starts there the first time.
-- **Modes**, at the top of Settings: **Vanilla** (Cue My Music off), **Vanilla + FX** (the game's music with your effects) and **Add-ons** (your packs and downloads on the game's schedule). The library shows each mode's own music; a sort orders it by Recents, Alphabetical or the default order.
+- **Modes**, at the top of Settings: **Vanilla** (Cue My Music off), **Vanilla + FX** (the game's music with your effects) and **Add-ons** (your packs and downloads). The library shows each mode's own music; a sort orders it by Recents, Alphabetical or the default order.
 - A **Switch mode** key (set it in Controls): flips between Vanilla + FX and Add-ons, or with **Mode key goes round all three** on in Settings, through Vanilla too.
 - **Time between songs** (Vanilla + FX): the game's Frequency, or a set time from none to 20 minutes. At 5 seconds or less, or on the game's Constant, the game's songs mix into each other and Next skips with a transition.
 - **Track pools** in the library: each place's music (the title screen, survival, creative, underwater, the End, every biome) as a list you can change. Take songs out so the game doesn't play them there, or put any song in with **Add to track pool** on its menu; **Reset** puts a pool back as the game has it.
@@ -90,7 +90,6 @@ All notable changes to Cue My Music are documented here. This project follows [S
 - Deep Dark and Underwater's pictures show one frame instead of every frame squashed together, and Sulfur Caves has a picture.
 - The mix view, and pages shown as a mix such as Downloads, lagged while scrolling: each transition on screen re-read both songs' whole loudness every frame. It's worked out once per song now.
 - Music no longer stops for a moment when the level changes: changing dimension, or joining or leaving a world or server. Your song keeps playing on the same sound instead of starting again.
-- A song the game picked fades out when you change dimension, join or leave a world, and the game picks the next from where you are now. Menu music no longer carries on into the world, or overworld music into the nether.
 - **Pause during travel** fades the song out as a nether portal's swirl builds, silent as it takes you (half a second without a portal), and fades it back in over 2 seconds once the new dimension is on screen. Joining or leaving a world doesn't count as travel.
 
 ## [1.3.0] - 2026-10-27
