@@ -1,10 +1,9 @@
 {
   "name": "Cue My Music",
-  "description": "A music player for Minecraft\u2019s own soundtrack, with a queue, pitch, speed, and an equalizer.",
+  "description": "A music player for Minecraft's soundtrack, with a queue, pitch, speed and an equalizer.",
   "repo": "https://github.com/simply-sunny/cue-my-music",
   "source_dir": "..",
   "downloads": {
-    "Modrinth": "https://modrinth.com/mod/cue-my-music",
     "CurseForge": "https://www.curseforge.com/minecraft/mc-mods/cue-my-music",
     "GitHub Releases": "https://github.com/simply-sunny/cue-my-music/releases"
   }

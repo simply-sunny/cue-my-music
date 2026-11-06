@@ -2,12 +2,14 @@
 <div class="prose" id="develop"><p>Requires JDK 25.</p>
 <pre><code class="language-bash">./gradlew clean buildAll
 </code></pre>
-<p>This runs the headless checks (pitch and length on test tones, EQ response on sine waves, pack names, initials, and credits, and the play order rules) and builds the jar into <code>build/libs/</code>.</p>
-<p>Pitch and speed use a WSOLA time-stretch followed by resampling, and the equalizer is six biquad filters, all in plain Java. The icon and the pause menu button are built from the game's textures by <code>scripts/MakeIcon.java</code>:</p>
+<p>This runs the tests and builds the jar into <code>build/libs/</code>.</p>
+<p>Rebuild the icon and pause menu button from the game's textures:</p>
 <pre><code class="language-bash">java scripts/MakeIcon.java &lt;26.3 client jar&gt; src/main/resources/assets/cuemymusic/icon.png src/main/resources/assets/cuemymusic/textures/gui/sprites/music.png
 </code></pre>
-<h3 id="add-ons">Add-ons</h3>
-<p>An add-on can give itself a page in the player's library. Implement <code>mix.cuemymusic.api.CuePanel</code> and call <code>CuePanels.register(panel)</code> from your client initializer. The page draws through a <code>PanelCanvas</code>, which has the player's header, headings, text, text fields, buttons, progress bar, and song list, so it matches the rest of the player. A panel can also take over a resource pack's entry (<code>packId</code>; that pack's songs then stay out of <strong>All game music</strong> too), add items to the right-click menu of its songs (<code>songActions</code>), and decide what Delete does to the songs selected on its page (<code>deleteAction</code>). The API is new in 1.1.0 and may still change.</p></div>
+<h2 id="add-ons">Add-ons</h2>
+<p>Give an add-on a page in the player: implement <code>mix.cuemymusic.api.CuePanel</code> and call <code>CuePanels.register(panel)</code> from your client initializer. Draw it with <code>PanelCanvas</code>. The API may still change.</p>
+</div>
 <h2 id="license">License</h2>
 <p>MIT, see <a href="https://github.com/simply-sunny/cue-my-music/blob/main/LICENSE">LICENSE</a>. Copyright © 2026 Saunak Karnati (simply-sunny).</p>
 <p>The icon and the pause menu button are made from Minecraft's note block, note particle, and "Now playing" textures. Minecraft is a trademark of Mojang Studios.</p>
+<!-- data-wiki-preserve -->

@@ -1,5 +1,5 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><meta name="description" content="A music player for Minecraft’s own soundtrack, with a queue, pitch, speed, and an equalizer."><title>Configure · Cue My Music</title><link rel="stylesheet" href="./assets/base.css"><link rel="stylesheet" href="./assets/style.css"><script src="./assets/site.js" defer></script><link rel="stylesheet" href="./assets/player/player.css"><script type="module" src="./assets/player/player.js"></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header shell"><a class="brand" href="./index.html">Cue My Music</a><nav aria-label="Project"><a href="https://github.com/simply-sunny/cue-my-music">Source ↗</a><a href="https://github.com/simply-sunny/cue-my-music/releases">Releases ↗</a></nav></header><div class="wiki shell"><aside class="sidebar"><label for="search">Find a page</label><input id="search" type="search" placeholder="Search documentation"><nav aria-label="Documentation"><a href="./index.html">Overview</a><a href="./install.html">Install</a><a href="./use.html">Use</a><a href="./configure.html" aria-current="page">Configure</a><a href="./troubleshooting.html">Troubleshooting</a><a href="./changelog.html">Changelog</a><a href="./develop.html">Develop</a></nav><span class="meta" id="search-status" role="status"></span></aside><main class="wiki-main" id="main" tabindex="-1"><article class="prose"><h1>Configure</h1>
-<div class="prose" id="configure"><p>Open the player and click <strong>Settings</strong>. Drag the sliders and EQ bands, flip the switches and pick a preset below; with a song playing, a ring by the value shows the change on its way to the speakers. In the game that takes a few seconds, the audio already queued. Game songs play 30-second previews; pitch and EQ aren't heard here.</p>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><link rel="preload" href="./assets/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin><meta name="description" content="A music player for Minecraft&#x27;s soundtrack, with a queue, pitch, speed and an equalizer."><title>Configure · Cue My Music</title><link rel="stylesheet" href="./assets/base.css"><link rel="stylesheet" href="./assets/style.css"><script src="./assets/site.js" defer></script><link rel="stylesheet" href="./assets/player/player.css"><script type="module" src="./assets/player/player.js"></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header shell"><a class="brand" href="./index.html">Cue My Music</a><nav aria-label="Project"><a href="https://github.com/simply-sunny/cue-my-music">Source ↗</a><a href="https://github.com/simply-sunny/cue-my-music/releases">Releases ↗</a></nav></header><div class="wiki shell"><aside class="sidebar"><input id="search" type="search" placeholder="Search" aria-label="Search"><nav aria-label="Documentation"><a href="./index.html">Overview</a><a href="./install.html">Install</a><a href="./use.html">Use</a><a href="./configure.html" aria-current="page">Configure</a><a href="./troubleshooting.html">Troubleshooting</a><a href="./changelog.html">Changelog</a><a href="./develop.html">Develop</a></nav><span class="meta" id="search-status" role="status"></span></aside><main class="wiki-main" id="main" tabindex="-1"><article class="prose"><h1>Configure</h1>
+<div class="prose" id="configure"><p>Open the player and click <strong>Settings</strong>. Pitch and EQ aren't heard here.</p>
 <div class="cmm-player" data-page="SETTINGS" data-parts="center" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
 <p>What the screen leaves out:</p>
 <div class="table-wrap"><table>
@@ -12,25 +12,25 @@
 <tbody>
 <tr>
 <td>Pause during travel</td>
-<td>Your song fades out as a portal takes you, waits while the new dimension loads, then fades back in from the same spot. Joining or leaving a world never stops it.</td>
+<td>Fades out at a portal, then back in once the new dimension loads.</td>
 </tr>
 <tr>
 <td>Crossfade</td>
-<td>Game songs crossfade too. Songs only crossfade at the same <code>sounds.json</code> volume and sample rate, playing in the same place; otherwise they play one after the other. Songs automix blends use their own transition.</td>
+<td>Songs need the same <code>sounds.json</code> volume and sample rate.</td>
 </tr>
 <tr>
 <td>Automix add-on songs</td>
-<td>On. Shown with an add-on page. Add-on songs play at the same loudness, without silence at their ends, and blend into the next (see <a href="./use.html#mixing">Mixing</a>). They need the same sample rate to blend.</td>
+<td>On. Matches loudness and blends add-on songs into each other (see <a href="./use.html#mixing">Mixing</a>).</td>
 </tr>
 <tr>
 <td>Keep add-on songs out of recordings</td>
-<td>On. Shown with an add-on page. Add-on songs play from a small separate Java process while the game plays silence, so recorders of the game's own audio (rec-util, OBS application capture) leave them out. Recorders of all system audio still pick them up. Applies from the next song.</td>
+<td>On. Hides add-on songs from game-audio recorders, not from recorders of all system audio.</td>
 </tr>
 </tbody>
 </table></div>
-<p>Settings, likes, dislikes and playlists live in <code>.minecraft/config/cuemymusic.json</code>; delete it to reset.</p>
-<p>Add-on songs' tempo, key, loudness and waveforms are cached in <code>config/cuemymusic-analysis/</code>, redone when a file changes. Safe to delete.</p>
-<p>One value goes further in the JSON than on screen (restart after editing):</p>
+<p>Settings, likes, dislikes and playlists are saved in <code>config/cuemymusic.json</code>. Delete it to reset.</p>
+<p>Add-on song analysis is cached in <code>config/cuemymusic-analysis/</code>. It's safe to delete.</p>
+<p>The JSON goes further than the screen. Restart after editing:</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -43,7 +43,9 @@
 <tr>
 <td><code>speed</code></td>
 <td><code>1.0</code></td>
-<td>Any value from 0.5 to 2.0, to two decimals, such as <code>1.08</code>.</td>
+<td>0.5 to 2.0, to two decimals.</td>
 </tr>
 </tbody>
-</table></div></div></article><footer class="site-footer"><span>Cue My Music</span><a href="https://github.com/simply-sunny/cue-my-music/issues">Report an issue ↗</a></footer></main></div></body></html>
+</table></div></div>
+<!-- data-wiki-preserve -->
+</article><footer class="site-footer"><span>Cue My Music</span><a href="https://github.com/simply-sunny/cue-my-music/issues">Report an issue ↗</a></footer></main></div></body></html>
