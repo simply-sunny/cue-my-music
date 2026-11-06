@@ -87,8 +87,12 @@ Pitch, speed, and a 6-band equalizer apply to every song. Pitch and speed are se
 
 ## Installation
 
-1. Install Fabric Loader (or Quilt Loader), Fabric API, and Mod Menu for 26.3.
-2. Put the jar in `mods`.
+For Minecraft 26.3.
+
+1. Install Fabric Loader (or Quilt Loader).
+2. Install [Fabric API](https://modrinth.com/mod/fabric-api).
+3. Install [Mod Menu](https://modrinth.com/mod/modmenu).
+4. Put the jar in `mods`.
 
 ## Compatibility
 

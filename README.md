@@ -21,7 +21,7 @@ Only background music is affected. Jukeboxes and sound effects play as normal.
 
 Client-side only. Servers don't need it.
 
-1. Install [Fabric Loader](https://fabricmc.net/use/) (or Quilt Loader), [Fabric API](https://modrinth.com/mod/fabric-api), and [Mod Menu](https://modrinth.com/mod/modmenu) for your Minecraft version. Mod Menu is required.
+1. Install [Fabric Loader](https://fabricmc.net/use/) (or Quilt Loader), [Fabric API](https://github.com/FabricMC/fabric-api), and [Mod Menu](https://github.com/TerraformersMC/ModMenu) for your Minecraft version. Mod Menu is required.
 2. Put the jar in `mods`.
 
 | Minecraft | Jar | Java | Mod Menu |
