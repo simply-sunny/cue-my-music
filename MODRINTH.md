@@ -14,7 +14,7 @@ This file is the source of truth for the Modrinth project settings, version meta
 | Summary | A music player for Minecraft's own soundtrack, with a queue, pitch, speed, and an equalizer. Fabric and Quilt 26.3, client-side. |
 | License | MIT |
 | Environment | Client-side only (`client_only`) |
-| Featured categories | `utility`, `decoration` |
+| Featured categories | `utility` |
 | Source | https://github.com/simply-sunny/cue-my-music |
 | Issues | https://github.com/simply-sunny/cue-my-music/issues |
 | Wiki / docs | https://github.com/simply-sunny/cue-my-music#use |
