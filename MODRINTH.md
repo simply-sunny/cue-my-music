@@ -34,6 +34,7 @@ Upload one Modrinth version per JAR, version number as in `gradle.properties`, c
 | `cue-my-music-26.3-1.2.0.jar` | `UuENeOmm` |
 | `cue-my-music-26.3-1.3.0.jar` | `NEwmFHer` |
 | `cue-my-music-26.3-1.4.0.jar` | `zzJi1vnd` |
+| `cue-my-music-26.3-1.5.0.jar` | `uReaoNTX` |
 
 | JAR | Modrinth `game_versions` |
 | --- | --- |
@@ -42,6 +43,7 @@ Upload one Modrinth version per JAR, version number as in `gradle.properties`, c
 | `cue-my-music-26.3-1.2.0.jar` | `26.3` |
 | `cue-my-music-26.3-1.3.0.jar` | `26.3` |
 | `cue-my-music-26.3-1.4.0.jar` | `26.3` |
+| `cue-my-music-26.3-1.5.0.jar` | `26.3` |
 
 Version name format: `Cue My Music 1.4.0 (26.3)`.
 
