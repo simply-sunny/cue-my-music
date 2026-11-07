@@ -44,10 +44,14 @@ body:
   - type: textarea
     id: mods
     attributes:
-      label: Other mods
-      description: Especially other sound or music mods.
+      label: Mods and versions
+      description: Every mod installed, with its version. Especially other sound or music mods.
+    validations:
+      required: true
   - type: textarea
     id: log
     attributes:
       label: Log or crash report
       description: Attach `logs/latest.log` or the crash report, or paste a link.
+    validations:
+      required: true

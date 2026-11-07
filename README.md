@@ -35,19 +35,19 @@ Jars are named `cue-my-music-<jar>-<version>.jar`.
 | Action | Default key |
 | --- | --- |
 | Open player | Unbound. Bind it in Controls. |
-| Play/pause music | `F8` on macOS, unbound elsewhere |
-| Next song | `F9` on macOS, unbound elsewhere |
-| Previous song | `F7` on macOS, unbound elsewhere |
+| Play/pause music | Unbound |
+| Next song | Unbound |
+| Previous song | Unbound |
 | Turn effects on/off | Unbound |
 
-All keys are rebindable under **Options → Controls → Key Binds → Cue My Music**. They work in game and on any screen without a text box in focus. On a Mac, F7 to F9 are media keys: hold **fn**, or turn on **System Settings → Keyboard → Keyboard Shortcuts → Function Keys → Use F1, F2, etc. keys as standard function keys**.
+All keys are rebindable under **Options → Controls → Key Binds → Cue My Music**. They work in game and on any screen without a text box in focus. On a Mac, F1 to F12 are media keys: hold **fn**, or turn on **System Settings → Keyboard → Keyboard Shortcuts → Function Keys → Use F1, F2, etc. keys as standard function keys**.
 
 - Open the player from the music button on the title screen or pause menu, from **Mod Menu → Cue My Music**, or with **Open player**. The same key closes it.
 - The library on the left has **All game music**, **Liked Songs** and **Disliked Songs** once you have any, **Radio**, and pages added by add-ons. Below them are three sections: **Artists**, **Packs** (one page per resource pack that adds music), and **Your playlists**. Click a section's heading to fold it away; it shows its count while folded. Right-click a list to play it, queue it, start a radio from it, or rename or delete one of your playlists. Scroll the library when it's longer than the window. **Settings** stays at the bottom. The player opens on the page you left it on.
 - **Search**: click the magnifying glass next to **Library**, or press Cmd+Shift+L (Ctrl+Shift+L on Windows and Linux) anywhere in the player. Type part of a song's title, artist or album, in any order and without accents. Matching artists show as chips that open their page; matching songs list below, titles that start with what you typed first. Enter plays the results from the top.
 - Click a song to select it, and double-click it (or press Enter) to play it. The rest of the page plays after it, in the order shown. The big green button plays the page from the top, or pauses it while it's playing.
 - Hover a song and click the heart to like it, or **+** to add it to the queue. **Add all to queue** adds the whole page.
-- **Radio** plays without end: songs picked from what you like and play through, leaning away from ones you skip, and never a disliked song. It's in Add-ons mode only and plays add-on songs. **Go to song radio** on a song's right-click menu starts one from that song.
+- **Radio** plays without end: songs picked from what you like and play through, leaning away from ones you skip, and never a disliked song. It's in Add-ons mode only and plays add-on songs, so it's there only with an add-on installed. **Go to song radio** on a song's right-click menu starts one from that song.
 - Right-click a song to add it to a playlist, Liked Songs or the queue, dislike it, start its radio, or go to its artist. Songs from an add-on page keep that add-on's actions, such as delete, wherever they show, search included. **Add to playlist** opens a list of your playlists beside the menu. Start typing to find one, or pick **New playlist**.
 - **Dislike** (the thumbs down left of the heart on a hovered row, next to the heart under the song that's playing, or right-click) keeps the game from ever picking a song for its own music. Songs an add-on keeps on its own page never play by themselves, so they don't have it. If the game is playing it, it skips to another. You can still play it yourself, and it still plays through a page you started. Disliked songs are greyed with a red thumbs down, and listed on **Disliked Songs**. Click it again to bring one back. Liking a song takes its dislike away, and the other way round.
 - The repeat button next to play cycles through off, repeat all (the page starts over at its end), and repeat one (the song plays again). Next and previous still move on.
@@ -89,7 +89,7 @@ Click **New playlist** in the library, then right-click songs anywhere and pick 
 - Where you listen, as a bar of Overworld, Nether and End blocks, and how much you picked versus the game.
 - The song you skip most, with a button to dislike it.
 
-A song is only counted once you've heard 3 seconds of it, so clicking through songs leaves no trace. It's a play after 30 seconds, or when it ends by itself after you heard at least half of it. Moving on before that is a skip. Seeking or pausing doesn't start a new play, and nothing is counted while music volume is at 0. Stats are kept in `config/cuemymusic-stats.json`, only on your computer. **Reset stats** at the bottom of the page (click twice) clears them.
+A song is only counted once you've heard 3 seconds of it, so clicking through songs leaves no trace. It's a play after 30 seconds, or when it ends by itself after you heard at least half of it. Moving on before that is a skip. Seeking or pausing doesn't start a new play, and nothing is counted while music volume is at 0. Stats are kept in `config/cuemymusic/stats.json`, only on your computer. **Reset stats** at the bottom of the page (click twice) clears them.
 
 ### Mixing
 
@@ -129,7 +129,7 @@ A pack can name its songs itself with `assets/<namespace>/cuemymusic.json`. Keys
 }
 ```
 
-The player lists every sound event whose name starts with `music.`. Every song a pack adds is an add-on song: **Add-ons** mode plays them in place of the game's music, and **Vanilla + FX** leaves them out, even ones a pack puts in the game's own events.
+The player lists every sound event whose name starts with `music.`. Songs that resource packs add or replace are the game's music, like any sound pack: **Vanilla + FX** plays them. Only an add-on's songs (such as Cue My Music Downloads) are add-on songs, which **Add-ons** mode plays in place of the game's music. The Add-ons mode is only offered while an add-on is installed.
 
 ## Configure
 
@@ -151,19 +151,15 @@ Open the player and click **Settings**. Changes apply to the song that's playing
 
 Presets: Flat, Bass Booster, Bass Reducer, Treble Booster, Treble Reducer, Vocal Booster, and Small Speakers.
 
-Settings, liked and disliked songs, and playlists are saved to `config/cuemymusic.json` in your Minecraft folder:
+Settings, liked and disliked songs, and playlists are saved to `config/cuemymusic/config.json` in your Minecraft folder:
 
-- **Windows:** `%appdata%\.minecraft\config\cuemymusic.json`
-- **macOS:** `~/Library/Application Support/minecraft/config/cuemymusic.json`
-- **Linux:** `~/.minecraft/config/cuemymusic.json`
+- **Windows:** `%appdata%\.minecraft\config\cuemymusic\config.json`
+- **macOS:** `~/Library/Application Support/minecraft/config/cuemymusic/config.json`
+- **Linux:** `~/.minecraft/config/cuemymusic/config.json`
 
-Tempo, key, loudness and waveforms of add-on songs are worked out once per song and saved in `config/cuemymusic-analysis/`, so they're ready straight away next time. A song is worked out again if its file changes. Deleting the folder is safe.
+Tempo, key, loudness and waveforms of add-on songs are worked out once per song and saved in `config/cuemymusic/analysis/`, so they're ready straight away next time. A song is worked out again if its file changes. Deleting the folder is safe.
 
-Delete the file to reset to defaults. One value goes further in the JSON than in the screen. Edit it, then restart:
-
-| Key | Default | Notes |
-| --- | --- | --- |
-| `speed` | `1.0` | Any value from 0.5 to 2.0, to two decimals, such as `1.08`. |
+Delete the file to reset to defaults.
 
 ## Develop
 
@@ -187,16 +183,16 @@ An add-on can give itself a page in the player's library. Implement `mix.cuemymu
 | --- | --- |
 | `requires modmenu` | Install Mod Menu for your Minecraft version. |
 | Open player key does nothing | Bind **Open player** under Controls. |
-| F7–F9 change brightness or volume | Hold **fn**, or turn on standard function keys in macOS settings. |
+| A function key changes brightness or volume | On a Mac, hold **fn**, or turn on standard function keys in macOS settings. |
 | A change doesn't apply | Wait for the ring next to it to go. Already-queued audio plays out first. |
 | Seek is slow on a long song | Seeking decodes up to that point. Far into a 6-minute song can take a moment. |
 | A pack's songs are missing | The pack points at files that don't exist in this version. Vanilla can't play them either. |
 | Music sounds hollow with AirPods or other spatial audio | Fixed: stereo songs go straight to the speakers. If music still sounds off, turn off **Directional Audio** in **Options → Music & Sounds**. |
 | Add-on songs are silent, or come out of a different device | With **Keep add-on songs out of recordings** on they play through the system's default output, not the game's. See `logs/cuemymusic-outside.log`, or turn the setting off. |
 | Jukebox isn't affected | Expected. Only background music is. |
-| Broken config | Delete `config/cuemymusic.json` and relaunch. |
+| Broken config | Delete `config/cuemymusic/config.json` and relaunch. |
 
-Logs are in `.minecraft/logs/latest.log`. Include the log and your Minecraft, mod, and loader versions when you report an issue.
+Logs are in `.minecraft/logs/latest.log`. Include the log and your Minecraft, mods, and loader versions when you report an issue.
 
 ## Limits
 

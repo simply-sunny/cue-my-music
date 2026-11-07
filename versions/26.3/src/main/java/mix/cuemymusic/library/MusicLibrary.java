@@ -190,21 +190,41 @@ public final class MusicLibrary {
         return all;
     }
 
-    /** The game's own songs: everything no resource pack or add-on (such as downloads) added. Vanilla + FX plays these. */
+    /**
+     * The game's music, which Vanilla + FX plays: its own songs and the ones resource
+     * packs add or replace, since sound packs are the game's own way of changing its music.
+     * Only an add-on's songs (such as downloads) are left out.
+     */
     public static synchronized List<Track> gameMusic() {
         List<Track> songs = all();
-        if (gameMusic == null) gameMusic = songs.stream().filter(MusicLibrary::isGameMusic).toList();
+        List<mix.cuemymusic.api.CuePanel> panels = mix.cuemymusic.api.CuePanels.all();
+        if (gameMusic == null || gameMusicPanels != panels) {
+            gameMusic = songs.stream().filter(MusicLibrary::isGameMusic).toList();
+            gameMusicPanels = panels;
+        }
         return gameMusic;
     }
 
-    /** Songs from resource packs and add-ons, such as downloads: everything but the game's own music. Add-ons plays these. */
+    private static List<mix.cuemymusic.api.CuePanel> gameMusicPanels;
+
+    /** Songs from add-ons, such as downloads. Add-ons plays these. */
     public static synchronized List<Track> addOnMusic() {
-        return all().stream().filter(t -> !isGameMusic(t)).toList();
+        return all().stream().filter(MusicLibrary::isAddOnMusic).toList();
     }
 
-    /** True for the game's own songs, false for songs a resource pack or add-on added. */
+    /** True for a song of an add-on: one in a pack that an add-on's page stands in for. */
+    public static boolean isAddOnMusic(Track t) {
+        String pack = t.packId();
+        if (pack == null) return false;
+        for (mix.cuemymusic.api.CuePanel p : mix.cuemymusic.api.CuePanels.all()) {
+            if (pack.equals(p.packId())) return true;
+        }
+        return false;
+    }
+
+    /** True for the game's music, from the game or a resource pack; false for an add-on's songs. */
     public static boolean isGameMusic(Track t) {
-        return t.packId() == null;
+        return !isAddOnMusic(t);
     }
 
     /** Game music credited to {@code artist}. */
@@ -226,23 +246,24 @@ public final class MusicLibrary {
         return names;
     }
 
-    private static List<String> packArtists;
-    private static List<Track> packArtistsFor;
-
-    /** Everyone credited on a pack's or add-on's songs (downloads too), A to Z, without the game's own artists. */
+    /** Everyone credited on resource packs' songs, A to Z, without the game's own artists. */
     public static synchronized List<String> packArtists() {
-        List<Track> songs = all();
-        if (packArtistsFor != songs) {
-            java.util.TreeSet<String> names = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-            for (Track t : songs) {
-                if (t.packId() != null) names.addAll(artistNames(t.artist()));
-            }
-            names.removeAll(Catalog.ARTISTS);
-            names.remove(Catalog.UNKNOWN_ARTIST);
-            packArtists = List.copyOf(names);
-            packArtistsFor = songs;
+        return artistsOf(false);
+    }
+
+    /** Everyone credited on add-ons' songs (downloads), A to Z. */
+    public static synchronized List<String> addOnArtists() {
+        return artistsOf(true);
+    }
+
+    private static List<String> artistsOf(boolean addOns) {
+        java.util.TreeSet<String> names = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (Track t : all()) {
+            if (t.packId() != null && isAddOnMusic(t) == addOns) names.addAll(artistNames(t.artist()));
         }
-        return packArtists;
+        if (!addOns) names.removeAll(Catalog.ARTISTS);
+        names.remove(Catalog.UNKNOWN_ARTIST);
+        return List.copyOf(names);
     }
 
     public static synchronized List<Track> byPack(String packId) {

@@ -288,7 +288,7 @@ public final class CuePlayer {
 
     /** The songs Radio plays from: the mode's music, the game's in Vanilla + FX and the add-ons' in Add-ons. */
     private static List<Track> radioPool() {
-        return "addons".equals(CueConfig.INSTANCE.mode) ? MusicLibrary.addOnMusic() : MusicLibrary.gameMusic();
+        return Modes.addOnsActive() ? MusicLibrary.addOnMusic() : MusicLibrary.gameMusic();
     }
 
     /** What Radio knows of {@code t}, from its likes, stats and (for add-on songs) its tempo and key. */
@@ -959,7 +959,7 @@ public final class CuePlayer {
     private Sound pick(Music music) {
         CueConfig cfg = CueConfig.INSTANCE;
         // Add-ons mode: the game still says when music plays; the song is one of the add-ons'.
-        if ("addons".equals(CueConfig.INSTANCE.mode)) {
+        if (Modes.addOnsActive()) {
             List<Track> songs = MusicLibrary.addOnMusic().stream()
                     .filter(t -> !CueConfig.INSTANCE.isDisliked(t.location().toString())).toList();
             for (int i = 0; i < 8 && !songs.isEmpty(); i++) {

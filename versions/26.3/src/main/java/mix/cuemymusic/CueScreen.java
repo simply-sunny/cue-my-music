@@ -326,7 +326,7 @@ public final class CueScreen extends Screen {
         auditNames = new ArrayList<>();
         auditPages.clear();
         auditStep = 0;
-        for (String mode : List.of("fx", "addons")) {
+        for (String mode : Modes.available().stream().filter(x -> !x.equals("vanilla")).toList()) {
             String m = mode.equals("fx") ? "Vanilla + FX" : "Add-ons";
             auditStep(m + " / Home", () -> {
                 Modes.set(mode);
@@ -335,12 +335,12 @@ public final class CueScreen extends Screen {
             for (View v : List.of(View.PLAYLIST, View.LIKED, View.DISLIKED, View.RADIO, View.SEARCH, View.STATS, View.SETTINGS)) {
                 auditStep(m + " / " + words(v.name().toLowerCase(java.util.Locale.ROOT)), () -> open(v, null));
             }
-            List<String> artists = new ArrayList<>(mode.equals("addons") ? MusicLibrary.packArtists() : Catalog.ARTISTS);
+            List<String> artists = new ArrayList<>(mode.equals("addons") ? MusicLibrary.addOnArtists() : Catalog.ARTISTS);
             for (String a : artists) auditStep(m + " / Artist: " + a, () -> open(View.ARTIST, a));
             if (mode.equals("addons")) {
-                for (PackInfo p : MusicLibrary.packs()) auditStep(m + " / Pack: " + p.name(), () -> open(View.PACK, p.id()));
                 for (CuePanel panel : CuePanels.all()) auditStep(m + " / " + panel.title(), () -> open(View.PANEL, panel.id()));
             } else {
+                for (PackInfo p : MusicLibrary.packs().stream().filter(x -> panelFor(x.id()) == null).toList()) auditStep(m + " / Pack: " + p.name(), () -> open(View.PACK, p.id()));
                 for (Identifier pool : sortedPools()) auditStep(m + " / Pool: " + poolName(pool), () -> open(View.POOL, pool.toString()));
             }
             for (CueConfig.Playlist p : cfg.playlists) auditStep(m + " / Playlist: " + p.name(), () -> open(View.LIST, p.id()));
@@ -385,7 +385,12 @@ public final class CueScreen extends Screen {
         }
         cfg.save();
         List<UiAudit.Finding> found = UiAudit.check(auditPages);
-        java.nio.file.Path file = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("cuemymusic-audit.md");
+        java.nio.file.Path file = CueFiles.dir().resolve("audit.md");
+        try {
+            java.nio.file.Files.createDirectories(file.getParent());
+        } catch (java.io.IOException e) {
+            org.slf4j.LoggerFactory.getLogger("cuemymusic").warn("Couldn't make {}", file.getParent(), e);
+        }
         try {
             java.nio.file.Files.writeString(file, UiAudit.report(found, auditPages.size()));
             showToast(tr("cuemymusic.audit.done", found.size(), auditPages.size()));
@@ -457,8 +462,10 @@ public final class CueScreen extends Screen {
             return;
         }
 
-        int sideW = Math.clamp(width / 5, 92, 150);
-        int rightW = width >= 400 ? Math.clamp(width / 5, 96, 150) : 0;
+        PanelLayout.Widths widths = PanelLayout.resolve(width, cfg.libraryWidth, cfg.nowPlayingWidth);
+        int sideW = widths.library();
+        int rightW = widths.nowPlaying();
+        tooltip = null;
         int top = GAP;
         int bottom = height - BOTTOM;
 
@@ -480,18 +487,24 @@ public final class CueScreen extends Screen {
                 selectRange(anchor, row);
             }
         }
-        if (rightW > 0) {
+        if (rightW == PanelLayout.NOW_STRIP) {
+            drawCollapsedNowPlaying(g, width - GAP - rightW, top, width - GAP, bottom - GAP, mouseX, mouseY);
+            queueRows = 0;
+            queueFit = 0;
+        } else if (rightW > 0) {
             drawNowPlaying(g, width - GAP - rightW, top, width - GAP, bottom - GAP, mouseX, mouseY);
         } else {
             queueRows = 0;
             queueFit = 0;
         }
         drawBottomBar(g, 0, bottom, width, height, mouseX, mouseY);
+        drawDividers(g, mouseX, mouseY, sideW, rightW, top, bottom - GAP);
         if (renameBox != null) renameBox.extractRenderState(g, mouseX, mouseY, partialTick);
         drawSelectionBar(g);
         drawReorder(g, mouseX, mouseY);
         drawMenu(g, mouseX, mouseY);
         drawToast(g);
+        if (tooltip != null && menu == null && dividerDrag == 0) drawTooltip(g, mouseX, mouseY);
 
         hits = nextHits;
         drags = nextDrags;
@@ -527,32 +540,88 @@ public final class CueScreen extends Screen {
         Modes.setVanilla(on);
     }
 
+    // ---------------------------------------------------------------- panel dividers
+
+    /** Which divider is being dragged: 1 library, 2 now playing, 0 none. */
+    private int dividerDrag;
+    /** Left edges of the two dividers' grab areas, set each frame; -1 when there is none. */
+    private int libDivX = -1, nowDivX = -1, dividerTop, dividerBottom;
+    /** Full text of a clipped or icon-only library row under the mouse, drawn on top at the end of the frame. */
+    private List<String> tooltip;
+
+    private void drawDividers(GuiGraphicsExtractor g, int mx, int my, int sideW, int rightW, int top, int bottom) {
+        dividerTop = top;
+        dividerBottom = bottom;
+        libDivX = cfg.vanilla ? -1 : GAP + sideW;
+        nowDivX = cfg.vanilla || rightW == 0 ? -1 : width - GAP - rightW - GAP;
+        for (int i = 1; i <= 2; i++) {
+            int x = i == 1 ? libDivX : nowDivX;
+            if (x < 0) continue;
+            boolean over = dividerAt(mx, my) == i;
+            if (over || dividerDrag == i) {
+                g.fill(x + GAP / 2 - 1, top, x + GAP / 2 + 1, bottom, dividerDrag == i ? GREEN : 0xFF8A8A8A);
+                g.requestCursor(com.mojang.blaze3d.platform.cursor.CursorTypes.RESIZE_EW);
+            }
+        }
+    }
+
+    /** The divider whose grab area holds the point (a little wider than the gap), or 0. */
+    private int dividerAt(double x, double y) {
+        if (y < dividerTop || y >= dividerBottom) return 0;
+        if (libDivX >= 0 && x >= libDivX - 2 && x < libDivX + GAP + 2) return 1;
+        if (nowDivX >= 0 && x >= nowDivX - 2 && x < nowDivX + GAP + 2) return 2;
+        return 0;
+    }
+
+    private void dragDivider(double x) {
+        if (dividerDrag == 1) {
+            cfg.libraryWidth = PanelLayout.snapLibrary((int) Math.round(x - GAP - GAP / 2.0), width);
+        } else if (dividerDrag == 2) {
+            cfg.nowPlayingWidth = PanelLayout.clampNowPlaying((int) Math.round(width - GAP - x - GAP / 2.0), width);
+        }
+    }
+
+    private void drawTooltip(GuiGraphicsExtractor g, int mx, int my) {
+        int w = 0;
+        for (String l : tooltip) w = Math.max(w, font.width(l));
+        w += 10;
+        int h = tooltip.size() * 11 + 6;
+        int x = Math.min(mx + 10, width - w - 2), y = Math.min(my + 10, height - h - 2);
+        g.fill(x - 1, y - 1, x + w + 1, y + h + 1, MENU_LINE);
+        g.fill(x, y, x + w, y + h, MENU_BG);
+        for (int i = 0; i < tooltip.size(); i++) g.text(font, tooltip.get(i), x + 5, y + 4 + i * 11, i == 0 ? WHITE : DIM, false);
+    }
+
     // ---------------------------------------------------------------- library
 
     private void drawLibrary(GuiGraphicsExtractor g, int x0, int y0, int x1, int y1, int mx, int my) {
         g.fill(x0, y0, x1, y1, PANEL);
-        g.text(font, clip(tr("cuemymusic.library"), x1 - x0 - 42), x0 + 6, y0 + 7, WHITE, false);
-        // Search, at the right of the heading.
-        int sx = x1 - 15, sy = y0 + 5;
+        boolean icons = PanelLayout.iconOnly(x1 - x0);
+        libraryIcons = icons;
+        if (!icons) g.text(font, clip(tr("cuemymusic.library"), x1 - x0 - 42), x0 + 6, y0 + 7, WHITE, false);
+        // Search, at the right of the heading; with pictures only, under home.
+        int sx = icons ? (x0 + x1) / 2 - 4 : x1 - 15, sy = icons ? y0 + 20 : y0 + 5;
         boolean searchHover = mx >= sx - 3 && mx < sx + 12 && my >= sy - 3 && my < sy + 12;
         searchIcon(g, sx, sy, view == View.SEARCH ? GREEN : searchHover ? WHITE : DIM);
         nextHits.add(new Hit(sx - 3, sy - 3, sx + 12, sy + 12, this::openSearch));
         // Home, left of search.
-        int hx = sx - 15;
-        boolean homeHover = mx >= hx - 3 && mx < hx + 12 && my >= sy - 3 && my < sy + 12;
-        pixels(g, hx, sy, view == View.HOME ? GREEN : homeHover ? WHITE : DIM,
+        int hx = icons ? sx : sx - 15, hy = icons ? y0 + 5 : sy;
+        boolean homeHover = mx >= hx - 3 && mx < hx + 12 && my >= hy - 3 && my < hy + 12;
+        pixels(g, hx, hy, view == View.HOME ? GREEN : homeHover ? WHITE : DIM,
                 "....X....", "...XXX...", "..XXXXX..", ".XXXXXXX.", "XXXXXXXXX", ".XX...XX.", ".XX...XX.", ".XX...XX.", ".XXXXXXX.");
-        nextHits.add(new Hit(hx - 3, sy - 3, hx + 12, sy + 12, () -> open(View.HOME, null)));
+        nextHits.add(new Hit(hx - 3, hy - 3, hx + 12, hy + 12, () -> open(View.HOME, null)));
 
         List<Track> all = MusicLibrary.gameMusic();
         // Each mode shows its own music: the game's artists, or the add-ons' artists and packs.
         boolean addons = mode().equals("addons");
         List<String> artists = new ArrayList<>();
         if (addons) {
-            artists.addAll(MusicLibrary.packArtists());
+            artists.addAll(MusicLibrary.addOnArtists());
         } else {
+            // The game's artists, then those of the resource packs that add to its music.
             artists.addAll(Catalog.ARTISTS.stream().filter(a -> !MusicLibrary.byArtist(a).isEmpty()).toList());
             if (MusicLibrary.hasUnknown()) artists.add(Catalog.UNKNOWN_ARTIST);
+            artists.addAll(MusicLibrary.packArtists());
         }
         List<CuePanel> panels = CuePanels.all();
         List<PackInfo> packs = MusicLibrary.packs().stream()
@@ -564,18 +633,22 @@ public final class CueScreen extends Screen {
         playlists = librarySorted(playlists, CueConfig.Playlist::name, p -> "list:" + p.id());
 
         // Stats and Settings stay at the bottom; everything above them scrolls.
-        int big = y1 - y0 > 200 ? 22 : 14;
+        int big = icons || y1 - y0 > 200 ? 22 : 14;
+        int rowH = icons ? 22 : LIB_ROW;
         int settingsY = y1 - big - 2;
         int statsY = settingsY - big;
         libraryX0 = x0;
         libraryX1 = x1;
-        libraryTop = drawLibraryTools(g, x0, y0 + 18, x1, mx, my);
+        libraryTop = icons ? y0 + 34 : drawLibraryTools(g, x0, y0 + 18, x1, mx, my);
         libraryBottom = statsY - 2;
         g.enableScissor(x0, libraryTop, x1, libraryBottom);
         int y = libraryTop + 2 - (int) libraryScroll;
         int start = y;
 
-        {
+        String filter = cfg.libraryFilter;
+        boolean showQuick = icons || !filter.equals("artists"), showArtists = icons || !filter.equals("playlists");
+        boolean showLists = icons || !filter.equals("artists");
+        if (showQuick) {
             if (!addons) {
                 y = libraryItem(g, x0, y, x1, big, PLAYLIST_ART, tr("cuemymusic.playlist.title"),
                         tr("cuemymusic.playlist.subtitle", all.size()), view == View.PLAYLIST, mx, my, () -> open(View.PLAYLIST, null),
@@ -606,26 +679,26 @@ public final class CueScreen extends Screen {
             y += 4;
         }
 
-        if (!artists.isEmpty()) {
+        if (showArtists && !artists.isEmpty()) {
             y = librarySection(g, x0, y, x1, "artists", tr("cuemymusic.section.artists"), artists.size(), mx, my);
-            if (!cfg.isCollapsed("artists")) {
+            if (!folded("artists")) {
                 for (String a : artists) {
                     Art art = artistArt(a);
-                    y = libraryItem(g, x0, y, x1, LIB_ROW, art, a, null, view == View.ARTIST && a.equals(key), mx, my,
+                    y = libraryItem(g, x0, y, x1, rowH, art, a, null, view == View.ARTIST && a.equals(key), mx, my,
                             () -> open(View.ARTIST, a), () -> listMenu("artist:" + a, Modes.only(MusicLibrary.songsBy(a)), null));
                 }
             }
         }
-        if (addons && !packs.isEmpty()) {
+        if (showArtists && !addons && !packs.isEmpty()) {
             y = librarySection(g, x0, y, x1, "packs", tr("cuemymusic.section.packs"), packs.size(), mx, my);
-            if (!cfg.isCollapsed("packs")) {
+            if (!folded("packs")) {
                 for (PackInfo p : packs) {
-                    y = libraryItem(g, x0, y, x1, LIB_ROW, p.art(), p.name(), null, view == View.PACK && p.id().equals(key), mx, my,
+                    y = libraryItem(g, x0, y, x1, rowH, p.art(), p.name(), null, view == View.PACK && p.id().equals(key), mx, my,
                             () -> open(View.PACK, p.id()), () -> listMenu("pack:" + p.id(), Modes.only(MusicLibrary.byPack(p.id())), null));
                 }
             }
         }
-        {
+        if (showLists) {
             // Your playlists and, in Vanilla + FX, the game's track pools: playlists too, that you can change.
             List<LibraryList> lists = new ArrayList<>();
             for (CueConfig.Playlist p : playlists) {
@@ -640,13 +713,13 @@ public final class CueScreen extends Screen {
             }
             lists = librarySorted(lists, LibraryList::name, LibraryList::key);
             y = librarySection(g, x0, y, x1, "playlists", tr("cuemymusic.section.playlists"), lists.size(), mx, my);
-            if (!cfg.isCollapsed("playlists") || lists.isEmpty()) {
+            if (!folded("playlists") || lists.isEmpty()) {
                 for (LibraryList l : lists) {
                     auditOrigin = l.origin();
-                    y = libraryItem(g, x0, y, x1, LIB_ROW, l.art(), l.name(), null, l.selected(), mx, my, l.open(), l.menu());
+                    y = libraryItem(g, x0, y, x1, rowH, l.art(), l.name(), null, l.selected(), mx, my, l.open(), l.menu());
                 }
                 auditOrigin = "";
-                y = libraryItem(g, x0, y, x1, LIB_ROW, NEW_PLAYLIST_ART, tr("cuemymusic.playlists.new"), null, false, mx, my,
+                y = libraryItem(g, x0, y, x1, rowH, NEW_PLAYLIST_ART, tr("cuemymusic.playlists.new"), null, false, mx, my,
                         this::newPlaylist);
             }
         }
@@ -686,7 +759,6 @@ public final class CueScreen extends Screen {
     }
 
     private static final List<String> LIBRARY_SORTS = List.of("recents", "alphabetical", "default");
-    private static final List<String> MODES = Modes.ALL;
 
     /** The mode: "vanilla" (pure vanilla, the mod off), "fx" (the game's music with effects) or "addons". */
     private String mode() {
@@ -709,9 +781,10 @@ public final class CueScreen extends Screen {
         int h = 14, w = x1 - x0;
         String current = mode();
         // Full names where they fit, short ones in a narrow library.
-        boolean full = MODES.stream().allMatch(m -> font.width(tr("cuemymusic.mode." + m)) + 6 <= w / 3);
-        List<String> labels = MODES.stream().map(m -> tr("cuemymusic.mode." + m + (full ? "" : ".short"))).toList();
-        y = segmented(g, x0, y, x1, mx, my, labels, MODES.indexOf(current), i -> setMode(MODES.get(i)));
+        List<String> modes = Modes.available();
+        boolean full = modes.stream().allMatch(m -> font.width(tr("cuemymusic.mode." + m)) + 6 <= w / 3);
+        List<String> labels = modes.stream().map(m -> tr("cuemymusic.mode." + m + (full ? "" : ".short"))).toList();
+        y = segmented(g, x0, y, x1, mx, my, labels, modes.indexOf(current), i -> setMode(modes.get(i)));
         Component what = Component.translatable("cuemymusic.mode." + current + ".desc");
         g.textWithWordWrap(font, what, x0, y, w, FAINT, false);
         return y + font.wordWrapHeight(what, w) + 4;
@@ -741,6 +814,23 @@ public final class CueScreen extends Screen {
     /** Under the library's heading: the library's order. Returns the y below. */
     private int drawLibraryTools(GuiGraphicsExtractor g, int x0, int y, int x1, int mx, int my) {
         y += 2;
+        // Filter chips, as on Spotify: the ones that fit, in a row. The picked one is lit; click it again to clear.
+        int cx = x0 + 6;
+        for (String f : List.of("playlists", "artists")) {
+            String label = tr("cuemymusic.library.filter." + f);
+            int cw = font.width(label) + 10;
+            if (cx + cw > x1 - 4) break;
+            boolean on = cfg.libraryFilter.equals(f), over = mx >= cx && mx < cx + cw && my >= y && my < y + 13;
+            g.fill(cx, y, cx + cw, y + 13, on ? WHITE : over ? 0xFF3A3A3A : 0xFF2A2A2A);
+            g.text(font, label, cx + 5, y + 3, on ? BLACK : WHITE, false);
+            nextHits.add(new Hit(cx, y, cx + cw, y + 13, () -> {
+                cfg.libraryFilter = on ? "all" : f;
+                libraryScroll = 0;
+                cfg.save();
+            }));
+            cx += cw + 4;
+        }
+        y += 17;
         String sort = tr("cuemymusic.library.sort." + cfg.librarySort) + " \u25BC";
         int sw = font.width(sort);
         boolean hover = mx >= x0 + 4 && mx < x0 + 8 + sw && my >= y - 1 && my < y + 10;
@@ -772,11 +862,23 @@ public final class CueScreen extends Screen {
         };
     }
 
+    /** True while the library shows pictures only; set each frame. */
+    private boolean libraryIcons;
+
+    /** A section is folded only when the library has room for its heading to say so. */
+    private boolean folded(String id) {
+        return !libraryIcons && cfg.isCollapsed(id);
+    }
+
     /** A section heading that folds its rows away when clicked. Shows the count while folded. */
     private int librarySection(GuiGraphicsExtractor g, int x0, int y, int x1, String id, String label, int count, int mx, int my) {
         // An empty section stays open, so what would go in it (such as New playlist) shows.
-        boolean folded = cfg.isCollapsed(id) && count > 0;
+        boolean folded = folded(id) && count > 0;
         auditSection = id;
+        if (libraryIcons) {
+            if (y + LIB_SECTION >= libraryTop && y <= libraryBottom) g.fill(x0 + 8, y + LIB_SECTION / 2, x1 - 8, y + LIB_SECTION / 2 + 1, 0xFF3A3A3A);
+            return y + LIB_SECTION;
+        }
         if (audit != null && folded) audit.fact("count " + label, count);
         boolean hover = libraryHover(x0, y, x1, y + LIB_SECTION, mx, my);
         int color = hover ? WHITE : DIM;
@@ -852,17 +954,35 @@ public final class CueScreen extends Screen {
         if (audit != null) audit.row(auditSection, title, String.valueOf(art), auditOrigin);
         if (y + h < libraryTop || y > libraryBottom) return y + h;
         boolean hover = libraryHover(x0, y, x1, y + h, mx, my);
-        if (selected || hover) g.fill(x0 + 2, y, x1 - 2, y + h, selected ? SELECTED : ROW_HOVER);
+        if ((selected || hover) && libraryIcons) {
+            // Pictures only: a square round the picture, not a bar across the panel.
+            int s = Math.min(16, h - 2) + 6, sx = (x0 + x1 - s) / 2, sy = y + (h - s) / 2;
+            g.fill(sx, sy, sx + s, sy + s, selected ? SELECTED : ROW_HOVER);
+        } else if (selected || hover) {
+            g.fill(x0 + 2, y, x1 - 2, y + h, selected ? SELECTED : ROW_HOVER);
+        }
         int artSize = Math.min(16, h - 2);
-        int ax = subtitle == null ? x0 + 15 : x0 + 5;
-        art(g, art, ax, y + (h - artSize) / 2, artSize);
-        int tx = ax + artSize + 4;
-        int w = x1 - tx - 5;
-        if (subtitle != null && h >= 21) {
-            g.text(font, clip("label", title, w), tx, y + 3, selected ? GREEN : WHITE, false);
-            g.text(font, clip(subtitle, w), tx, y + 12, DIM, false);
+        if (libraryIcons) {
+            // Pictures only: the name is in a tooltip.
+            art(g, art, (x0 + x1 - artSize) / 2, y + (h - artSize) / 2, artSize);
+            if (hover) tooltip = subtitle == null ? List.of(title) : List.of(title, subtitle);
         } else {
-            g.text(font, clip(title, w), tx, y + (h - 8) / 2, selected ? GREEN : subtitle == null && !hover ? DIM : WHITE, false);
+            int ax = subtitle == null ? x0 + 15 : x0 + 5;
+            art(g, art, ax, y + (h - artSize) / 2, artSize);
+            int tx = ax + artSize + 4;
+            int w = x1 - tx - 5;
+            boolean two = subtitle != null && h >= 21;
+            String shownTitle = clip(two ? "label" : "row", title, w), shownSub = two ? clip(subtitle, w) : null;
+            if (two) {
+                g.text(font, shownTitle, tx, y + 3, selected ? GREEN : WHITE, false);
+                g.text(font, shownSub, tx, y + 12, DIM, false);
+            } else {
+                g.text(font, shownTitle, tx, y + (h - 8) / 2, selected ? GREEN : subtitle == null && !hover ? DIM : WHITE, false);
+            }
+            // Where a name had to be cut, hovering it shows the whole thing.
+            if (hover && (!shownTitle.equals(title) || shownSub != null && !shownSub.equals(subtitle))) {
+                tooltip = subtitle == null ? List.of(title) : List.of(title, subtitle);
+            }
         }
         libraryHit(x0, y, x1, y + h, click);
         int top = Math.max(y, libraryTop), bottom = Math.min(y + h, libraryBottom);
@@ -3340,6 +3460,23 @@ public final class CueScreen extends Screen {
 
     // ------------------------------------------------------ now playing, queue
 
+    /** The now playing panel pushed away: a thin strip with an arrow in the middle that brings it back. */
+    private void drawCollapsedNowPlaying(GuiGraphicsExtractor g, int x0, int y0, int x1, int y1, int mx, int my) {
+        g.fill(x0, y0, x1, y1, PANEL);
+        int bh = 28, by = (y0 + y1 - bh) / 2;
+        boolean hover = mx >= x0 && mx < x1 && my >= by && my < by + bh;
+        if (hover) g.fill(x0 + 1, by, x1 - 1, by + bh, ROW_HOVER);
+        int color = hover ? WHITE : DIM, cx = (x0 + x1) / 2 - 2, cy = (by + bh / 2) - 3;
+        // A chevron pointing left: the panel comes out that way.
+        for (int i = 0; i < 4; i++) {
+            g.fill(cx + i, cy + 3 - i, cx + i + 1, cy + 4 + i, color);
+        }
+        nextHits.add(new Hit(x0, by, x1, by + bh, () -> {
+            cfg.nowPlayingWidth = 0;
+            cfg.save();
+        }));
+    }
+
     private void drawNowPlaying(GuiGraphicsExtractor g, int x0, int y0, int x1, int y1, int mx, int my) {
         g.fill(x0, y0, x1, y1, PANEL);
         Track t = player.current();
@@ -3363,7 +3500,7 @@ public final class CueScreen extends Screen {
         marquee(g, from, left, y0 + 7, w, WHITE, 1);
         // The art gives up room to the queue when there is one.
         int size = Math.min(w, (y1 - y0) * (player.queue().isEmpty() ? 2 : 1) / (player.queue().isEmpty() ? 5 : 4));
-        art(g, t.art(), left, y0 + 20, size);
+        art(g, t.art(), left + (w - size) / 2, y0 + 20, size);
         int y = y0 + 25 + size;
         marquee(g, t.title(), left, y, w, WHITE, 1.5f);
         y += 15;
@@ -4210,6 +4347,8 @@ public final class CueScreen extends Screen {
             });
             fieldSubmits.put(key, onSubmit);
             int fx0 = left(), fx1 = Math.min(right(), left() + width);
+            // A hint too long for the box ends in "..." instead of running out of it.
+            box.setHint(Component.literal(clip("hint", hint.getString(), fx1 - fx0 - 14)).withColor(FAINT));
             boolean focused = box == focusedField;
             boolean hover = mx >= fx0 && mx < fx1 && my >= y && my < y + BUTTON_H;
             g.fill(fx0, y, fx1, y + BUTTON_H, focused ? WHITE : hover ? 0xFF8A8A8A : 0xFF3A3A3A);
@@ -4387,6 +4526,20 @@ public final class CueScreen extends Screen {
             if (renameBox.isMouseOver(event.x(), event.y())) return renameBox.mouseClicked(event, doubleClick);
             finishRename(true);
         }
+        if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+            int divider = dividerAt(event.x(), event.y());
+            if (divider != 0) {
+                if (doubleClick) {
+                    // Back to following the window.
+                    if (divider == 1) cfg.libraryWidth = 0;
+                    else cfg.nowPlayingWidth = 0;
+                    cfg.save();
+                } else {
+                    dividerDrag = divider;
+                }
+                return true;
+            }
+        }
         for (FieldHit f : fieldHits) {
             EditBox box = fields.get(f.key());
             if (box != null && f.contains(event.x(), event.y()) && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
@@ -4467,6 +4620,10 @@ public final class CueScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (dividerDrag != 0) {
+            dragDivider(event.x());
+            return true;
+        }
         if (pressed != null) {
             if (!reordering && Math.abs(event.y() - pressY) > 4) reordering = true;
             return true;
@@ -4503,6 +4660,11 @@ public final class CueScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        if (dividerDrag != 0) {
+            dividerDrag = 0;
+            cfg.save();
+            return true;
+        }
         if (pressed != null) {
             RowHit r = pressed;
             pressed = null;
@@ -4603,18 +4765,19 @@ public final class CueScreen extends Screen {
                 g.fill(x, y, x + size, y + size, 0x66000000);
                 float scale = Math.min(size * 0.7f / Math.max(1, font.width(st.text())), size * 0.45f / 8);
                 g.pose().pushMatrix();
-                g.pose().translate(x + size / 2f, y + size / 2f);
+                // The advance has a pixel of spacing after the last letter, and the letters are 7 high: centre the ink.
+                g.pose().translate(x + size / 2f - (font.width(st.text()) - 1) / 2f * scale, y + size / 2f - 3.5f * scale);
                 g.pose().scale(scale, scale);
-                g.text(font, st.text(), -font.width(st.text()) / 2, -4, WHITE, true);
+                g.text(font, st.text(), 0, 0, WHITE, true);
                 g.pose().popMatrix();
             }
             case Art.Initials ini -> {
                 g.fillGradient(x, y, x + size, y + size, ini.top(), ini.bottom());
                 float scale = Math.min(size * 0.7f / Math.max(1, font.width(ini.text())), size * 0.45f / 8);
                 g.pose().pushMatrix();
-                g.pose().translate(x + size / 2f, y + size / 2f);
+                g.pose().translate(x + size / 2f - (font.width(ini.text()) - 1) / 2f * scale, y + size / 2f - 3.5f * scale);
                 g.pose().scale(scale, scale);
-                g.text(font, ini.text(), -font.width(ini.text()) / 2, -4, WHITE, false);
+                g.text(font, ini.text(), 0, 0, WHITE, false);
                 g.pose().popMatrix();
             }
         }

@@ -18,9 +18,24 @@ public final class Modes {
     private Modes() {
     }
 
+    /** The modes on offer: Add-ons only when an add-on (such as Cue My Music Downloads) is installed. */
+    public static List<String> available() {
+        return addOnsInstalled() ? ALL : List.of("vanilla", "fx");
+    }
+
+    public static boolean addOnsInstalled() {
+        return !mix.cuemymusic.api.CuePanels.all().isEmpty();
+    }
+
+    /** True while the mode is Add-ons and there is an add-on to play from. */
+    public static boolean addOnsActive() {
+        return "addons".equals(CueConfig.INSTANCE.mode) && addOnsInstalled();
+    }
+
     public static String current() {
         CueConfig cfg = CueConfig.INSTANCE;
-        return cfg.vanilla ? "vanilla" : cfg.mode;
+        if (cfg.vanilla) return "vanilla";
+        return cfg.mode.equals("addons") && !addOnsInstalled() ? "fx" : cfg.mode;
     }
 
     /**
@@ -43,9 +58,10 @@ public final class Modes {
      */
     public static String afterCurrent() {
         String now = current();
-        if (CueConfig.INSTANCE.modeKeyCyclesAll) return ALL.get((ALL.indexOf(now) + 1) % ALL.size());
-        if (now.equals("vanilla")) return CueConfig.INSTANCE.mode;
-        return now.equals("addons") ? "fx" : "addons";
+        List<String> modes = available();
+        if (CueConfig.INSTANCE.modeKeyCyclesAll) return modes.get((modes.indexOf(now) + 1) % modes.size());
+        if (now.equals("vanilla")) return addOnsInstalled() ? CueConfig.INSTANCE.mode : "fx";
+        return !addOnsInstalled() ? "fx" : now.equals("addons") ? "fx" : "addons";
     }
 
     /**
@@ -55,6 +71,7 @@ public final class Modes {
      */
     public static boolean set(String mode) {
         CueConfig cfg = CueConfig.INSTANCE;
+        if (mode.equals("addons") && !addOnsInstalled()) mode = "fx";
         if (mode.equals(current())) return false;
         if (mode.equals("vanilla")) {
             setVanilla(true);

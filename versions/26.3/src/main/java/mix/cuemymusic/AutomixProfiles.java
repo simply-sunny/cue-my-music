@@ -22,7 +22,6 @@ import java.util.zip.GZIPOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import net.fabricmc.loader.api.FabricLoader;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.sounds.FloatSampleSource;
@@ -35,7 +34,7 @@ import mix.cuemymusic.library.Track;
 /**
  * Each automixed song's {@link Automix.Profile}, worked out once by decoding
  * the whole file on a background thread, and saved under
- * {@code config/cuemymusic-analysis} so it's read back next time instead of
+ * {@code config/cuemymusic/analysis} so it's read back next time instead of
  * worked out again. A saved profile holds the file's size and checksum, and
  * is redone if the file changed. Once the game has loaded, every add-on song
  * is looked at in the background, so tempos and keys are there when a page
@@ -153,7 +152,7 @@ public final class AutomixProfiles {
     /** Where a song's profile is saved: one file per song, named after its id. */
     private static Path savedPath(Identifier id) {
         String name = id.toString().replaceAll("[^a-z0-9_.-]", "_");
-        return FabricLoader.getInstance().getConfigDir().resolve("cuemymusic-analysis").resolve(name + ".bin");
+        return CueFiles.dir().resolve("analysis").resolve(name + ".bin");
     }
 
     /** The saved profile, or null if there's none, it's from an older analysis, or the file has changed since. */

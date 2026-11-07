@@ -26,7 +26,6 @@ import net.minecraft.client.gui.screens.options.controls.KeyBindsScreen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.util.Util;
 
 public final class CueMyMusicClient implements ClientModInitializer {
     public static final String MODID = "cuemymusic";
@@ -52,11 +51,9 @@ public final class CueMyMusicClient implements ClientModInitializer {
         toggle = key("key.cuemymusic.toggle", InputConstants.UNKNOWN.getValue(), category);
         switchMode = key("key.cuemymusic.mode", InputConstants.UNKNOWN.getValue(), category);
 
-        // On a Mac keyboard F7, F8 and F9 are the previous, play/pause and next keys.
-        boolean mac = Util.getPlatform() == Util.OS.OSX;
-        previous = key("key.cuemymusic.previous", mac ? InputConstants.KEY_F7 : InputConstants.UNKNOWN.getValue(), category);
-        playPause = key("key.cuemymusic.play_pause", mac ? InputConstants.KEY_F8 : InputConstants.UNKNOWN.getValue(), category);
-        next = key("key.cuemymusic.next", mac ? InputConstants.KEY_F9 : InputConstants.UNKNOWN.getValue(), category);
+        previous = key("key.cuemymusic.previous", InputConstants.UNKNOWN.getValue(), category);
+        playPause = key("key.cuemymusic.play_pause", InputConstants.UNKNOWN.getValue(), category);
+        next = key("key.cuemymusic.next", InputConstants.UNKNOWN.getValue(), category);
 
         ClientTickEvents.END_CLIENT_TICK.register(CueMyMusicClient::tick);
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> CueCommands.register(dispatcher));

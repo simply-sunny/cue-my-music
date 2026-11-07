@@ -73,7 +73,7 @@ subprojects {
 // Headless checks run the real DSP code; nothing from Minecraft is needed.
 def regressionProject = subprojects.first()
 def compileRegressionTests = regressionProject.tasks.register('compileRegressionTests', JavaCompile) {
-	source rootProject.file('src/common/java/mix/cuemymusic/dsp'), rootProject.file('src/common/java/mix/cuemymusic/library/PackNames.java'), rootProject.file('src/common/java/mix/cuemymusic/PlayOrder.java'), rootProject.file('src/common/java/mix/cuemymusic/ListeningStats.java'), rootProject.file('src/common/java/mix/cuemymusic/Automix.java'), rootProject.file('src/common/java/mix/cuemymusic/Radio.java'), rootProject.file('src/common/java/mix/cuemymusic/TrackPools.java'), rootProject.file('src/common/java/mix/cuemymusic/UiAudit.java'), rootProject.file('tests/java')
+	source rootProject.file('src/common/java/mix/cuemymusic/dsp'), rootProject.file('src/common/java/mix/cuemymusic/library/PackNames.java'), rootProject.file('src/common/java/mix/cuemymusic/PlayOrder.java'), rootProject.file('src/common/java/mix/cuemymusic/ListeningStats.java'), rootProject.file('src/common/java/mix/cuemymusic/Automix.java'), rootProject.file('src/common/java/mix/cuemymusic/Radio.java'), rootProject.file('src/common/java/mix/cuemymusic/TrackPools.java'), rootProject.file('src/common/java/mix/cuemymusic/UiAudit.java'), rootProject.file('src/common/java/mix/cuemymusic/PanelLayout.java'), rootProject.file('tests/java')
 	classpath = files()
 	destinationDirectory = rootProject.layout.buildDirectory.dir('classes/regression')
 	options.release = minecraftTargets[regressionProject.name].java
@@ -121,16 +121,22 @@ def uiAuditTest = regressionProject.tasks.register('uiAuditTest', JavaExec) {
 	mainClass = 'mix.cuemymusic.UiAuditTest'
 }
 
+def panelLayoutTest = regressionProject.tasks.register('panelLayoutTest', JavaExec) {
+	dependsOn compileRegressionTests
+	classpath = files(compileRegressionTests.flatMap { it.destinationDirectory })
+	mainClass = 'mix.cuemymusic.PanelLayoutTest'
+}
+
 tasks.register('test') {
-	dependsOn regressionTest, playOrderTest, statsTest, automixTest, radioTest, trackPoolsTest, uiAuditTest
+	dependsOn regressionTest, playOrderTest, statsTest, automixTest, radioTest, trackPoolsTest, uiAuditTest, panelLayoutTest
 }
 
 tasks.named('check') {
-	dependsOn regressionTest, playOrderTest, statsTest, automixTest, radioTest, trackPoolsTest, uiAuditTest
+	dependsOn regressionTest, playOrderTest, statsTest, automixTest, radioTest, trackPoolsTest, uiAuditTest, panelLayoutTest
 }
 
 tasks.register('buildAll', Sync) {
-	dependsOn regressionTest, playOrderTest, statsTest, automixTest, radioTest, trackPoolsTest, uiAuditTest
+	dependsOn regressionTest, playOrderTest, statsTest, automixTest, radioTest, trackPoolsTest, uiAuditTest, panelLayoutTest
 	group = 'build'
 	description = 'Builds every supported Minecraft version and collects the release JARs.'
 

@@ -22,7 +22,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import mix.cuemymusic.dsp.Equalizer;
 import mix.cuemymusic.dsp.PitchTempoProcessor;
 
-/** Settings, stored as {@code config/cuemymusic.json}. Read live by the audio thread. */
+/** Settings, stored as {@code config/cuemymusic/config.json}. Read live by the audio thread. */
 public final class CueConfig {
     public static final CueConfig INSTANCE = new CueConfig();
     private static final Logger LOG = LoggerFactory.getLogger("cuemymusic");
@@ -83,6 +83,12 @@ public final class CueConfig {
     public volatile String mode = "fx";
     /** The library's order: "default", "recents" or "alphabetical". */
     public volatile String librarySort = "default";
+    /** The library panel's width in GUI units, or 0 to follow the window. Set by dragging its edge. */
+    public volatile int libraryWidth = 0;
+    /** The now playing panel's width in GUI units, 0 to follow the window, or -1 when pushed away to a thin strip. */
+    public volatile int nowPlayingWidth = 0;
+    /** The library's filter chip: "all", "playlists" or "artists". */
+    public volatile String libraryFilter = "all";
     /** What Radio plays: "all" (the game's music and add-on songs), "game" or "addons". */
     public volatile String radioSource = "all";
     /** The mode key goes round all three modes; otherwise it flips between Vanilla + FX and Add-ons. */
@@ -287,7 +293,7 @@ public final class CueConfig {
 
     public void clamp() {
         pitchSemitones = Math.clamp(pitchSemitones, -12, 12);
-        speed = Math.clamp(Double.isFinite(speed) ? Math.round(speed * 100) / 100.0 : 1, 0.5, 2.0);
+        speed = Math.clamp(Double.isFinite(speed) ? Math.round(speed * 20) / 20.0 : 1, 0.5, 2.0);
         crossfadeSeconds = Math.clamp(crossfadeSeconds, 0, 12);
         double[] g = new double[Equalizer.FREQUENCIES.length];
         for (int i = 0; i < g.length; i++) {
@@ -315,6 +321,9 @@ public final class CueConfig {
         });
         poolEdits = Map.copyOf(edits);
         if (!List.of("default", "recents", "alphabetical").contains(librarySort)) librarySort = "default";
+        if (!List.of("all", "playlists", "artists").contains(libraryFilter)) libraryFilter = "all";
+        libraryWidth = libraryWidth <= 0 ? 0 : Math.clamp(libraryWidth, PanelLayout.ICON_W, 600);
+        nowPlayingWidth = nowPlayingWidth == 0 ? 0 : nowPlayingWidth < 0 ? PanelLayout.COLLAPSED : Math.clamp(nowPlayingWidth, PanelLayout.NOW_MIN, 600);
         Map<String, Automix.Transition> kept = new HashMap<>();
         transitions.forEach((k, v) -> {
             if (k != null && v != null && v.preset() != null) kept.put(k, v);
@@ -329,7 +338,7 @@ public final class CueConfig {
     }
 
     private static Path path() {
-        return FabricLoader.getInstance().getConfigDir().resolve("cuemymusic.json");
+        return CueFiles.dir().resolve("config.json");
     }
 
     public void load() {
@@ -387,6 +396,9 @@ public final class CueConfig {
         listsPlayed = o.listsPlayed;
         mode = o.mode;
         librarySort = o.librarySort;
+        libraryFilter = o.libraryFilter == null ? "all" : o.libraryFilter;
+        libraryWidth = o.libraryWidth;
+        nowPlayingWidth = o.nowPlayingWidth;
         modeKeyCyclesAll = o.modeKeyCyclesAll;
         songGap = o.songGap;
         poolEdits = o.poolEdits;

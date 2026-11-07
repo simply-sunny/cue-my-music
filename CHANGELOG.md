@@ -2,6 +2,14 @@
 
 All notable changes to Cue My Music are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Everything the mod saves is now in `config/cuemymusic/`: `config.json`, `stats.json` and `analysis/`. Files from older versions move there on launch.
+- `speed` in the config file now snaps to the screen's 0.05 steps.
+- Previous, play/pause and next are unbound by default on macOS too, as they are elsewhere. A key you already have keeps working.
+
 ## [1.4.0] - 2026-11-03
 
 ### Added

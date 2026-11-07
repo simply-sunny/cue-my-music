@@ -14,7 +14,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
 
-import net.fabricmc.loader.api.FabricLoader;
 
 /** Loads and saves {@link ListeningStats} as config/cuemymusic-stats.json, apart from the settings. */
 final class StatsFile {
@@ -28,7 +27,7 @@ final class StatsFile {
     }
 
     private static Path path() {
-        return FabricLoader.getInstance().getConfigDir().resolve("cuemymusic-stats.json");
+        return CueFiles.dir().resolve("stats.json");
     }
 
     static void load() {
