@@ -122,8 +122,8 @@ export class EditBox {
 }
 
 export class CueScreen {
-  constructor({ lib, cfg, player, stats, font, textures, previews }) {
-    Object.assign(this, { lib, cfg, player, stats, font, textures, previews });
+  constructor({ lib, cfg, player, stats, font, textures, panels = [] }) {
+    Object.assign(this, { lib, cfg, player, stats, font, textures, panels });
     this.width = 480;
     this.height = 270;
     this.hits = [];
@@ -377,7 +377,7 @@ export class CueScreen {
     // Each mode shows its own music: the game's artists, or the add-ons' artists and packs.
     const addons = this.mode() === 'addons';
     let artists = addons ? lib.packArtists() : lib.artistOrder.filter(a => lib.songsBy(a).length);
-    let packs = lib.packs, playlists = cfg.playlists;
+    let packs = lib.packs.filter(p => !this.panels.some(panel => panel.packId() === p.id)), playlists = cfg.playlists;
     const disliked = this.disliked();
     artists = this.librarySorted(artists, a => a, a => 'artist:' + a);
     packs = this.librarySorted(packs, p => p.name, p => 'pack:' + p.id);
@@ -415,6 +415,10 @@ export class CueScreen {
     if (disliked.length || view === 'DISLIKED') {
       y = this.libraryItem(g, x0, y, x1, big, DISLIKED_ART, tr('cuemymusic.disliked.title'),
         tr('cuemymusic.playlist.subtitle', disliked.length), view === 'DISLIKED', mx, my, () => this.open('DISLIKED', null));
+    }
+    for (const panel of addons ? this.panels : []) {
+      y = this.libraryItem(g, x0, y, x1, big, panel.icon(), panel.title(), panel.subtitle(), view === 'PANEL' && panel.id() === this.key, mx, my,
+        () => this.open('PANEL', panel.id()));
     }
     y += 4;
 
@@ -630,7 +634,7 @@ export class CueScreen {
     if (v === 'RADIO' && !this.radioHere()) v = 'HOME';
     // Each mode's own pages: the game's lists in Vanilla + FX, the packs in Add-ons.
     const addons = this.mode() === 'addons';
-    if ((addons && (v === 'PLAYLIST' || v === 'POOL')) || (!addons && v === 'PACK')) {
+    if ((addons && (v === 'PLAYLIST' || v === 'POOL')) || (!addons && (v === 'PACK' || v === 'PANEL'))) {
       v = 'HOME';
       k = null;
     }
@@ -725,6 +729,11 @@ export class CueScreen {
     if (this.view === 'POOL') {
       const pool = this.key;
       removing.push(item('remove', tr('cuemymusic.menu.remove_from_pool'), () => this.removeFromPool([t], pool)));
+    }
+    const panel = this.view === 'PANEL' ? this.panels.find(p => p.id() === this.key) : this.panels.find(p => p.packId() === t.packId);
+    if (panel) {
+      const { label, run } = panel.deleteAction([t]);
+      removing.push(item('delete', label, run));
     }
     if (removing.length) items.push(DIVIDER, ...removing);
     this.showMenu({ x, y, items });
@@ -913,6 +922,12 @@ export class CueScreen {
       case 'SEARCH': contentBottom = this.drawSearch(g, x0, contentTop, x1, mx, my); break;
       case 'RADIO': contentBottom = this.drawRadio(g, x0, contentTop, x1, mx, my); break;
       case 'HOME': contentBottom = this.drawHome(g, x0, contentTop, x1, mx, my); break;
+      case 'PANEL': {
+        const c = new Canvas(this, g, x0, contentTop, x1, mx, my);
+        this.panels.find(p => p.id() === key).draw(c);
+        contentBottom = c.y;
+        break;
+      }
       case 'ARTIST':
         contentBottom = this.drawTrackPage(g, x0, contentTop, x1, mx, my, 'artist:' + key, this.player.only(lib.songsBy(key)),
           this.artistArt(key), tr('cuemymusic.artist'), key, null, this.artistColor(key));
@@ -1552,6 +1567,13 @@ export class CueScreen {
           this.showToast(tr('cuemymusic.bulk.undisliked', n));
           done();
         });
+      case 'PANEL': {
+        const a = this.panels.find(p => p.id() === this.key).deleteAction(tracks);
+        return item('delete', a.label, () => {
+          a.run();
+          done();
+        });
+      }
       default:
         return null;
     }
@@ -1644,13 +1666,13 @@ export class CueScreen {
     if (this.renameBox) {
       if (e.key === 'Enter') this.finishRename(true);
       else if (e.key === 'Escape') this.finishRename(false);
-      else this.renameBox.keyPressed(e);
+      else return this.renameBox.keyPressed(e);
       return true;
     }
     if (this.focusedField) {
       if (e.key === 'Enter') this.submitField();
       else if (e.key === 'Escape') this.unfocusField();
-      else this.focusedField.keyPressed(e);
+      else return this.focusedField.keyPressed(e);
       return true;
     }
     if (this.menu && e.key === 'Escape') {
@@ -2052,8 +2074,30 @@ export class Canvas {
     return box.value;
   }
 
+  setText(key, value) {
+    this.s.fields.get(key)?.setValue(value);
+  }
+
   buttonWidth(label) {
     return this.s.font.width(label) + 20;
+  }
+
+  /** A progress bar across the page. {@code fraction} below 0 shows an animated bar for unknown progress. */
+  progress(fraction, label) {
+    const g = this.g, bx0 = this.left(), bx1 = this.right(), w = bx1 - bx0;
+    if (label) {
+      g.text(this.s.clip(label, w), bx0, this.y, DIM);
+      this.y += 11;
+    }
+    g.fill(bx0, this.y, bx1, this.y + 4, TRACK_BG);
+    if (fraction >= 0) {
+      g.fill(bx0, this.y, bx0 + Math.round(w * Math.min(1, fraction)), this.y + 4, GREEN);
+    } else {
+      // Unknown progress: a segment sweeping across.
+      const seg = Math.max(20, Math.floor(w / 4)), sx = bx0 - seg + Math.floor((w + seg) * ((Date.now() % 1400) / 1400));
+      g.fill(Math.max(bx0, sx), this.y, Math.min(bx1, sx + seg), this.y + 4, GREEN);
+    }
+    this.y += 10;
   }
 
   tabs(labels, picked, pick) {

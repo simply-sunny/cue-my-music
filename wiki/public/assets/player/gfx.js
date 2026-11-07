@@ -13,34 +13,84 @@ export function css(argb) {
 }
 
 export const LINE = 9;
+const FALLBACK = '8px sans-serif';
 
-/** Monocraft at the game font's size: capitals 7 pixels tall, standing on a baseline 7 below the text's top. */
+/** The game's font, read from its own files the way the game reads them: capitals 7 pixels tall, on a baseline 7 below the text's top. */
 export class Font {
   constructor() {
-    this.size = 8;
     this.ctx = document.createElement('canvas').getContext('2d');
+    this.ctx.font = FALLBACK;
+    this.glyphs = new Map([[' ', { advance: 4 }], ['\u200c', { advance: 0 }]]);
+    this.tints = new Map();
     this.cache = new Map();
   }
 
-  async load(url) {
-    const face = new FontFace('Monocraft', `url(${url})`);
-    document.fonts.add(await face.load());
-    this.ctx.font = '100px Monocraft';
-    const m = this.ctx.measureText('H');
-    this.size = 700 / (m.actualBoundingBoxAscent || 70);
-    this.ctx.font = `${this.size}px Monocraft`;
+  /** Each sheet's cells become glyphs as wide as their rightmost pixel; the first sheet to have a character keeps it. */
+  load({ providers, sheets }) {
+    for (const { file, chars, ascent, height = 8 } of providers) {
+      const sheet = sheets.get(file), cols = [...chars[0]].length, cw = sheet.width / cols, ch = sheet.height / chars.length, scale = height / ch;
+      const canvas = Object.assign(document.createElement('canvas'), { width: sheet.width, height: sheet.height });
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(sheet, 0, 0);
+      const { data } = ctx.getImageData(0, 0, sheet.width, sheet.height);
+      const inked = (x, y) => { for (let i = 0; i < ch; i++) if (data[((y + i) * sheet.width + x) * 4 + 3]) return true; return false; };
+      chars.forEach((row, j) => [...row].forEach((c, i) => {
+        if (c === '\0' || this.glyphs.has(c)) return;
+        const sx = i * cw, sy = j * ch;
+        let w = cw;
+        while (w > 0 && !inked(sx + w - 1, sy)) w--;
+        this.glyphs.set(c, { sheet, sx, sy, sw: w, sh: ch, dw: w * scale, dh: height, top: 7 - ascent, advance: Math.floor(0.5 + w * scale) + 1 });
+      }));
+    }
     this.cache.clear();
   }
 
-  get css() {
-    return `${this.size}px Monocraft`;
+  /** The game draws what these sheets lack from Unifont, too large to fetch for a few characters: the browser's font stands in. */
+  glyph(c) {
+    let g = this.glyphs.get(c);
+    if (!g) this.glyphs.set(c, g = { text: true, advance: Math.ceil(this.ctx.measureText(c).width) });
+    return g;
+  }
+
+  /** {@code sheet} in one colour. */
+  tint(sheet, rgb) {
+    let tints = this.tints.get(rgb);
+    if (!tints) this.tints.set(rgb, tints = new Map());
+    let canvas = tints.get(sheet);
+    if (!canvas) {
+      canvas = Object.assign(document.createElement('canvas'), { width: sheet.width, height: sheet.height });
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(sheet, 0, 0);
+      ctx.globalCompositeOperation = 'source-in';
+      ctx.fillStyle = css((0xFF000000 | rgb) >>> 0);
+      ctx.fillRect(0, 0, sheet.width, sheet.height);
+      tints.set(sheet, canvas);
+    }
+    return canvas;
+  }
+
+  draw(ctx, s, x, y, color) {
+    const c = color >>> 0, rgb = c & 0xFFFFFF, alpha = ctx.globalAlpha;
+    ctx.globalAlpha = alpha * (c >>> 24) / 255;
+    for (const char of s) {
+      const g = this.glyph(char);
+      if (g.sheet) ctx.drawImage(this.tint(g.sheet, rgb), g.sx, g.sy, g.sw, g.sh, x, y + g.top, g.dw, g.dh);
+      else if (g.text) {
+        ctx.font = FALLBACK;
+        ctx.fillStyle = css((0xFF000000 | rgb) >>> 0);
+        ctx.fillText(char, x, y + 7);
+      }
+      x += g.advance;
+    }
+    ctx.globalAlpha = alpha;
   }
 
   width(s) {
     if (!s) return 0;
     let w = this.cache.get(s);
     if (w === undefined) {
-      w = Math.round(this.ctx.measureText(s).width);
+      w = 0;
+      for (const c of s) w += this.glyph(c).advance;
       if (this.cache.size > 4000) this.cache.clear();
       this.cache.set(s, w);
     }
@@ -116,16 +166,12 @@ export class Graphics {
 
   text(s, x, y, color, shadow = false) {
     if (!s) return;
-    const ctx = this.ctx;
-    ctx.font = this.font.css;
     if (shadow) {
       const c = color >>> 0;
       const dark = (c & 0xFF000000) | (((c >>> 16 & 255) >> 2) << 16) | (((c >>> 8 & 255) >> 2) << 8) | ((c & 255) >> 2);
-      ctx.fillStyle = css(dark);
-      ctx.fillText(s, x + 1, y + 8);
+      this.font.draw(this.ctx, s, x + 1, y + 1, dark);
     }
-    ctx.fillStyle = css(color);
-    ctx.fillText(s, x, y + 7);
+    this.font.draw(this.ctx, s, x, y, color);
     if (this.texts) this.recordText(s, x, y);
   }
 

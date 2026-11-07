@@ -246,10 +246,10 @@ export const SCRIPTS = {
     yield* d.say('Double-click a song to play it.');
     yield* d.click(row(2), { double: true, after: 1400 });
     yield* d.say('Hover a song and press + to queue it. The queue is on the right.');
-    yield* d.click(plus(4), { after: 600 });
-    yield* d.click(plus(6), { after: 1400 });
+    yield* d.click(plus(1), { after: 600 });
+    yield* d.click(plus(3), { after: 1400 });
     yield* d.say('Right-click a song for everything else, such as adding it to a playlist.');
-    yield* d.click(row(5), { right: true, after: 500 });
+    yield* d.click(row(3), { right: true, after: 500 });
     yield* d.click(label('Add to playlist'), { after: 600 });
     // Across to the submenu first: crossing the menu's other rows would close it.
     yield* d.move(at(s => { const f = label('Find a playlist')(s); return f && { x: f.x, y: s.my }; }));
@@ -257,6 +257,49 @@ export const SCRIPTS = {
     yield* d.say('The library on the left opens your pages and Settings.');
     yield* d.click(label('Liked Songs'), { after: 1600 });
     yield* d.click(label('Settings'), { after: 2200 });
+  },
+
+  // Home, top to bottom.
+  *home(d) {
+    const middle = at(s => ({ x: s.width * 0.55, y: s.height * 0.5 }));
+    yield* d.say('Home starts with the lists you played lately.');
+    yield* d.wait(900);
+    yield* d.say('Then your top songs, your top artists and radio for you.');
+    yield* d.scroll(middle, 12, 1600);
+    yield* d.wait(1600);
+  },
+
+  // Your Stats, top to bottom.
+  *stats(d) {
+    const middle = at(s => ({ x: s.width * 0.5, y: s.height * 0.5 }));
+    yield* d.say('Your Stats starts with how much you listened.');
+    yield* d.wait(900);
+    yield* d.say('Then your top songs, when you listen, and where.');
+    yield* d.scroll(middle, 14, 2200);
+    yield* d.wait(1600);
+  },
+
+  // Settings: the mode, then the rest of the page.
+  *settings(d) {
+    const middle = at(s => ({ x: s.width * 0.5, y: s.height * 0.5 }));
+    yield* d.say('Mode picks what the mod plays.');
+    yield* d.click(label('Add-ons'), { after: 1300 });
+    yield* d.click(label('Vanilla + FX'), { after: 1300 });
+    yield* d.say('Below it are playback, effects and the equalizer.');
+    yield* d.scroll(middle, 14, 2200);
+    yield* d.click(label('Bass Booster'), { after: 1800 });
+  },
+
+  // The bottom bar, from the keyboard.
+  *controls(d) {
+    yield* d.say('Space plays or pauses.');
+    yield* d.key(' ', { after: 1000 });
+    yield* d.key(' ', { after: 1000 });
+    yield* d.say(`${CMD} → plays the next song.`);
+    yield* d.key('ArrowRight', { ctrl: true, after: 1200 });
+    yield* d.say(`${CMD} S shuffles, and ${CMD} R repeats.`);
+    yield* d.key('s', { ctrl: true, after: 1000 });
+    yield* d.key('r', { ctrl: true, after: 1400 });
   },
 
   // Selecting songs: click, Shift and arrows, Cmd-click, one menu for all of them, Esc.

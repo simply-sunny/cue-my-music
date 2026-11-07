@@ -1,39 +1,48 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><link rel="preload" href="./assets/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin><meta name="description" content="A music player for Minecraft&#x27;s soundtrack, with a queue, pitch, speed and an equalizer."><title>Use · Cue My Music</title><link rel="stylesheet" href="./assets/base.css"><link rel="stylesheet" href="./assets/style.css"><script src="./assets/site.js" defer></script><link rel="stylesheet" href="./assets/player/player.css"><script type="module" src="./assets/player/player.js"></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header shell"><a class="brand" href="./index.html">Cue My Music</a><nav aria-label="Project"><a href="https://github.com/simply-sunny/cue-my-music">Source ↗</a><a href="https://github.com/simply-sunny/cue-my-music/releases">Releases ↗</a></nav></header><div class="wiki shell"><aside class="sidebar"><input id="search" type="search" placeholder="Search" aria-label="Search"><nav aria-label="Documentation"><a href="./index.html">Overview</a><a href="./install.html">Install</a><a href="./use.html" aria-current="page">Use</a><a href="./configure.html">Configure</a><a href="./troubleshooting.html">Troubleshooting</a><a href="./changelog.html">Changelog</a><a href="./develop.html">Develop</a></nav><span class="meta" id="search-status" role="status"></span></aside><main class="wiki-main" id="main" tabindex="-1"><article class="prose"><h1>Use</h1>
-<div class="prose" id="use"><p>Open the player from the music button on the title screen or pause menu, or from Mod Menu. Game songs play 30-second previews here.</p>
-<div class="cmm-player" data-page="HOME" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<h2 id="keys">Keys</h2>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><link rel="preload" href="./assets/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin><meta name="description" content="A music player for Minecraft&#x27;s soundtrack, with a queue, pitch, speed and an equalizer."><link rel="icon" type="image/png" href="./assets/icon.png"><meta property="og:type" content="website"><meta property="og:title" content="Cue My Music"><meta property="og:description" content="A music player for Minecraft&#x27;s soundtrack, with a queue, pitch, speed and an equalizer."><meta property="og:image" content="https://simply-sunny.github.io/cue-my-music/assets/icon.png"><title>Use · Cue My Music</title><link rel="stylesheet" href="./assets/base.css"><link rel="stylesheet" href="./assets/style.css"><script src="./assets/site.js" defer></script><link rel="stylesheet" href="./assets/player/player.css"><script type="module" src="./assets/player/player.js"></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header shell"><a class="brand" href="./index.html">Cue My Music</a><nav aria-label="Project"><a href="https://github.com/simply-sunny/cue-my-music">Source ↗</a><a href="https://github.com/simply-sunny/cue-my-music/releases">Releases ↗</a></nav></header><div class="wiki shell"><aside class="sidebar"><input id="search" type="search" placeholder="Search" aria-label="Search"><nav aria-label="Documentation"><a href="./index.html">Overview</a><a href="./install.html">Install</a><a href="./use.html" aria-current="page">Use</a><a href="./configure.html">Configure</a><a href="./troubleshooting.html">Troubleshooting</a><a href="./roadmap.html">Roadmap</a><a href="./changelog.html">Changelog</a><a href="./develop.html">Develop</a></nav><span class="meta" id="search-status" role="status"></span></aside><main class="wiki-main" id="main" tabindex="-1"><article class="prose"><h1>Use</h1>
+<div class="cmm-player" data-demo="home" data-page="HOME" data-mode="fx"><noscript><p>The interactive player needs JavaScript.</p></noscript></div>
+<p>Open the player from the music button on the title screen or pause menu, or from Mod Menu.</p>
+<h2 id="playlists">Playlists</h2>
+<div class="cmm-player" data-demo="playlist" data-page="LIST:evening" data-parts="center" data-mode="fx"><noscript><p>The interactive player needs JavaScript.</p></noscript></div>
+<p>The ⋯ menu by a playlist's name deletes it.</p>
+<h2 id="select-songs">Select songs</h2>
+<div class="cmm-player" data-demo="select" data-page="PLAYLIST" data-parts="center" data-mode="fx"><noscript><p>The interactive player needs JavaScript.</p></noscript></div>
+<p>Selected songs share one right-click menu.</p>
+<h2 id="your-stats">Your stats</h2>
+<div class="cmm-player" data-demo="stats" data-page="STATS" data-parts="center" data-mode="fx"><noscript><p>The interactive player needs JavaScript.</p></noscript></div>
+<p>A play is 30 seconds, or half of a song that ends on its own. Saved in <code>config/cuemymusic/stats.json</code>. The listening above is sample data.</p>
+<h2 id="playback">Playback</h2>
+<div class="cmm-player" data-demo="controls" data-page="PLAYLIST" data-parts="bar" data-mode="fx"><noscript><p>The interactive player needs JavaScript.</p></noscript></div>
+<p>Previous restarts the song after its first 3 seconds.</p>
+<h2 id="the-queue">The queue</h2>
+<div class="cmm-player" data-demo="queue" data-page="PLAYLIST" data-parts="center,now" data-mode="fx"><noscript><p>The interactive player needs JavaScript.</p></noscript></div>
+<p>When the queue ends, the game's music returns on its own schedule. The queue shows its next song and the break before it. Click it to play it now.</p>
+<p>Disliked songs are skipped. Songs you pick keep playing through dimension changes and menus.</p>
+<p>Music pauses while Minecraft is in the background. Turn this off with <strong>Pause in background</strong>.</p>
+<h2 id="mixing">Mixing</h2>
+<div class="cmm-player" data-demo="mix" data-page="PACK:file/example-pack" data-parts="center" data-mode="addons"><noscript><p>The interactive player needs JavaScript.</p></noscript></div>
+<p>With add-on songs, a <strong>Mix</strong> chip shows a list as a mix. Click a transition to edit it, then drag a song to move it a beat at a time. The pack above is sample data, so it's silent.</p>
+<p><strong>Auto</strong> picks the transition:</p>
 <div class="table-wrap"><table>
-<thead>
-<tr>
-<th>Action</th>
-<th>Default key</th>
-</tr>
-</thead>
+<thead><tr><th>Transition</th><th>When</th></tr></thead>
 <tbody>
-<tr>
-<td>Open player</td>
-<td>Unbound. Bind it in Controls.</td>
-</tr>
-<tr>
-<td>Play/pause music</td>
-<td><code>F8</code> on macOS, unbound elsewhere</td>
-</tr>
-<tr>
-<td>Next song</td>
-<td><code>F9</code> on macOS, unbound elsewhere</td>
-</tr>
-<tr>
-<td>Previous song</td>
-<td><code>F7</code> on macOS, unbound elsewhere</td>
-</tr>
-<tr>
-<td>Turn effects on/off</td>
-<td>Unbound</td>
-</tr>
-</tbody>
-</table></div>
-<p>Rebind under <strong>Controls → Key Binds → Cue My Music</strong>. On a Mac, hold <strong>fn</strong> for F7–F9.</p>
-<p>In the player (Cmd on a Mac, Ctrl elsewhere):</p>
+<tr><td>Blend</td><td>Tempos within 6%, and keys that go together.</td></tr>
+<tr><td>Rise</td><td>Tempos match, keys clash.</td></tr>
+<tr><td>Fade</td><td>A small tempo gap.</td></tr>
+<tr><td>Echo</td><td>A big tempo gap.</td></tr>
+</tbody></table></div>
+<p>Beatmatching changes the next song's speed by up to 8%, without changing its pitch.</p>
+<h2 id="resource-packs">Resource packs</h2>
+<p>A pack that adds or replaces music gets its own page, with its name, icon and author.</p>
+<p>Name a pack's songs in <code>assets/&lt;namespace&gt;/cuemymusic.json</code>:</p>
+<pre><code class="language-json">{
+  &quot;tracks&quot;: {
+    &quot;mypack:music/rain&quot;: { &quot;title&quot;: &quot;Rain&quot;, &quot;artist&quot;: &quot;Someone&quot;, &quot;album&quot;: &quot;Weather&quot; }
+  }
+}
+</code></pre>
+<p><strong>Add-ons</strong> mode plays a pack's songs. <strong>Vanilla + FX</strong> leaves them out.</p>
+
+<h2 id="keys">Keys</h2>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -42,18 +51,57 @@
 </tr>
 </thead>
 <tbody>
-<tr><td><code>Space</code></td><td>Play or pause.</td></tr>
-<tr><td><code>Cmd ←</code> <code>Cmd →</code></td><td>Previous, next.</td></tr>
-<tr><td><code>Cmd ↑</code> <code>Cmd ↓</code></td><td>Music volume.</td></tr>
-<tr><td><code>Cmd S</code> <code>Cmd R</code></td><td>Shuffle, repeat.</td></tr>
-<tr><td><code>Cmd F</code> <code>Cmd Shift L</code></td><td>Search this page, search everything.</td></tr>
-<tr><td><code>Shift</code>-click, <code>Cmd</code>-click, <code>Shift ↑</code> <code>Shift ↓</code>, <code>Cmd A</code></td><td>Select songs.</td></tr>
-<tr><td><code>Enter</code> <code>Delete</code> <code>Esc</code></td><td>Play, remove from this page, or clear the selection.</td></tr>
+<tr>
+<td>Unbound</td>
+<td>Opens the player.</td>
+</tr>
+<tr>
+<td>Unbound</td>
+<td>Plays or pauses.</td>
+</tr>
+<tr>
+<td>Unbound</td>
+<td>Plays the next song.</td>
+</tr>
+<tr>
+<td>Unbound</td>
+<td>Plays the previous song.</td>
+</tr>
+<tr>
+<td>Unbound</td>
+<td>Turns effects on or off.</td>
+</tr>
+<tr>
+<td><code>Space</code></td>
+<td>Plays or pauses.</td>
+</tr>
+<tr>
+<td><code>Cmd ←</code> <code>Cmd →</code></td>
+<td>Plays the previous or next song.</td>
+</tr>
+<tr>
+<td><code>Cmd ↑</code> <code>Cmd ↓</code></td>
+<td>Changes the music volume.</td>
+</tr>
+<tr>
+<td><code>Cmd S</code> <code>Cmd R</code></td>
+<td>Turns shuffle or repeat on or off.</td>
+</tr>
+<tr>
+<td><code>Cmd F</code> <code>Cmd Shift L</code></td>
+<td>Searches this page or everything.</td>
+</tr>
+<tr>
+<td><code>Shift</code>-click, <code>Cmd</code>-click, <code>Shift ↑</code> <code>Shift ↓</code>, <code>Cmd A</code></td>
+<td>Selects songs.</td>
+</tr>
+<tr>
+<td><code>Enter</code> <code>Delete</code> <code>Esc</code></td>
+<td>Plays, removes from this page, or clears the selection.</td>
+</tr>
 </tbody>
 </table></div>
-<div class="cmm-player" data-page="PLAYLIST" data-parts="bar" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<div class="cmm-player" data-demo="select" data-page="PLAYLIST" data-parts="center" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<p>Music pauses while Minecraft is in the background. Turn this off with <strong>Pause in background</strong>.</p>
+<p>Rebind under <strong>Controls → Key Binds → Cue My Music</strong>. The keys from <code>Space</code> down work in the player, with Cmd on a Mac and Ctrl elsewhere.</p>
 <h2 id="commands">Commands</h2>
 <p>They work on any server.</p>
 <div class="table-wrap"><table>
@@ -98,40 +146,5 @@
 </tr>
 </tbody>
 </table></div>
-<h2 id="playlists">Playlists</h2>
-<p>The ⋯ menu by a playlist's name deletes it.</p>
-<div class="cmm-player" data-demo="playlist" data-page="LIST:evening" data-parts="center" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<h2 id="your-stats">Your stats</h2>
-<p>A play is 30 seconds, or half of a song that ends on its own. Saved in <code>config/cuemymusic-stats.json</code>. The listening below is sample data.</p>
-<div class="cmm-player" data-page="STATS" data-parts="center" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<h2 id="mixing">Mixing</h2>
-<p>With add-on songs, a <strong>Mix</strong> chip shows a list as a mix. Click a transition to edit it, then drag a song to move it a beat at a time. The pack below is sample data, so it's silent.</p>
-<div class="cmm-player" data-demo="mix" data-page="PACK:file/example-pack" data-parts="center" data-mode="addons"><p>The interactive player needs JavaScript.</p></div>
-<p><strong>Auto</strong> picks the transition:</p>
-<div class="table-wrap"><table>
-<thead><tr><th>Transition</th><th>When</th></tr></thead>
-<tbody>
-<tr><td>Blend</td><td>Tempos within 6%, and keys that go together.</td></tr>
-<tr><td>Rise</td><td>Tempos match, keys clash.</td></tr>
-<tr><td>Fade</td><td>A small tempo gap.</td></tr>
-<tr><td>Echo</td><td>A big tempo gap.</td></tr>
-</tbody></table></div>
-<p>Beatmatching changes the next song's speed by up to 8%, without changing its pitch.</p>
-<h2 id="the-queue">The queue</h2>
-<div class="cmm-player" data-demo="queue" data-page="PLAYLIST" data-parts="center,now" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<p>Previous restarts the song after its first 3 seconds.</p>
-<p>When the queue ends, the game's music returns on its own schedule. The queue shows its next song and the break before it. Click it to play it now.</p>
-<p>Disliked songs are skipped. Songs you pick keep playing through dimension changes and menus.</p>
-<h2 id="resource-packs">Resource packs</h2>
-<p>A pack that adds or replaces music gets its own page, with its name, icon and author.</p>
-<p>Name a pack's songs in <code>assets/&lt;namespace&gt;/cuemymusic.json</code>:</p>
-<pre><code class="language-json">{
-  &quot;tracks&quot;: {
-    &quot;mypack:music/rain&quot;: { &quot;title&quot;: &quot;Rain&quot;, &quot;artist&quot;: &quot;Someone&quot;, &quot;album&quot;: &quot;Weather&quot; }
-  }
-}
-</code></pre>
-<p><strong>Add-ons</strong> mode plays a pack's songs. <strong>Vanilla + FX</strong> leaves them out.</p>
-</div>
 <!-- data-wiki-preserve -->
 </article><footer class="site-footer"><span>Cue My Music</span><a href="https://github.com/simply-sunny/cue-my-music/issues">Report an issue ↗</a></footer></main></div></body></html>

@@ -213,7 +213,7 @@ Object.assign(CueScreen.prototype, {
     // The art gives up room to the queue when there is one.
     const empty = !player.queue().length;
     const size = Math.min(w, Math.floor((y1 - y0) * (empty ? 2 : 1) / (empty ? 5 : 4)));
-    this.art(g, t.art, left, y0 + 20, size);
+    this.art(g, t.art, left + Math.floor((w - size) / 2), y0 + 20, size);
     let y = y0 + 25 + size;
     this.marquee(g, t.title, left, y, w, WHITE, 1.5);
     y += 15;

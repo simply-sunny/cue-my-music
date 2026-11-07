@@ -1,50 +1,38 @@
 <h1>Configure</h1>
-<div class="prose" id="configure"><p>Open the player and click <strong>Settings</strong>. Pitch and EQ aren't heard here.</p>
-<div class="cmm-player" data-page="SETTINGS" data-parts="center" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<p>What the screen leaves out:</p>
+<div class="cmm-player" data-demo="settings" data-page="SETTINGS" data-parts="center" data-mode="fx"><noscript><p>The interactive player needs JavaScript.</p></noscript></div>
+<p>Open the player and click <strong>Settings</strong>. Pitch and EQ aren't heard here.</p>
+<h2 id="settings">Settings</h2>
+<p>Saved in <code>config/cuemymusic/config.json</code>, with your likes, dislikes and playlists. Delete it to reset.</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
 <th>Setting</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Pause during travel</td>
-<td>Fades out at a portal, then back in once the new dimension loads.</td>
-</tr>
-<tr>
-<td>Crossfade</td>
-<td>Songs need the same <code>sounds.json</code> volume and sample rate.</td>
-</tr>
-<tr>
-<td>Automix add-on songs</td>
-<td>On. Matches loudness and blends add-on songs into each other (see <a href="./use.html#mixing">Mixing</a>).</td>
-</tr>
-<tr>
-<td>Keep add-on songs out of recordings</td>
-<td>On. Hides add-on songs from game-audio recorders, not from recorders of all system audio.</td>
-</tr>
-</tbody>
-</table></div>
-<p>Settings, likes, dislikes and playlists are saved in <code>config/cuemymusic.json</code>. Delete it to reset.</p>
-<p>Add-on song analysis is cached in <code>config/cuemymusic-analysis/</code>. It's safe to delete.</p>
-<p>The JSON goes further than the screen. Restart after editing:</p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th>Key</th>
 <th>Default</th>
 <th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>speed</code></td>
-<td><code>1.0</code></td>
-<td>0.5 to 2.0, to two decimals.</td>
+<td>Pause during travel</td>
+<td>Off</td>
+<td>Fades out at a portal, then back in once the new dimension loads.</td>
+</tr>
+<tr>
+<td>Crossfade</td>
+<td><code>4 s</code></td>
+<td>Songs need the same <code>sounds.json</code> volume and sample rate.</td>
+</tr>
+<tr>
+<td>Automix add-on songs</td>
+<td>On</td>
+<td>Matches loudness and blends add-on songs into each other (see <a href="./use.html#mixing">Mixing</a>).</td>
+</tr>
+<tr>
+<td>Keep add-on songs out of recordings</td>
+<td>On</td>
+<td>Hides add-on songs from game-audio recorders, not from recorders of all system audio.</td>
 </tr>
 </tbody>
-</table></div></div>
+</table></div>
+<p>Add-on song analysis is cached in <code>config/cuemymusic/analysis/</code>. It's safe to delete.</p>
 <!-- data-wiki-preserve -->

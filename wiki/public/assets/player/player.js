@@ -2,17 +2,18 @@
 //
 //   <div class="cmm-player" data-page="SETTINGS" data-parts="center"></div>
 //   <div class="cmm-player" data-demo="select" data-parts="center"></div>
+//   <div class="cmm-player" data-demo="tour" data-interactive></div>
 //
 // data-page opens a page as CueScreen names them (HOME, SETTINGS, STATS, SEARCH, RADIO, LIKED, PLAYLIST,
 // LIST:<id>, ARTIST:<name>, PACK:<id>, POOL:<id>); data-mode is fx, addons or vanilla; data-parts shows some of the screen
 // (library, center, now, bar; all of it if left out); data-height is the GUI height in pixels (16:9, or at least 270 on a
-// narrow page, unless set). data-demo plays a script from demos.js instead of taking input. Each player is its own copy of
-// the mod, drawn at a whole-number GUI scale like the game's, with the game's textures and music previews pulled from Mojang.
+// narrow page, unless set). data-demo plays a script from demos.js instead of taking input; with data-interactive, its Try it button hands it over. Each player is its own copy of
+// the mod, drawn at a whole-number GUI scale like the game's, with the game's textures pulled from Mojang. There is no sound.
 
 import { Font } from './gfx.js';
 import { Library, Player, Stats, defaultConfig, STRINGS, tr, ALL } from './model.js';
-import { pullGameFiles, Previews } from './assets.js';
-import { CueScreen, BOTTOM } from './screen.js';
+import { pullFont, pullGameFiles } from './assets.js';
+import { CueScreen, BOTTOM, GAP } from './screen.js';
 import { Demo, SCRIPTS } from './demos.js';
 import './pages.js';
 import './mix.js';
@@ -21,26 +22,29 @@ import './side.js';
 
 const BASE = new URL('.', import.meta.url);
 const GUI_WIDTH = 480;
+const MIN_GUI_HEIGHT = 256;
+// Under this width, or in a stranger shape, a demo says so rather than show a squeezed screen.
+const MIN_WIDTH = 480, MIN_ASPECT = 4 / 3, MAX_ASPECT = 21 / 9;
 
 let shared;
 /** The data, the font and the game's files, loaded once for every player on the page. */
 function load() {
   shared ??= (async () => {
     const font = new Font();
-    const [data] = await Promise.all([fetch(new URL('data.json', BASE)).then(r => r.json()), font.load(new URL('fonts/Monocraft.otf', BASE))]);
+    const data = await fetch(new URL('data.json', BASE)).then(r => r.json());
+    font.load(await pullFont(data.source));
     const textures = new Map();
     // The library first, so strings exist; the game's biome names join them as they arrive.
-    const lib = new Library(data);
     const files = pullGameFiles(data.source, textures, STRINGS);
-    return { data, font, textures, lib, files };
+    return { data, font, textures, files };
   })();
   return shared;
 }
 
-const players = new Set();
-
 async function mount(root) {
   root.classList.add('is-loading');
+  // data-panel adds an add-on's page, from that file beside this one.
+  const panel = root.dataset.panel && (await import(new URL(root.dataset.panel + '.js', BASE))).default;
   const script = root.dataset.demo ? SCRIPTS[root.dataset.demo] : null;
   if (root.dataset.demo && !script) throw new Error('no demo named ' + root.dataset.demo);
   const parts = root.dataset.parts ? new Set(root.dataset.parts.split(',').map(p => p.trim())) : null;
@@ -50,25 +54,29 @@ async function mount(root) {
   bar.className = 'cmm-player__bar';
   const note = document.createElement('span');
   note.className = 'cmm-player__note';
-  // A demo has play/pause and restart, and its caption; a player has sound and full screen.
-  const sound = button('cmm-player__sound', 'Sound off');
-  const full = button('cmm-player__full', 'Full screen');
+  const notice = document.createElement('p');
+  notice.className = 'cmm-player__notice';
+  // A demo has play/pause and restart, and its caption.
   const pause = button('cmm-player__pause', 'Pause');
   const restart = button('cmm-player__restart', 'Restart');
+  const tryIt = button('cmm-player__try', 'Try it');
+  const takesOver = !!script && 'interactive' in root.dataset;
+  const touch = matchMedia('(pointer: coarse)').matches;
   if (script) {
     root.classList.add('is-demo');
     canvas.setAttribute('role', 'img');
     canvas.removeAttribute('tabindex');
-    bar.append(pause, note, restart);
+    if (takesOver) bar.append(pause, tryIt, note, restart);
+    else bar.append(pause, note, restart);
   } else {
     canvas.setAttribute('role', 'application');
-    bar.append(sound, note);
-    if (!parts) bar.append(full);
+    canvas.setAttribute('aria-label', 'A working copy of the player');
   }
-  root.replaceChildren(canvas, bar);
+  root.replaceChildren(canvas, ...(bar.children.length ? [bar] : []), notice);
 
-  const { data, font, textures, lib } = await load();
-  const previews = new Previews(data.source.index);
+  const { data, font, textures } = await load();
+  // Its own songs, as a demo changes them.
+  const lib = new Library(data);
   let cfg, player, screen;
   /** A fresh copy of the mod, on the element's page. */
   const build = () => {
@@ -78,7 +86,8 @@ async function mount(root) {
     else if (root.dataset.mode) cfg.mode = root.dataset.mode;
     const stats = new Stats(lib);
     player = new Player(lib, cfg, stats);
-    screen = new CueScreen({ lib, cfg, player, stats, font, textures, previews });
+    const panels = panel ? [panel({ lib, textures })] : [];
+    screen = new CueScreen({ lib, cfg, player, stats, font, textures, panels });
     screen.parts = parts;
     if (keep) Object.assign(screen, keep);
     // Something on, paused, so the player isn't empty: the game's song, or the example pack in Add-ons.
@@ -92,13 +101,17 @@ async function mount(root) {
     self.screen = screen;
     self.player = player;
   };
-  const self = { root, previews, sound };
+  const self = { root };
   build();
-  players.add(self);
   root.classList.remove('is-loading');
 
   // A demo runs while on screen, and starts over a moment after it ends. With reduced motion it waits to be played.
-  const demo = script && new Demo(script);
+  const tour = script && takesOver ? function* (d) {
+    yield* script(d);
+    yield* d.say('Now press Try it.');
+    yield* d.wait(4000);
+  } : script;
+  let demo = tour && new Demo(tour);
   let demoPaused = !!demo && matchMedia('(prefers-reduced-motion: reduce)').matches, restartIn = -1;
   if (demo) {
     demo.start(screen);
@@ -109,29 +122,62 @@ async function mount(root) {
     pause.setAttribute('aria-pressed', String(demoPaused));
   };
   showPaused();
+  const replay = () => {
+    build();
+    demo = new Demo(tour);
+    demo.start(screen);
+    restartIn = -1;
+    demoPaused = false;
+    pause.hidden = false;
+    tryIt.hidden = false;
+    canvas.removeAttribute('tabindex');
+    root.classList.add('is-demo');
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', 'An animation of the player. The caption under it says what it shows.');
+    showPaused();
+  };
+  /** Hands over to the person: the script stops and the real pointer takes over. */
+  const takeOver = () => {
+    if (!demo || !takesOver) return;
+    demo = null;
+    demoPaused = false;
+    root.classList.remove('is-demo');
+    canvas.setAttribute('role', 'application');
+    canvas.setAttribute('aria-label', 'A working copy of the player');
+    note.textContent = root.dataset.prompt || (touch ? "It's yours. Tap anything. There's no sound." : "It's yours. Click anything. There's no sound.");
+    pause.hidden = true;
+    tryIt.hidden = true;
+    canvas.tabIndex = 0;
+    canvas.focus({ preventScroll: true });
+  };
   pause.addEventListener('click', () => {
     demoPaused = !demoPaused;
     showPaused();
   });
-  restart.addEventListener('click', () => {
-    build();
-    demo.start(screen);
-    restartIn = -1;
-    demoPaused = false;
-    showPaused();
-  });
+  restart.addEventListener('click', replay);
+  tryIt.addEventListener('click', takeOver);
 
   // Size: a whole-number scale that makes the GUI about 480 pixels wide, as the game picks its GUI scale.
-  let scale = 1;
+  let scale = 1, tooSmall = false;
   const resize = () => {
     const dpr = window.devicePixelRatio || 1, cssW = root.clientWidth, fullscreen = document.fullscreenElement === root;
+    const aspect = cssW / root.clientHeight;
+    tooSmall = cssW < MIN_WIDTH || fullscreen && (aspect < MIN_ASPECT || aspect > MAX_ASPECT);
+    root.classList.toggle('is-too-small', tooSmall);
+    notice.textContent = cssW < MIN_WIDTH
+      ? 'Not shown on this display. This demo needs a wider window.'
+      : 'Not shown on this display. This demo needs a window closer to 16:9.';
     const devW = Math.round(cssW * dpr);
+    // 16:9 on a 24-pixel grid, to match the other wikis' demos.
+    const fitted = Math.floor(cssW * 9 / 16 / 24) * 24 * dpr;
     // Never under a CSS pixel per GUI pixel, so a phone shows a narrower GUI rather than tiny text.
-    scale = Math.max(1, Math.round(devW / GUI_WIDTH), Math.round(dpr));
-    screen.width = Math.floor(devW / scale);
+    scale = Math.max(1, Math.min(Math.round(devW / GUI_WIDTH), Math.floor(fitted / MIN_GUI_HEIGHT)), Math.round(dpr));
+    // The screen's outer gap hangs outside the page's column, so the panels line up with the text.
+    const hang = fullscreen ? 0 : GAP;
+    screen.width = Math.floor(devW / scale) + hang * 2;
     screen.height = fullscreen ? Math.floor((root.clientHeight - bar.offsetHeight) * dpr / scale)
       : Number(root.dataset.height) || (parts && parts.size === 1 && parts.has('bar') ? BOTTOM + 30
-        : Math.round(Math.max(screen.width * 9 / 16, Math.min(screen.width, 270))));
+        : Math.floor(fitted / scale));
     // On the page's 8px grid, so what follows the player stays on it (docs/LAYOUT.md in the templates).
     if (!fullscreen) {
       for (let h = screen.height; h > screen.height - 32; h--) {
@@ -146,6 +192,7 @@ async function mount(root) {
     canvas.height = screen.height * scale;
     canvas.style.width = canvas.width / dpr + 'px';
     canvas.style.height = canvas.height / dpr + 'px';
+    canvas.style.marginLeft = -hang * scale / dpr + 'px';
   };
   new ResizeObserver(resize).observe(root);
   resize();
@@ -172,7 +219,6 @@ async function mount(root) {
     if (demo) return;
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(e.pointerId);
-    activate(self);
     const p = at(e);
     screen.mx = p.x;
     screen.my = p.y;
@@ -197,19 +243,6 @@ async function mount(root) {
     if (used) e.preventDefault();
   });
 
-  sound.addEventListener('click', () => {
-    if (previews.muted) activate(self);
-    else previews.muted = true;
-  });
-  full.addEventListener('click', () => {
-    if (document.fullscreenElement === root) document.exitFullscreen();
-    else root.requestFullscreen?.();
-  });
-  document.addEventListener('fullscreenchange', () => {
-    full.textContent = document.fullscreenElement === root ? 'Exit full screen' : 'Full screen';
-    resize();
-  });
-
   // Drawn only while on screen.
   let visible = false, last = performance.now();
   new IntersectionObserver(([entry]) => {
@@ -220,7 +253,7 @@ async function mount(root) {
   function frame(now) {
     const dt = Math.min(0.25, (now - last) / 1000);
     last = now;
-    if (demo && !demoPaused) {
+    if (demo && !demoPaused && !tooSmall) {
       if (demo.done) {
         if (restartIn < 0) restartIn = 2500;
         restartIn -= dt * 1000;
@@ -234,27 +267,15 @@ async function mount(root) {
       }
     }
     if (!demo || !demoPaused) player.tick(dt);
-    if (!demo) previews.sync(player);
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.imageSmoothingEnabled = false;
     screen.render(ctx);
     if (demo) {
       demo.draw(screen.g);
       note.textContent = demoPaused && !demo.caption ? 'Paused' : demo.caption;
-    } else {
-      sound.textContent = previews.muted ? 'Sound off' : 'Sound on';
-      sound.setAttribute('aria-pressed', String(!previews.muted));
-      const left = previews.left(player);
-      note.textContent = previews.muted ? '' : !player.current ? '' : player.current.packId !== null ? 'Example songs are silent'
-        : left > 0 ? `Preview: ${Math.ceil(left)} s left` : 'Preview over';
     }
     if (visible || document.fullscreenElement === root) requestAnimationFrame(frame);
   }
-}
-
-/** One player is heard at a time: the last one clicked. */
-function activate(self) {
-  for (const p of players) p.previews.muted = p !== self;
 }
 
 function button(className, label) {

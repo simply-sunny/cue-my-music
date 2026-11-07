@@ -1,51 +1,39 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><link rel="preload" href="./assets/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin><meta name="description" content="A music player for Minecraft&#x27;s soundtrack, with a queue, pitch, speed and an equalizer."><title>Configure · Cue My Music</title><link rel="stylesheet" href="./assets/base.css"><link rel="stylesheet" href="./assets/style.css"><script src="./assets/site.js" defer></script><link rel="stylesheet" href="./assets/player/player.css"><script type="module" src="./assets/player/player.js"></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header shell"><a class="brand" href="./index.html">Cue My Music</a><nav aria-label="Project"><a href="https://github.com/simply-sunny/cue-my-music">Source ↗</a><a href="https://github.com/simply-sunny/cue-my-music/releases">Releases ↗</a></nav></header><div class="wiki shell"><aside class="sidebar"><input id="search" type="search" placeholder="Search" aria-label="Search"><nav aria-label="Documentation"><a href="./index.html">Overview</a><a href="./install.html">Install</a><a href="./use.html">Use</a><a href="./configure.html" aria-current="page">Configure</a><a href="./troubleshooting.html">Troubleshooting</a><a href="./changelog.html">Changelog</a><a href="./develop.html">Develop</a></nav><span class="meta" id="search-status" role="status"></span></aside><main class="wiki-main" id="main" tabindex="-1"><article class="prose"><h1>Configure</h1>
-<div class="prose" id="configure"><p>Open the player and click <strong>Settings</strong>. Pitch and EQ aren't heard here.</p>
-<div class="cmm-player" data-page="SETTINGS" data-parts="center" data-mode="fx"><p>The interactive player needs JavaScript.</p></div>
-<p>What the screen leaves out:</p>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><link rel="preload" href="./assets/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin><meta name="description" content="A music player for Minecraft&#x27;s soundtrack, with a queue, pitch, speed and an equalizer."><link rel="icon" type="image/png" href="./assets/icon.png"><meta property="og:type" content="website"><meta property="og:title" content="Cue My Music"><meta property="og:description" content="A music player for Minecraft&#x27;s soundtrack, with a queue, pitch, speed and an equalizer."><meta property="og:image" content="https://simply-sunny.github.io/cue-my-music/assets/icon.png"><title>Configure · Cue My Music</title><link rel="stylesheet" href="./assets/base.css"><link rel="stylesheet" href="./assets/style.css"><script src="./assets/site.js" defer></script><link rel="stylesheet" href="./assets/player/player.css"><script type="module" src="./assets/player/player.js"></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header shell"><a class="brand" href="./index.html">Cue My Music</a><nav aria-label="Project"><a href="https://github.com/simply-sunny/cue-my-music">Source ↗</a><a href="https://github.com/simply-sunny/cue-my-music/releases">Releases ↗</a></nav></header><div class="wiki shell"><aside class="sidebar"><input id="search" type="search" placeholder="Search" aria-label="Search"><nav aria-label="Documentation"><a href="./index.html">Overview</a><a href="./install.html">Install</a><a href="./use.html">Use</a><a href="./configure.html" aria-current="page">Configure</a><a href="./troubleshooting.html">Troubleshooting</a><a href="./roadmap.html">Roadmap</a><a href="./changelog.html">Changelog</a><a href="./develop.html">Develop</a></nav><span class="meta" id="search-status" role="status"></span></aside><main class="wiki-main" id="main" tabindex="-1"><article class="prose"><h1>Configure</h1>
+<div class="cmm-player" data-demo="settings" data-page="SETTINGS" data-parts="center" data-mode="fx"><noscript><p>The interactive player needs JavaScript.</p></noscript></div>
+<p>Open the player and click <strong>Settings</strong>. Pitch and EQ aren't heard here.</p>
+<h2 id="settings">Settings</h2>
+<p>Saved in <code>config/cuemymusic/config.json</code>, with your likes, dislikes and playlists. Delete it to reset.</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
 <th>Setting</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Pause during travel</td>
-<td>Fades out at a portal, then back in once the new dimension loads.</td>
-</tr>
-<tr>
-<td>Crossfade</td>
-<td>Songs need the same <code>sounds.json</code> volume and sample rate.</td>
-</tr>
-<tr>
-<td>Automix add-on songs</td>
-<td>On. Matches loudness and blends add-on songs into each other (see <a href="./use.html#mixing">Mixing</a>).</td>
-</tr>
-<tr>
-<td>Keep add-on songs out of recordings</td>
-<td>On. Hides add-on songs from game-audio recorders, not from recorders of all system audio.</td>
-</tr>
-</tbody>
-</table></div>
-<p>Settings, likes, dislikes and playlists are saved in <code>config/cuemymusic.json</code>. Delete it to reset.</p>
-<p>Add-on song analysis is cached in <code>config/cuemymusic-analysis/</code>. It's safe to delete.</p>
-<p>The JSON goes further than the screen. Restart after editing:</p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th>Key</th>
 <th>Default</th>
 <th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>speed</code></td>
-<td><code>1.0</code></td>
-<td>0.5 to 2.0, to two decimals.</td>
+<td>Pause during travel</td>
+<td>Off</td>
+<td>Fades out at a portal, then back in once the new dimension loads.</td>
+</tr>
+<tr>
+<td>Crossfade</td>
+<td><code>4 s</code></td>
+<td>Songs need the same <code>sounds.json</code> volume and sample rate.</td>
+</tr>
+<tr>
+<td>Automix add-on songs</td>
+<td>On</td>
+<td>Matches loudness and blends add-on songs into each other (see <a href="./use.html#mixing">Mixing</a>).</td>
+</tr>
+<tr>
+<td>Keep add-on songs out of recordings</td>
+<td>On</td>
+<td>Hides add-on songs from game-audio recorders, not from recorders of all system audio.</td>
 </tr>
 </tbody>
-</table></div></div>
+</table></div>
+<p>Add-on song analysis is cached in <code>config/cuemymusic/analysis/</code>. It's safe to delete.</p>
 <!-- data-wiki-preserve -->
 </article><footer class="site-footer"><span>Cue My Music</span><a href="https://github.com/simply-sunny/cue-my-music/issues">Report an issue ↗</a></footer></main></div></body></html>
