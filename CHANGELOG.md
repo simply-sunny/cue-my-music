@@ -4,6 +4,8 @@ All notable changes to Cue My Music are documented here. This project follows [S
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-06
+
 ### Changed
 
 - Everything the mod saves is now in `config/cuemymusic/`: `config.json`, `stats.json` and `analysis/`. Files from older versions move there on launch.
