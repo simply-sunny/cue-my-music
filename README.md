@@ -175,11 +175,7 @@ Requires JDK 25.
 
 This runs the headless checks (pitch and length on test tones, EQ response on sine waves, pack names, initials, and credits, and the play order rules) and builds the jar into `build/libs/`.
 
-Pitch and speed use a WSOLA time-stretch followed by resampling, and the equalizer is six biquad filters, all in plain Java. The icon and the pause menu button are built from the game's textures by `scripts/MakeIcon.java`:
-
-```bash
-java scripts/MakeIcon.java <26.3 client jar> src/main/resources/assets/cuemymusic/icon.png src/main/resources/assets/cuemymusic/textures/gui/sprites/music.png
-```
+Pitch and speed use a WSOLA time-stretch followed by resampling, and the equalizer is six biquad filters, all in plain Java.
 
 ### Add-ons
 

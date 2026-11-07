@@ -3,9 +3,6 @@
 <pre><code class="language-bash">./gradlew clean buildAll
 </code></pre>
 <p>This runs the tests and builds the jar into <code>build/libs/</code>.</p>
-<p>Rebuild the icon and pause menu button from the game's textures:</p>
-<pre><code class="language-bash">java scripts/MakeIcon.java &lt;26.3 client jar&gt; src/main/resources/assets/cuemymusic/icon.png src/main/resources/assets/cuemymusic/textures/gui/sprites/music.png
-</code></pre>
 <h2 id="add-ons">Add-ons</h2>
 <p>Give an add-on a page in the player: implement <code>mix.cuemymusic.api.CuePanel</code> and call <code>CuePanels.register(panel)</code> from your client initializer. Draw it with <code>PanelCanvas</code>. The API may still change.</p>
 </div>
